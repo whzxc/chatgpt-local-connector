@@ -1,0 +1,110 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+            platform: darwin-universal
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - name: Require a version tag
+        run: test "$GITHUB_REF_TYPE" = tag
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: npm ci
+      - run: npm run release:preflight
+      - run: cargo fmt --manifest-path native/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path desktop/Cargo.toml -- --check
+      - run: cargo fmt --manifest-path tooling/verifier/Cargo.toml -- --check
+      - name: Build with project updater key (no platform certificates)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run desktop:build -- --release --target '${{ matrix.target }}'
+      - if: runner.os == 'macOS'
+        run: node tooling/check-package.mjs 'desktop/target/universal-apple-darwin/release/bundle/macos/Local Connector.app'
+      - run: npm run release:stage -- '${{ matrix.platform }}' 'desktop/target/${{ matrix.target }}/release/bundle' release-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-artifacts
+          merge-multiple: true
+      - run: npm run release:finalize -- release-artifacts
+      - name: Upload complete release as draft, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true || { echo 'Published releases are immutable; bump the version.'; exit 1; }
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Local Connector $GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.msi release-artifacts/*.exe release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json --clobber
+          gh release edit "$GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md --draft=false --latest
+      - name: Verify publicly downloaded metadata and artifacts
+        run: node tooling/release.mjs verify-published release-artifacts
+      - name: Update Homebrew cask after published artifacts are verified
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp Casks/local-connector.rb "$RUNNER_TEMP/local-connector.rb"
+          git restore Casks/local-connector.rb
+          git switch "$DEFAULT_BRANCH"
+          git pull --ff-only origin "$DEFAULT_BRANCH"
+          cp "$RUNNER_TEMP/local-connector.rb" Casks/local-connector.rb
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Casks/local-connector.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): 同步 Homebrew 安装包校验值"
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          fi

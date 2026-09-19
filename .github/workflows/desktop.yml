@@ -1,0 +1,35 @@
+name: Desktop build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+          - os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run desktop:prepare
+      - run: cargo fmt --manifest-path desktop/Cargo.toml -- --check
+      - run: cargo check --manifest-path desktop/Cargo.toml
+      - run: npm run desktop:build
+      - if: runner.os == 'macOS'
+        run: npm run check:package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: desktop/target/release/bundle/

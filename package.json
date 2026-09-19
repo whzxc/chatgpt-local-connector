@@ -1,0 +1,59 @@
+{
+  "name": "@whzxc/chatgpt-local-connector",
+  "version": "0.3.0",
+  "description": "Personal local MCP connector for ChatGPT and Codex",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "check": "vue-tsc --noEmit -p ui/tsconfig.json",
+    "build": "vite build --config vite.config.ts",
+    "test": "node --test tests/control-mcp.test.ts",
+    "check:package": "node tooling/check-package.mjs",
+    "dev:ui": "vite --config vite.config.ts",
+    "desktop:dev": "node tooling/desktop-dev.mjs",
+    "desktop:prepare": "node tooling/prepare-desktop.mjs",
+    "desktop:build": "node tooling/desktop-build.mjs",
+    "desktop:check": "cargo check --manifest-path desktop/Cargo.toml",
+    "check:native": "cargo check --manifest-path desktop/Cargo.toml",
+    "release:check": "node tooling/release.mjs check",
+    "release:sync": "node tooling/release.mjs sync",
+    "release:preflight": "npm run release:check && npm run check && npm test && npm run build && npm run check:native",
+    "release:stage": "node tooling/release.mjs stage",
+    "release:finalize": "node tooling/release.mjs finalize"
+  },
+  "devDependencies": {
+    "@lucide/vue": "^1.47.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-notification": "^2.4.0",
+    "@tauri-apps/plugin-opener": "^2.5.5",
+    "@types/node": "26.1.1",
+    "@vitejs/plugin-vue": "6.0.9",
+    "@vueuse/core": "14.4.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vue": "3.5.42",
+    "vue-tsc": "3.3.11",
+    "@modelcontextprotocol/sdk": "1.30.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whzxc/chatgpt-local-connector.git"
+  },
+  "homepage": "https://github.com/whzxc/chatgpt-local-connector#readme",
+  "bugs": {
+    "url": "https://github.com/whzxc/chatgpt-local-connector/issues"
+  },
+  "keywords": [
+    "chatgpt",
+    "codex",
+    "mcp",
+    "local",
+    "connector"
+  ],
+  "private": true
+}

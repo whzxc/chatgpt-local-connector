@@ -1,0 +1,19 @@
+node_modules/
+.DS_Store
+dist/
+*.tgz
+.env
+desktop/target/
+desktop/runtime/
+desktop/gen/
+
+native/target/
+
+# Release outputs and signing secrets
+release-artifacts/
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+tooling/verifier/target/

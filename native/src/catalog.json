@@ -1,0 +1,1943 @@
+{
+  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。",
+  "tools": [
+    {
+      "name": "connector_verify",
+      "description": "验证 ChatGPT 到本机的连接。用户从 Local Connector 引导中提供 code 时调用；只回传验证码，不读取文件、不创建任务。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "projects",
+      "description": "实时读取当前设备 Codex 的原生项目列表，保留项目 ID、名称和全部目录。Connector 不维护项目登记；查询失败时不回退旧列表。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "overview",
+      "description": "了解指定项目当前目录结构、文档入口、分支及未提交改动。用于开始讨论项目或确认旧记忆是否过期。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "tree",
+      "description": "分页查看项目文件，includeIgnored=true 可包含 Git 忽略文件。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "path": {
+            "default": "",
+            "type": "string",
+            "description": "相对项目或绝对文件路径；不按文件名、扩展名、忽略规则过滤。"
+          },
+          "includeIgnored": {
+            "default": false,
+            "type": "boolean"
+          },
+          "depth": {
+            "default": 2,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "limit": {
+            "default": 100,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "search",
+      "description": "在当前落盘源码和文档中按固定字符串搜索内容与文件名，包含未提交改动。先用模块名、函数名或关键词定位，再 read。每次搜索有范围和大小上限；nextOffset 非空需继续分页。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "path": {
+            "default": "",
+            "type": "string",
+            "description": "相对项目或绝对文件路径；不按文件名、扩展名、忽略规则过滤。"
+          },
+          "includeIgnored": {
+            "default": false,
+            "type": "boolean"
+          },
+          "caseSensitive": {
+            "default": false,
+            "type": "boolean"
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "limit": {
+            "default": 30,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "project",
+          "query"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "read",
+      "description": "按行读取当前工作区文件，包括已保存的未提交内容。提供 revision 时读取指定提交的普通文件。返回行号和内容哈希，可用于来源引用；支持隐藏、忽略文件和链接；文本按行分页，二进制使用原生 fs/readFile。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "相对项目或绝对文件路径；不按文件名、扩展名、忽略规则过滤。"
+          },
+          "startLine": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "lineCount": {
+            "default": 160,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Git revision：分支、标签、SHA 或 HEAD~1 等表达式。"
+          }
+        },
+        "required": [
+          "project",
+          "path"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "git",
+      "description": "固定只读 Git 查询：status 查看当前改动；log 查看近期提交；show 查看一个提交的说明和可读文件名；diff 查看指定文件的差异（默认未暂存，staged=true 为暂存，revision 为与工作区比较，baseRevision+revision 为两提交比较）。不会 fetch、切分支、提交或执行命令。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "status",
+              "log",
+              "show",
+              "diff"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "相对项目或绝对文件路径；不按文件名、扩展名、忽略规则过滤。"
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Git revision：分支、标签、SHA 或 HEAD~1 等表达式。"
+          },
+          "baseRevision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Git revision：分支、标签、SHA 或 HEAD~1 等表达式。"
+          },
+          "staged": {
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 10,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        },
+        "required": [
+          "project",
+          "operation"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "fs",
+      "description": "操作 App Server 主机文件系统的绝对路径：读取/写入 base64 文件、目录、元数据、复制、删除及监听。与项目事实 read/tree/search 的按行读取、Git 文件列表和内容搜索分开。watch 的 fs/changed 通知通过 codex_events 读取。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "readFile",
+              "writeFile",
+              "createDirectory",
+              "getMetadata",
+              "readDirectory",
+              "remove",
+              "copy",
+              "watch",
+              "unwatch"
+            ],
+            "description": "mutation（需要 requestId）：writeFile、createDirectory、remove、copy、watch、unwatch。"
+          },
+          "params": {
+            "description": "原生参数：readFile/getMetadata/readDirectory {path}；writeFile {path,dataBase64}；createDirectory {path,recursive?}；remove {path,recursive?,force?}；copy {sourcePath,destinationPath,recursive?}；watch {path,watchId}；unwatch {watchId}。路径为主机绝对路径，watchId 属于当前连接。",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "mutation 必填 UUID；同一操作重试保持 ID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "description": "MCP 等待原生 RPC 的超时，写操作默认 24 小时、读操作默认 60 秒；与 params.timeoutMs 的进程超时独立，RPC 超时不取消操作。"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "command",
+      "description": "在 Codex sandbox/permission 语义下执行独立命令，不创建 thread/turn。exec 等进程退出才返回原生结果，长调用返回回执；write/terminate/resize 控制当前连接的 processId。PTY 和流式输出通过 codex_events 的 command/exec/outputDelta 读取。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "exec",
+              "write",
+              "terminate",
+              "resize"
+            ],
+            "description": "mutation（需要 requestId）：exec、write、terminate、resize。"
+          },
+          "params": {
+            "description": "完整原生参数：exec {command: string[],cwd?,env?,timeoutMs?,disableTimeout?,tty?,size?:{rows,cols},processId?,streamStdin?,streamStdoutStderr?,sandboxPolicy?,permissionProfile?,outputBytesCap?,disableOutputCap?}；write {processId,deltaBase64?,closeStdin?}；terminate {processId}；resize {processId,size:{rows,cols}}。env 值为 null 表示取消继承变量；PTY/stream/后续控制需要 processId。省略权限使用宿主配置。",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "mutation 必填 UUID；同一操作重试保持 ID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "description": "MCP 等待原生 RPC 的超时，写操作默认 24 小时、读操作默认 60 秒；与 params.timeoutMs 的进程超时独立，RPC 超时不取消操作。"
+          }
+        },
+        "required": [
+          "action",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "process",
+      "description": "App Server 主机上的非 Codex sandbox 进程能力。spawn 启动后即返回；writeStdin/kill/resizePty 使用当前连接的 processHandle。输出和退出通过 codex_events 的 process/outputDelta、process/exited 读取。不创建 Codex thread。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "spawn",
+              "writeStdin",
+              "kill",
+              "resizePty"
+            ],
+            "description": "mutation（需要 requestId）：spawn、writeStdin、kill、resizePty。"
+          },
+          "params": {
+            "description": "完整原生参数：spawn {command:string[],cwd:绝对路径,processHandle,env?,timeoutMs?,tty?,size?:{rows,cols},streamStdin?,streamStdoutStderr?,outputBytesCap?}；writeStdin {processHandle,deltaBase64?,closeStdin?}；kill {processHandle}；resizePty {processHandle,size:{rows,cols}}。env 值 null 取消继承；timeoutMs/outputBytesCap 显式 null 禁用对应限制，省略使用原生默认值。",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "mutation 必填 UUID；同一操作重试保持 ID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "description": "MCP 等待原生 RPC 的超时，写操作默认 24 小时、读操作默认 60 秒；与 params.timeoutMs 的进程超时独立，RPC 超时不取消操作。"
+          }
+        },
+        "required": [
+          "action",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "mcp",
+      "description": "直接访问 Codex 已配置的 downstream MCP：list 返回服务状态、工具及资源目录；resource/read 读取资源；tool/call 调用工具；oauth/login 登录；event/stream/start、stop 控制原生事件订阅。tool/call 和订阅 start 需要已有 threadId 作为原生上下文，本工具不创建线程。通知共用 codex_events。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "resource/read",
+              "tool/call",
+              "oauth/login",
+              "event/stream/start",
+              "event/stream/stop"
+            ],
+            "description": "mutation（需要 requestId）：tool/call、oauth/login、event/stream/start、event/stream/stop。"
+          },
+          "params": {
+            "description": "原生参数：list {threadId?,cursor?,limit?,detail?}；resource/read {server,uri,threadId?,connectorId?,originCallId?}；tool/call {server,threadId,tool,arguments?,_meta?}；oauth/login {name,threadId?,scopes?,timeoutSecs?,clientRegistration?}；event/stream/start {server,threadId,name,arguments,subscriptionId,_meta?}；event/stream/stop {subscriptionId}。arguments 和 _meta 不改写；原生 detail 等复杂类型可查 codex_schema。",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "mutation 必填 UUID；同一操作重试保持 ID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "description": "MCP 等待原生 RPC 的超时，写操作默认 24 小时、读操作默认 60 秒；与 params.timeoutMs 的进程超时独立，RPC 超时不取消操作。"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_thread",
+      "description": "原生线程全文查找、分叉、改名、归档/恢复、压缩、回退、后台终端和时间线。search 使用 thread/search。rollback/revert 只改会话历史，不撤销文件；rollback 是上游已标记弃用但当前仍提供的接口。compact 启动压缩，进度在 codex_events。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "search",
+              "fork",
+              "name/set",
+              "archive",
+              "unarchive",
+              "compact",
+              "rollback",
+              "revert",
+              "backgroundTerminals/list",
+              "backgroundTerminals/clean",
+              "backgroundTerminals/terminate",
+              "timeline"
+            ],
+            "description": "mutation（需要 requestId）：fork、name/set、archive、unarchive、compact、rollback、revert、backgroundTerminals/clean、backgroundTerminals/terminate。"
+          },
+          "params": {
+            "description": "原生参数：search {searchTerm,archived?,cursor?,limit?,sortKey?,sortDirection?,sourceKinds?}；fork {threadId,beforeTurnId?,lastTurnId?,cwd?,model?,...ThreadForkParams}；name/set {threadId,name}；archive/unarchive/compact/backgroundTerminals/clean {threadId}；rollback {threadId,numTurns}；revert {threadId,beforeTurnId}；backgroundTerminals/list、timeline {threadId,cursor?,limit?}；backgroundTerminals/terminate {threadId,processId}。fork 的配置完整透传。",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "mutation 必填 UUID；同一操作重试保持 ID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "description": "MCP 等待原生 RPC 的超时，写操作默认 24 小时、读操作默认 60 秒；与 params.timeoutMs 的进程超时独立，RPC 超时不取消操作。"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_account",
+      "description": "读取 App Server 当前真实账号、用量、限额和工作区消息，不推测套餐或剩余额度。read 对应 account/read；usage/read 支持线程用量；rateLimits/read 返回原生额度；workspaceMessages/read 返回工作区消息。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "read",
+              "usage/read",
+              "rateLimits/read",
+              "workspaceMessages/read"
+            ],
+            "description": "只读 action。"
+          },
+          "params": {
+            "description": "原生参数：read {refreshToken?}；usage/read {threadId?} 或 null；rateLimits/read {excludeResetCreditDetails?,supportsLunaReserve?} 或 null；workspaceMessages/read 无参数（省略或 null）。",
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "mutation 必填 UUID；同一操作重试保持 ID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647,
+            "description": "MCP 等待原生 RPC 的超时，写操作默认 24 小时、读操作默认 60 秒；与 params.timeoutMs 的进程超时独立，RPC 超时不取消操作。"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "file_search",
+      "description": "在 App Server 主机指定 roots 中模糊查找文件名和路径（fuzzyFileSearch），返回原生匹配与评分；区别于 search 的固定字符串内容搜索。不创建线程。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "原生 fuzzyFileSearch 模糊文件名查询，不搜索文件内容。"
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "主机搜索根目录列表，不解析项目别名。"
+          },
+          "cancellationToken": {
+            "description": "原生可选取消标记，原样透传。",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "roots"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_tasks",
+      "description": "列出本机原生任务，项目仅为可选筛选；不按项目目录或任务来源限制访问。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "searchTerm": {
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_read",
+      "description": "读取任务状态和最近记录；unknown 仅表示独立 App Server 不能确认桌面活动状态。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "statusOnly": {
+            "default": false,
+            "type": "boolean"
+          },
+          "waitMs": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "limit": {
+            "default": 2,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_create",
+      "description": "创建持久空任务并交给独立运行的 Codex Desktop，再由 Desktop 启动执行。Connector 断开不停止任务。仅支持 macOS Desktop 和文本输入；兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "title": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "input": {
+            "description": "原生 UserInput 数组，支持文本、图片、附件等当前协议类型。",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          },
+          "thread": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "model": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "serviceTier": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "read-only",
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "networkAccess": {
+            "type": "boolean"
+          },
+          "turn": {
+            "description": "TurnStartParams 原生参数，包括 permissions、approvalPolicy、collaborationMode、outputSchema、runtimeWorkspaceRoots；由上游校验。",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_send",
+      "description": "续接任务或 steer 当前轮次。resume 和 turn 透传原生参数，权限和所有权由上游判定。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "input": {
+            "description": "原生 UserInput 数组，支持文本、图片、附件等当前协议类型。",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          },
+          "resume": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "model": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "serviceTier": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "read-only",
+              "workspace-write",
+              "danger-full-access"
+            ]
+          },
+          "networkAccess": {
+            "type": "boolean"
+          },
+          "turn": {
+            "description": "TurnStartParams 原生参数，包括 permissions、approvalPolicy、collaborationMode、outputSchema、runtimeWorkspaceRoots；由上游校验。",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "threadId",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_interrupt",
+      "description": "请求原生中断指定轮次，是否可控制由上游判定；需回读确认终态。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "turnId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          }
+        },
+        "required": [
+          "threadId",
+          "turnId",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_capabilities",
+      "description": "当前服务版本、原生模型目录、默认配置来源与连接边界。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_request",
+      "description": "回读原操作回执及原始结果，不重复执行。pending/submitting 继续查询；unconfirmed 先检查原生状态。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          }
+        },
+        "required": [
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_items",
+      "description": "分页读取全部任务条目，包括原始工具数据。正文按 offset 分块，textHash 用于检测活动内容变化。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 1,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "length": {
+            "default": 6000,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedHash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_schema",
+      "description": "从当前 Codex 二进制发现全部原生方法；指定 method 返回完整 JSON 参数 Schema。direction=server 发现审批/输入等回调参数和响应 Schema。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "search": {
+            "type": "string"
+          },
+          "direction": {
+            "default": "client",
+            "type": "string",
+            "enum": [
+              "client",
+              "server"
+            ]
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "default": 100,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_query",
+      "description": "常用原生只读方法，params 完整透传。其他方法由 codex_call 提供，不受此快捷分类限制。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "thread/list",
+              "thread/read",
+              "thread/turns/list",
+              "thread/items/list",
+              "thread/loaded/list",
+              "thread/goal/get",
+              "thread/queue/list",
+              "project/list",
+              "project/read",
+              "threadSection/list",
+              "model/list",
+              "permissionProfile/list",
+              "collaborationMode/list",
+              "config/read",
+              "configRequirements/read",
+              "fs/readFile",
+              "fs/getMetadata",
+              "fs/readDirectory",
+              "account/rateLimits/read",
+              "plugin/list",
+              "plugin/read",
+              "skills/list",
+              "app/list",
+              "mcpServerStatus/list"
+            ]
+          },
+          "params": {
+            "default": {},
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_call",
+      "description": "调用原生 App Server 方法；先查 codex_schema。项目、配置、插件、命令、文件透传。桌面任务只支持创建、读取、续发、steer、interrupt，其他任务写操作明确拒绝，需在 Desktop 中完成。异步返回后 codex_request 取结果，原生审批用 pending/respond。initialize/initialized 由连接管理，不需重复调用。此工具可执行破坏性操作，按实际方法确认用户意图。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "params": {
+            "default": {},
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          },
+          "timeoutMs": {
+            "default": 86400000,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "method",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_pending",
+      "description": "读取当前后台等待的审批、用户输入、动态工具等原生请求；不自动批准。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_respond",
+      "description": "向 pending 请求提交原生 result 或 JSON-RPC error；先查对应 server Schema。携带 backendSession 防止重启后误答旧请求，requestId 防止重复提交。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "backendSession": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "id": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          },
+          "result": {},
+          "error": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "backendSession",
+          "id",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "codex_events",
+      "description": "按 cursor 查询原生通知，包括任务进度、交互、command/exec/outputDelta、process/outputDelta/exited、fs/changed 和 downstream MCP 订阅通知。最近 2000 条缓冲；gap 或 reset 表示须回读原生状态。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "default": 100,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "backendSession": {
+            "type": "string"
+          }
+        },
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "control_output",
+      "description": "按 outputId 和 offset 完整读取大结果 JSON。结果保存在本机私有目录，不自动截断原始数据。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "outputId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "length": {
+            "default": 10000,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 12000
+          }
+        },
+        "required": [
+          "outputId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ],
+  "domains": {
+    "fs": {
+      "description": "操作 App Server 主机文件系统的绝对路径：读取/写入 base64 文件、目录、元数据、复制、删除及监听。与项目事实 read/tree/search 的按行读取、Git 文件列表和内容搜索分开。watch 的 fs/changed 通知通过 codex_events 读取。",
+      "params": "原生参数：readFile/getMetadata/readDirectory {path}；writeFile {path,dataBase64}；createDirectory {path,recursive?}；remove {path,recursive?,force?}；copy {sourcePath,destinationPath,recursive?}；watch {path,watchId}；unwatch {watchId}。路径为主机绝对路径，watchId 属于当前连接。",
+      "actions": {
+        "readFile": [
+          "fs/readFile",
+          true
+        ],
+        "writeFile": [
+          "fs/writeFile",
+          false
+        ],
+        "createDirectory": [
+          "fs/createDirectory",
+          false
+        ],
+        "getMetadata": [
+          "fs/getMetadata",
+          true
+        ],
+        "readDirectory": [
+          "fs/readDirectory",
+          true
+        ],
+        "remove": [
+          "fs/remove",
+          false
+        ],
+        "copy": [
+          "fs/copy",
+          false
+        ],
+        "watch": [
+          "fs/watch",
+          false
+        ],
+        "unwatch": [
+          "fs/unwatch",
+          false
+        ]
+      }
+    },
+    "command": {
+      "description": "在 Codex sandbox/permission 语义下执行独立命令，不创建 thread/turn。exec 等进程退出才返回原生结果，长调用返回回执；write/terminate/resize 控制当前连接的 processId。PTY 和流式输出通过 codex_events 的 command/exec/outputDelta 读取。",
+      "params": "完整原生参数：exec {command: string[],cwd?,env?,timeoutMs?,disableTimeout?,tty?,size?:{rows,cols},processId?,streamStdin?,streamStdoutStderr?,sandboxPolicy?,permissionProfile?,outputBytesCap?,disableOutputCap?}；write {processId,deltaBase64?,closeStdin?}；terminate {processId}；resize {processId,size:{rows,cols}}。env 值为 null 表示取消继承变量；PTY/stream/后续控制需要 processId。省略权限使用宿主配置。",
+      "actions": {
+        "exec": [
+          "command/exec",
+          false
+        ],
+        "write": [
+          "command/exec/write",
+          false
+        ],
+        "terminate": [
+          "command/exec/terminate",
+          false
+        ],
+        "resize": [
+          "command/exec/resize",
+          false
+        ]
+      }
+    },
+    "process": {
+      "description": "App Server 主机上的非 Codex sandbox 进程能力。spawn 启动后即返回；writeStdin/kill/resizePty 使用当前连接的 processHandle。输出和退出通过 codex_events 的 process/outputDelta、process/exited 读取。不创建 Codex thread。",
+      "params": "完整原生参数：spawn {command:string[],cwd:绝对路径,processHandle,env?,timeoutMs?,tty?,size?:{rows,cols},streamStdin?,streamStdoutStderr?,outputBytesCap?}；writeStdin {processHandle,deltaBase64?,closeStdin?}；kill {processHandle}；resizePty {processHandle,size:{rows,cols}}。env 值 null 取消继承；timeoutMs/outputBytesCap 显式 null 禁用对应限制，省略使用原生默认值。",
+      "actions": {
+        "spawn": [
+          "process/spawn",
+          false
+        ],
+        "writeStdin": [
+          "process/writeStdin",
+          false
+        ],
+        "kill": [
+          "process/kill",
+          false
+        ],
+        "resizePty": [
+          "process/resizePty",
+          false
+        ]
+      }
+    },
+    "mcp": {
+      "description": "直接访问 Codex 已配置的 downstream MCP：list 返回服务状态、工具及资源目录；resource/read 读取资源；tool/call 调用工具；oauth/login 登录；event/stream/start、stop 控制原生事件订阅。tool/call 和订阅 start 需要已有 threadId 作为原生上下文，本工具不创建线程。通知共用 codex_events。",
+      "params": "原生参数：list {threadId?,cursor?,limit?,detail?}；resource/read {server,uri,threadId?,connectorId?,originCallId?}；tool/call {server,threadId,tool,arguments?,_meta?}；oauth/login {name,threadId?,scopes?,timeoutSecs?,clientRegistration?}；event/stream/start {server,threadId,name,arguments,subscriptionId,_meta?}；event/stream/stop {subscriptionId}。arguments 和 _meta 不改写；原生 detail 等复杂类型可查 codex_schema。",
+      "actions": {
+        "list": [
+          "mcpServerStatus/list",
+          true
+        ],
+        "resource/read": [
+          "mcpServer/resource/read",
+          true
+        ],
+        "tool/call": [
+          "mcpServer/tool/call",
+          false
+        ],
+        "oauth/login": [
+          "mcpServer/oauth/login",
+          false
+        ],
+        "event/stream/start": [
+          "mcpServer/event/stream/start",
+          false
+        ],
+        "event/stream/stop": [
+          "mcpServer/event/stream/stop",
+          false
+        ]
+      }
+    },
+    "codex_thread": {
+      "description": "原生线程全文查找、分叉、改名、归档/恢复、压缩、回退、后台终端和时间线。search 使用 thread/search。rollback/revert 只改会话历史，不撤销文件；rollback 是上游已标记弃用但当前仍提供的接口。compact 启动压缩，进度在 codex_events。",
+      "params": "原生参数：search {searchTerm,archived?,cursor?,limit?,sortKey?,sortDirection?,sourceKinds?}；fork {threadId,beforeTurnId?,lastTurnId?,cwd?,model?,...ThreadForkParams}；name/set {threadId,name}；archive/unarchive/compact/backgroundTerminals/clean {threadId}；rollback {threadId,numTurns}；revert {threadId,beforeTurnId}；backgroundTerminals/list、timeline {threadId,cursor?,limit?}；backgroundTerminals/terminate {threadId,processId}。fork 的配置完整透传。",
+      "actions": {
+        "search": [
+          "thread/search",
+          true
+        ],
+        "fork": [
+          "thread/fork",
+          false
+        ],
+        "name/set": [
+          "thread/name/set",
+          false
+        ],
+        "archive": [
+          "thread/archive",
+          false
+        ],
+        "unarchive": [
+          "thread/unarchive",
+          false
+        ],
+        "compact": [
+          "thread/compact/start",
+          false
+        ],
+        "rollback": [
+          "thread/rollback",
+          false
+        ],
+        "revert": [
+          "thread/revert",
+          false
+        ],
+        "backgroundTerminals/list": [
+          "thread/backgroundTerminals/list",
+          true
+        ],
+        "backgroundTerminals/clean": [
+          "thread/backgroundTerminals/clean",
+          false
+        ],
+        "backgroundTerminals/terminate": [
+          "thread/backgroundTerminals/terminate",
+          false
+        ],
+        "timeline": [
+          "thread/timeline/list",
+          true
+        ]
+      }
+    },
+    "codex_account": {
+      "description": "读取 App Server 当前真实账号、用量、限额和工作区消息，不推测套餐或剩余额度。read 对应 account/read；usage/read 支持线程用量；rateLimits/read 返回原生额度；workspaceMessages/read 返回工作区消息。",
+      "params": "原生参数：read {refreshToken?}；usage/read {threadId?} 或 null；rateLimits/read {excludeResetCreditDetails?,supportsLunaReserve?} 或 null；workspaceMessages/read 无参数（省略或 null）。",
+      "actions": {
+        "read": [
+          "account/read",
+          true
+        ],
+        "usage/read": [
+          "account/usage/read",
+          true
+        ],
+        "rateLimits/read": [
+          "account/rateLimits/read",
+          true
+        ],
+        "workspaceMessages/read": [
+          "account/workspaceMessages/read",
+          true
+        ]
+      }
+    }
+  }
+}

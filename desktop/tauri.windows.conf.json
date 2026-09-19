@@ -1,0 +1,24 @@
+{
+  "bundle": {
+    "targets": [
+      "nsis",
+      "msi"
+    ]
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Local Connector",
+        "width": 840,
+        "height": 578,
+        "minWidth": 800,
+        "minHeight": 578,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#f4f5f1",
+        "decorations": false
+      }
+    ]
+  }
+}
