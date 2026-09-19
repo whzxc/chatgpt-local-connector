@@ -46,7 +46,13 @@ Stage 目录必须为空，每次使用新目录。脚本只挑选指定平台�
 
 ## 发布流程
 
-提交版本、文档和代码，主分支 CI 通过后推送对应的 `v<版本>` 标签。标签版本须与 `package.json` 及 `CHANGELOG.md` 一致。
+日常 push 和 PR 更新不自动运行 Actions 检查。准备发布时，先将版本、文档和代码提交到 `main`，手动运行一次双端检查：
+
+```sh
+gh workflow run check.yml --ref main
+```
+
+检查成功后，为该次检查对应的提交推送 `v<版本>` 标签；若期间又提交了改动，需要对新提交重新手动检查。标签版本须与 `package.json` 及 `CHANGELOG.md` 一致。
 
 ```sh
 git tag v0.3.0
@@ -55,7 +61,7 @@ git push origin v0.3.0
 
 推送前确认目标 remote 为公开源码仓库；仅推送选定分支和版本标签，不使用 `--mirror` 或 `--all`。
 
-`Check` 在主分支提交时执行版本校验、类型检查、契约测试、前端构建、原生编译检查和格式检查。`Release` 只接受同一提交在 `main` 上通过的 `Check`，不重复测试、类型检查、格式检查或 `cargo check`。
+`Check` 仅手动触发，执行版本校验、类型检查、契约测试、前端构建、原生编译检查和格式检查。可以按需在开发分支运行；`Release` 只接受同一提交在 `main` 上成功完成的最新一次手动 `Check`，不重复测试、类型检查、格式检查或 `cargo check`。
 
 `Release` 由版本标签触发实际发布。手动运行默认是演练（`publish=false`），执行构建、验签与清单生成，仅上传 Actions artifacts；不创建 Release、不修改公开下载和 Homebrew。手动发布必须选择版本标签并设置 `publish=true`。
 

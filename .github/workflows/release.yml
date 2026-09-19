@@ -32,8 +32,8 @@ jobs:
           if [ "$PUBLISH" = true ]; then
             test "$GITHUB_REF_TYPE" = tag || { echo 'Publishing requires a version tag.'; exit 1; }
           fi
-          result=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?head_sha=$GITHUB_SHA&event=push&branch=main&per_page=1" --jq '.workflow_runs[0] | "\(.status):\(.conclusion)"')
-          test "$result" = completed:success || { echo "Check must succeed on this exact commit before building: $result"; exit 1; }
+          result=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?head_sha=$GITHUB_SHA&event=workflow_dispatch&branch=main&per_page=1" --jq '.workflow_runs[0] | "\(.status):\(.conclusion)"')
+          test "$result" = completed:success || { echo "Run Check manually on main for this exact commit before building: $result"; exit 1; }
   build:
     needs: gate
     strategy:
