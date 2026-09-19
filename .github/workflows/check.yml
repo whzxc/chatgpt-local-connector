@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     strategy:
@@ -23,12 +26,52 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: npm ci
-      - run: npm run release:check
-      - run: npm run check
-      - run: npm test
-      - run: npm run build
-      - run: cargo check --manifest-path desktop/Cargo.toml
-      - run: cargo fmt --manifest-path native/Cargo.toml -- --check
-      - run: cargo fmt --manifest-path desktop/Cargo.toml -- --check
-      - run: cargo fmt --manifest-path tooling/verifier/Cargo.toml -- --check
+      - name: Cache | Rust dependencies
+        id: rust-cache
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          shared-key: checks
+          workspaces: |
+            desktop -> target
+            native -> target/contracts
+          cache-bin: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Cache | Rust hit=${{ steps.rust-cache.outputs.cache-hit }}
+        run: echo "Rust cache lookup complete"
+      - name: Dependencies | npm ci
+        run: npm ci
+      - name: Validation | Version
+        run: npm run release:check
+      - name: Validation | Types
+        run: npm run check
+      - name: Tests | Contracts
+        run: npm test
+      - name: Frontend | Build
+        run: npm run build
+      - name: Native check | Desktop
+        run: cargo check --manifest-path desktop/Cargo.toml
+      - name: Format | Core
+        run: cargo fmt --manifest-path native/Cargo.toml -- --check
+      - name: Format | Desktop
+        run: cargo fmt --manifest-path desktop/Cargo.toml -- --check
+      - name: Format | Verifier
+        run: cargo fmt --manifest-path tooling/verifier/Cargo.toml -- --check
+  timings:
+    name: Timing summary
+    if: always()
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Generate phase timings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tooling/workflow-timing.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workflow-timing
+          path: ${{ runner.temp }}/workflow-timing/
+          retention-days: 30

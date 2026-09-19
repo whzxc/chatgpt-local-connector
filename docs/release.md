@@ -40,6 +40,8 @@ npm run release:stage -- darwin-aarch64 desktop/target/aarch64-apple-darwin/rele
 
 Windows 在原生 Windows 环境使用 `--target x86_64-pc-windows-msvc`，stage 平台参数为 `windows-x86_64`。
 
+macOS DMG 使用 `desktop/assets/dmg-background.png` 提供无文案的拖拽安装引导，窗口尺寸与图标位置在 `desktop/tauri.conf.json` 的 `bundle.macOS.dmg` 中配置。背景中的两个落点对应实际应用与 Applications 文件夹，箭头指向右侧。`desktop:build` 保留 CI 中的 Finder 布局配置，因此 macOS 构建环境需要可用的 Finder 会话。
+
 Stage 目录必须为空，每次使用新目录。脚本只挑选指定平台的发行文件，统一文件名，并使用与 Tauri 相同的 Minisign 验签库验证实际更新包与内置公钥匹配。
 
 ## 发布流程
@@ -53,12 +55,34 @@ git push origin v0.3.0
 
 推送前确认目标 remote 为公开源码仓库；仅推送选定分支和版本标签，不使用 `--mirror` 或 `--all`。
 
-`Release` 工作流由版本标签触发，也可在已有版本标签上手动运行：
+`Check` 在主分支提交时执行版本校验、类型检查、契约测试、前端构建、原生编译检查和格式检查。`Release` 只接受同一提交在 `main` 上通过的 `Check`，不重复测试、类型检查、格式检查或 `cargo check`。
 
-1. macOS Apple Silicon 与 Windows x64 分别执行检查、契约测试、构建和签名验证。
+`Release` 由版本标签触发实际发布。手动运行默认是演练（`publish=false`），执行构建、验签与清单生成，仅上传 Actions artifacts；不创建 Release、不修改公开下载和 Homebrew。手动发布必须选择版本标签并设置 `publish=true`。
+
+工作流步骤：
+
+1. 核对同一提交的 `Check` 结果。macOS Apple Silicon 与 Windows x64 并行恢复缓存、构建前端与原生安装包，并验证更新签名。
 2. 两端全部成功后汇总产物，生成 `latest.json`、`SHA256SUMS.txt`、更新说明和真实 DMG 哈希的 Homebrew Cask。
 3. 上传全部文件到 Draft Release，再一次性公开为 latest；不会提前把不完整更新推给用户。
 4. 从公开地址下载清单及所有产物，逐一比对本地已验签的字节。
 5. 验证通过后同步默认分支的 Cask。Cask 的版本和 SHA256 必须对应实际公开 DMG。
 
 公开后的版本不可覆盖重建。构建失败可以重跑；如果已经公开但发布后验证或 Cask 同步失败，先检查已发布内容，使用 `node tooling/release.mjs verify-published <产物目录>` 回读，并人工同步 Cask，不重复覆盖该 Release。新修复使用新的版本号。
+
+## 缓存与发布演练
+
+npm 下载由 `setup-node` 缓存。Rust 使用 `rust-cache` 缓存依赖和编译产物，检查、安装包构建与清单验签使用不同缓存，按工具链、平台与依赖区分；安装包每次重新生成和验签。
+
+只有 `main` 写入 Rust 缓存。发布标签可以读取默认分支缓存，不依赖上一个版本标签的缓存。首次使用、工具链变化或依赖大幅更新后，在已通过 `Check` 的 `main` 上运行演练以预热：
+
+```sh
+gh workflow run release.yml --ref main -f publish=false
+```
+
+演练替代独立的桌面打包工作流，使用与正式发布相同的构建配置和签名流程。已公开版本不可用演练产物覆盖。
+
+## 阶段耗时
+
+`Check` 与 `Release` 在结束时运行 `Timing summary`。Actions 运行摘要中提供每个作业、每个阶段与各步骤的实际耗时、结果和 Rust 精确缓存命中状态；失败步骤同样计入。`workflow-timing` artifact 提供 `timings.md` 和 `timings.json`，保留 30 天。
+
+总耗时按墙钟时间计算，两端并行构建不能相加；统计覆盖业务作业的调度等待、缓存恢复及保存、依赖安装、检查或打包、验签、上传、发布和 Homebrew 同步。统计作业本身及其上传开销不计入该值，GitHub 页面总时长包含这部分开销。
