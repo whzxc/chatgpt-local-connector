@@ -23,3 +23,7 @@ flags.push(`--remap-path-prefix=${homedir()}=/build-user`, `--remap-path-prefix=
 env.CARGO_ENCODED_RUSTFLAGS = flags.join('\x1f');
 delete env.RUSTFLAGS;
 execFileSync(process.execPath, args, { cwd: fileURLToPath(new URL('desktop/', root)), env, stdio: 'inherit' });
+if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
+  execFileSync('uv', ['run', '--script', fileURLToPath(new URL('tooling/build-dmg.py', root)),
+    buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release'], { cwd: fileURLToPath(root), env, stdio: 'inherit' });
+}

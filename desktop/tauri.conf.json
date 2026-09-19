@@ -27,8 +27,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "app",
-      "dmg"
+      "app"
     ],
     "icon": [
       "icons/icon.png",
@@ -36,7 +35,13 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "assets/dmg-background.png",
+        "windowSize": { "width": 720, "height": 480 },
+        "appPosition": { "x": 205, "y": 210 },
+        "applicationFolderPosition": { "x": 515, "y": 210 }
+      }
     }
   },
   "plugins": {

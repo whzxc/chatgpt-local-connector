@@ -58,6 +58,8 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - if: runner.os == 'macOS'
+        uses: astral-sh/setup-uv@v6
+      - if: runner.os == 'macOS'
         run: rustup target add aarch64-apple-darwin
       - name: Cache | Rust dependencies
         id: rust-cache
