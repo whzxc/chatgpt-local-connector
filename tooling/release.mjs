@@ -23,7 +23,7 @@ function verifySignatures(artifacts) {
   execFileSync('cargo', ['run', '--quiet', '--locked', '--manifest-path', 'tooling/verifier/Cargo.toml', '--', 'desktop/tauri.conf.json', ...artifacts], { stdio: 'inherit' });
 }
 async function validateManifest(manifest, dir) {
-  const keys = ['darwin-aarch64','darwin-x86_64','windows-x86_64','windows-x86_64-msi','windows-x86_64-nsis'];
+  const keys = ['darwin-aarch64','windows-x86_64','windows-x86_64-msi','windows-x86_64-nsis'];
   if (manifest.version !== version || Object.keys(manifest.platforms).sort().join() !== keys.sort().join()) throw new Error('Incomplete release platform manifest');
   for (const value of Object.values(manifest.platforms)) {
     if (!value.url.startsWith(base + '/')) throw new Error('Unexpected updater download origin/version');
@@ -50,17 +50,18 @@ async function check() {
   console.log(`Release configuration ready: v${version}, ${repo}`);
 }
 async function cask(dir) {
-  const dmg = (await files(dir)).filter(f => f.endsWith('_universal.dmg'));
-  if (dmg.length !== 1) throw new Error('Expected one Universal DMG');
+  const dmg = (await files(dir)).filter(f => f.endsWith('_aarch64.dmg'));
+  if (dmg.length !== 1) throw new Error('Expected one Apple Silicon DMG');
   await mkdir('Casks', { recursive: true });
   await writeFile('Casks/local-connector.rb', `cask "local-connector" do
   version "${version}"
   sha256 "${hash(await readFile(dmg[0]))}"
 
-  url "https://github.com/${repo}/releases/download/v#{version}/Local.Connector_#{version}_universal.dmg"
+  url "https://github.com/${repo}/releases/download/v#{version}/Local.Connector_#{version}_aarch64.dmg"
   name "Local Connector"
   desc "Connect ChatGPT to local Codex Desktop through Secure MCP Tunnel"
   homepage "https://github.com/${repo}"
+  depends_on arch: :arm64
   auto_updates true
   app "Local Connector.app"
 
@@ -82,31 +83,31 @@ else if (mode === 'sync') {
 } else if (mode === 'stage') {
   await check();
   const [target, input, output] = args;
-  if (!['darwin-universal','windows-x86_64'].includes(target) || !input || !output) throw new Error('stage <darwin-universal|windows-x86_64> <bundle-dir> <output-dir>');
+  if (!['darwin-aarch64','windows-x86_64'].includes(target) || !input || !output) throw new Error('stage <darwin-aarch64|windows-x86_64> <bundle-dir> <output-dir>');
   await mkdir(output,{recursive:true});
   if ((await readdir(output)).length) throw new Error('Stage directory must be empty; use a fresh directory');
-  const candidates = (await files(input)).filter(f => target === 'darwin-universal' ? /(?:_universal\.dmg|\.app\.tar\.gz(?:\.sig)?)$/.test(f) : /(?:\.msi|\.exe)(?:\.sig)?$/.test(f));
+  const candidates = (await files(input)).filter(f => target === 'darwin-aarch64' ? /(?:_aarch64\.dmg|\.app\.tar\.gz(?:\.sig)?)$/.test(f) : /(?:\.msi|\.exe)(?:\.sig)?$/.test(f));
   for (const file of candidates) {
     let name = path.basename(file).replaceAll(' ','.');
-    if (target === 'darwin-universal' && name.includes('.app.tar.gz')) name = name.replace('.app.tar.gz', `_${version}_universal.app.tar.gz`);
+    if (target === 'darwin-aarch64' && name.includes('.app.tar.gz')) name = name.replace('.app.tar.gz', `_${version}_aarch64.app.tar.gz`);
     await copyFile(file,path.join(output,name));
   }
   const staged = await files(output);
-  const payloads = staged.filter(f => target === 'darwin-universal' ? f.endsWith('.app.tar.gz') : /\.(msi|exe)$/.test(f));
-  if (payloads.length !== (target === 'darwin-universal' ? 1 : 2)) throw new Error('Missing/duplicate updater bundles');
-  if (target === 'darwin-universal' && staged.filter(f=>f.endsWith('_universal.dmg')).length !== 1) throw new Error('Missing Universal DMG');
+  const payloads = staged.filter(f => target === 'darwin-aarch64' ? f.endsWith('.app.tar.gz') : /\.(msi|exe)$/.test(f));
+  if (payloads.length !== (target === 'darwin-aarch64' ? 1 : 2)) throw new Error('Missing/duplicate updater bundles');
+  if (target === 'darwin-aarch64' && staged.filter(f=>f.endsWith('_aarch64.dmg')).length !== 1) throw new Error('Missing Apple Silicon DMG');
   verifySignatures(payloads);
   const platforms = {};
   for (const file of payloads) {
     const value = { signature:(await readFile(file+'.sig','utf8')).trim(), url:`${base}/${path.basename(file)}` };
-    const keys = target === 'darwin-universal' ? ['darwin-aarch64','darwin-x86_64'] : file.endsWith('.msi') ? ['windows-x86_64-msi'] : ['windows-x86_64','windows-x86_64-nsis'];
+    const keys = target === 'darwin-aarch64' ? ['darwin-aarch64'] : file.endsWith('.msi') ? ['windows-x86_64-msi'] : ['windows-x86_64','windows-x86_64-nsis'];
     for (const key of keys) platforms[key] = value;
   }
   await writeJson(path.join(output,`${target}.json`), { version, platforms });
   console.log(`Staged ${target} artifacts with verified signatures.`);
 } else if (mode === 'finalize') {
   await check(); const [dir] = args;
-  const fragments = await Promise.all(['darwin-universal','windows-x86_64'].map(t=>json(path.join(dir,t+'.json'))));
+  const fragments = await Promise.all(['darwin-aarch64','windows-x86_64'].map(t=>json(path.join(dir,t+'.json'))));
   if (fragments.some(f=>f.version!==version)) throw new Error('Mixed release versions');
   const notes = (await readFile('CHANGELOG.md','utf8')).split(`## ${version}\n`)[1]?.split('\n## ')[0]?.trim();
   if (!notes) throw new Error('Missing release notes');

@@ -6,7 +6,14 @@ const args = [fileURLToPath(new URL('node_modules/@tauri-apps/cli/tauri.js', roo
 if (process.platform === 'win32') args.push('--config', 'tauri.windows.conf.json');
 if (process.env.TAURI_SIGNING_PRIVATE_KEY) args.push('--config', JSON.stringify({ bundle: { createUpdaterArtifacts: true } }));
 if (process.argv.includes('--release') && !process.env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('发布构建需要项目专用 TAURI_SIGNING_PRIVATE_KEY');
-args.push(...process.argv.slice(2).filter(a => a !== '--release'));
+const buildArgs = process.argv.slice(2).filter(a => a !== '--release');
+if (process.platform === 'darwin') {
+  const targetArg = buildArgs.find(a => a === '--target' || a.startsWith('--target='));
+  const target = targetArg === '--target' ? buildArgs[buildArgs.indexOf(targetArg) + 1] : targetArg?.slice('--target='.length);
+  if (targetArg && target !== 'aarch64-apple-darwin') throw new Error('macOS 安装包仅支持 aarch64-apple-darwin');
+  if (!targetArg) buildArgs.push('--target', 'aarch64-apple-darwin');
+}
+args.push(...buildArgs);
 // Keep platform-signing credentials out of ad-hoc builds.
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (/^(APPLE_|CSC_|WIN_CSC_)/.test(key)) delete env[key];

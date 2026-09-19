@@ -27,15 +27,15 @@ npm run release:preflight
 
 `release:sync` 以 `package.json` 为版本来源，同步 Tauri、两个 Cargo package 和锁文件；`CHANGELOG.md` 必须有该版本条目。它不提交、不打标签、不上传。
 
-macOS Universal 发布构建：
+macOS Apple Silicon 发布构建：
 
 ```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
+rustup target add aarch64-apple-darwin
 # 将 TAURI_SIGNING_PRIVATE_KEY 设置为仓库外私钥文件的路径，勿把内容写入命令历史。
 export TAURI_SIGNING_PRIVATE_KEY="$HOME/.config/local-connector/release/updater.key"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=''
-npm run desktop:build -- --release --target universal-apple-darwin
-npm run release:stage -- darwin-universal desktop/target/universal-apple-darwin/release/bundle release-artifacts/macos
+npm run desktop:build -- --release --target aarch64-apple-darwin
+npm run release:stage -- darwin-aarch64 desktop/target/aarch64-apple-darwin/release/bundle release-artifacts/macos
 ```
 
 Windows 在原生 Windows 环境使用 `--target x86_64-pc-windows-msvc`，stage 平台参数为 `windows-x86_64`。
@@ -55,7 +55,7 @@ git push origin v0.3.0
 
 `Release` 工作流由版本标签触发，也可在已有版本标签上手动运行：
 
-1. macOS Universal 与 Windows x64 分别执行检查、契约测试、构建和签名验证。
+1. macOS Apple Silicon 与 Windows x64 分别执行检查、契约测试、构建和签名验证。
 2. 两端全部成功后汇总产物，生成 `latest.json`、`SHA256SUMS.txt`、更新说明和真实 DMG 哈希的 Homebrew Cask。
 3. 上传全部文件到 Draft Release，再一次性公开为 latest；不会提前把不完整更新推给用户。
 4. 从公开地址下载清单及所有产物，逐一比对本地已验签的字节。

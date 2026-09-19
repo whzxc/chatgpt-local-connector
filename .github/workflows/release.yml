@@ -15,8 +15,8 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            target: universal-apple-darwin
-            platform: darwin-universal
+            target: aarch64-apple-darwin
+            platform: darwin-aarch64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows-x86_64
@@ -36,7 +36,7 @@ jobs:
         with:
           components: rustfmt
       - if: runner.os == 'macOS'
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        run: rustup target add aarch64-apple-darwin
       - run: npm ci
       - run: npm run release:preflight
       - run: cargo fmt --manifest-path native/Cargo.toml -- --check
@@ -48,7 +48,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run desktop:build -- --release --target '${{ matrix.target }}'
       - if: runner.os == 'macOS'
-        run: node tooling/check-package.mjs 'desktop/target/universal-apple-darwin/release/bundle/macos/Local Connector.app'
+        run: node tooling/check-package.mjs 'desktop/target/aarch64-apple-darwin/release/bundle/macos/Local Connector.app'
       - run: npm run release:stage -- '${{ matrix.platform }}' 'desktop/target/${{ matrix.target }}/release/bundle' release-artifacts
       - uses: actions/upload-artifact@v4
         with:

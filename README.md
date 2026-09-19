@@ -21,7 +21,7 @@ Tunnel 身份、权限及 ChatGPT 接入详见[接入指南](docs/tunnel.md)。�
 
 Codex Desktop 自己拥有任务执行进程。Connector 通过 Desktop IPC 管理任务，不替换 Desktop app-server；关闭 Connector 不会主动中断 Desktop 中的任务。无 Desktop owner 时不会冒充任务空闲，也不会接管任务执行。
 
-不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。当前仅实现 macOS Desktop 外部任务管理，Windows 桌面壳可构建，但尚不能完成同等的首次接入流程。
+不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。当前仅支持 Apple Silicon Mac 的 Desktop 外部任务管理，Windows 桌面壳可构建，但尚不能完成同等的首次接入流程。
 
 ## 开发
 

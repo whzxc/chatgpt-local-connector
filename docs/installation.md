@@ -6,7 +6,7 @@
 
 | 平台 | 文件 | 支持范围 |
 | --- | --- | --- |
-| macOS | `Local.Connector_<版本>_universal.dmg` | 包含 Apple Silicon 与 Intel |
+| macOS | `Local.Connector_<版本>_aarch64.dmg` | 仅支持 Apple Silicon |
 | Windows x64 | `…-setup.exe` / `….msi` | 预览包；Desktop 任务接入尚未实现，不能完成同等的首次引导 |
 
 应用不需要用户安装 Node、npm、Rust 或 Cargo。使用前需安装并登录 Codex Desktop；Tunnel Client 可以在应用引导中安装。取得 Tunnel ID/runtime API Key，并在 ChatGPT 添加插件后才可远程使用，详见 [首次使用](../README.md#使用)。
@@ -26,7 +26,7 @@ xattr -rd com.apple.quarantine "/Applications/Local Connector.app"
 核对下载文件：
 
 ```sh
-shasum -a 256 Local.Connector_0.3.0_universal.dmg
+shasum -a 256 Local.Connector_0.3.0_aarch64.dmg
 ```
 
 将结果与同版本 `SHA256SUMS.txt` 的对应行比较。

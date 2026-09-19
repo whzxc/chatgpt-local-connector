@@ -43,7 +43,7 @@ npm run desktop:build
 npm run check:package
 ```
 
-macOS 产物在 `desktop/target/release/bundle/`。`check:package` 检查 App 中没有 Node、npm、node_modules 或旧 runtime 目录，并报告体积；可传入其他产物目录。Windows 使用 NSIS/MSI，按平台构建。
+macOS 安装包仅构建 Apple Silicon（arm64），产物在 `desktop/target/aarch64-apple-darwin/release/bundle/`。`check:package` 检查 App 中没有 Node、npm、node_modules 或旧 runtime 目录，并报告体积；可传入其他产物目录。Windows 使用 NSIS/MSI，按平台构建。
 
 发行包只包含原生可执行文件、前端静态资源和图标。构建脚本将 Rust 源码中的本机用户目录与仓库路径映射为通用构建路径，避免在二进制中嵌入私人路径。官方 Tunnel Client 首次使用时独立下载并校验，Codex 使用用户安装的 Desktop 随附二进制，不重复打包。构建命令生成安装产物，不自动覆盖已安装应用。
 
