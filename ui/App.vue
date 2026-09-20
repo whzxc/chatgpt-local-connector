@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { LayoutDashboard, Logs, Settings, Pause, Play, ArrowRight, ArrowLeft, RefreshCw, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
+import { LayoutDashboard, Logs, Settings, Pause, Play, ArrowRight, ArrowLeft, RefreshCw, Download, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
 import { provideConnector, api } from './composables/useConnector';
 import { isDesktop, notifyNative, openUrl } from './platform';
 import logo from './assets/local-connector.png';
@@ -8,6 +8,7 @@ import PlayfulMascot from './components/PlayfulMascot.vue';
 import chatgptLogo from './assets/chatgpt.png';
 import codexLogo from './assets/codex.png';
 import { startUpdateChecks, useAppUpdate } from './composables/useAppUpdate';
+import AppUpdateDialog from './components/AppUpdateDialog.vue';
 const appUpdate = useAppUpdate();
 let stopUpdateChecks = () => {};
 onMounted(() => { stopUpdateChecks = startUpdateChecks(); });
@@ -92,6 +93,7 @@ async function reconnect() {
       <button v-if="page==='overview'||page==='guide'" class="brand ghost" @click="navigate('overview')" aria-label="首页"><img :src="logo" alt=""/> <span>Local Connector</span></button>
       <div v-else class="header-page-title"><button class="ghost" aria-label="返回首页" @click="navigate('overview')"><ArrowLeft aria-hidden="true"/></button><h1>{{page==='settings'?'设置':page==='tasks'?'任务':'记录'}}</h1></div>
       <nav class="top-nav" aria-label="主导航">
+        <button v-if="appUpdate.available.value" class="active" :aria-label="`更新至 ${appUpdate.update.value?.version}`" :title="`新版本 ${appUpdate.update.value?.version} · 查看更新`" aria-haspopup="dialog" @click="appUpdate.showUpdate"><Download aria-hidden="true"/></button>
         <button class="tasks-nav" :class="{active:page==='tasks'}" :aria-pressed="page==='tasks'" aria-label="任务" title="任务" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
         <button :class="{active:page==='logs'}" :aria-pressed="page==='logs'" aria-label="记录" title="记录" @click="navigate('logs')"><Logs aria-hidden="true" /></button>
         <button :class="{active:page==='settings'}" :aria-pressed="page==='settings'" aria-label="设置" title="设置" @click="navigate('settings')"><Settings aria-hidden="true" /></button>
@@ -99,7 +101,6 @@ async function reconnect() {
       <div v-if="isDesktop&&!mac" class="window-controls"><button aria-label="最小化" @click="windowAction('minimize')"><Minus /></button><button aria-label="最大化或还原" @click="windowAction('toggleMaximize')"><Square /></button><button aria-label="关闭窗口" @click="windowAction('close')"><X /></button></div>
     </header>
     <main ref="workspace" class="workspace" :class="{'records-workspace':page==='logs'}">
-      <div v-if="appUpdate.available.value && page!=='settings'" class="status-banner" role="status"><Info aria-hidden="true"/><span>Local Connector {{appUpdate.update.value?.version}} 可更新</span><button class="text-button" @click="navigate('settings')">查看更新</button></div>
       <div v-if="feedback.text && feedback.error" class="status-banner warning" role="alert"><TriangleAlert aria-hidden="true"/><span>{{feedback.text}}</span><button class="ghost banner-dismiss" aria-label="关闭提示" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
       <template v-if="page==='guide'"><ChatGuide @done="navigate('overview')"/></template>
       <template v-else-if="page==='overview'">
@@ -131,6 +132,7 @@ async function reconnect() {
         <SettingsPage v-if="status"/>
       </template>
     </main>
+    <AppUpdateDialog/>
     <div v-if="feedback.text && !feedback.error" class="message" role="status">{{feedback.text}}<button aria-label="关闭提示" @click="feedback.text=''"><X aria-hidden="true" /></button></div>
   </div>
 </template>

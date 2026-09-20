@@ -9,6 +9,8 @@ const downloaded = ref(0);
 const total = ref<number>();
 const error = ref('');
 const message = ref('');
+const dialogOpen = ref(false);
+let dismissedVersion = '';
 const autoCheck = ref(localStorage.getItem('update-auto-check') !== 'off');
 const skipped = ref(localStorage.getItem('update-skipped-version') || '');
 const supported = isDesktop;
@@ -22,7 +24,9 @@ async function check(manual = true) {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     update.value = await invoke<Update>('check_update');
+    error.value = ''; message.value = '';
     localStorage.setItem('update-last-check', String(Date.now()));
+    if (available.value && (manual || update.value.version !== dismissedVersion)) showUpdate();
     if (manual && !update.value.available) message.value = '已是最新版本。';
   } catch (cause) {
     if (manual) error.value = `检查更新失败：${String(cause)}。可重试或前往下载页。`;
@@ -54,6 +58,13 @@ function skip() {
   if (active.value) return;
   skipped.value = update.value?.version || '';
   localStorage.setItem('update-skipped-version', skipped.value);
+  dismissUpdate();
+}
+function showUpdate() { dialogOpen.value = true; }
+function dismissUpdate() {
+  if (active.value) return;
+  dismissedVersion = update.value?.version || '';
+  dialogOpen.value = false;
 }
 function setAutoCheck(value: boolean) {
   autoCheck.value = value;
@@ -75,4 +86,4 @@ export function startUpdateChecks() {
 async function openDownloads() {
   try { await openUrl(releaseUrl); } catch (cause) { error.value = `无法打开下载页：${String(cause)}`; }
 }
-export const useAppUpdate = () => ({ update, checking, phase, active, available, progress, downloaded, error, message, autoCheck, supported, check, install, cancel, skip, setAutoCheck, openDownloads });
+export const useAppUpdate = () => ({ update, checking, phase, active, available, progress, downloaded, error, message, autoCheck, supported, dialogOpen, showUpdate, dismissUpdate, check, install, cancel, skip, setAutoCheck, openDownloads });
