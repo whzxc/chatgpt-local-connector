@@ -1,8 +1,16 @@
 # ChatGPT Local Connector
 
-一个轻量的本机连接器：通过官方 Secure MCP Tunnel，让 ChatGPT 读取本机项目事实并管理 Codex Desktop 中的任务。
+**在 ChatGPT 里聊想法，让本机的 Codex 接着干。**
 
-安装包使用 **Tauri + Rust + Vue**。Rust 管理连接、配置、MCP 与 Desktop 通信；Vue 运行在系统 WebView 中。最终用户无需安装 Node、npm、Rust 或 Cargo，应用也不携带这些运行环境。Node 仅用于源码开发和前端构建。
+Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通过官方 Secure MCP Tunnel，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+
+![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
+
+- **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，讨论有据可依。
+- **聊到哪，做到哪**：在对话里创建、续接或中断 Codex 任务，也能查看任务进展和结果。
+- **连接有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，连接状态一眼可见。
+
+日常使用无需安装 Node、npm、Rust 或 Cargo。当前支持 **Apple Silicon Mac** 的完整接入；Windows 提供桌面预览包，尚不支持同等的 Desktop 任务接入。
 
 ## 安装
 
@@ -19,9 +27,11 @@
 
 Tunnel 身份、权限及 ChatGPT 接入详见[接入指南](docs/tunnel.md)。首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口保留菜单栏和连接，退出应用则关闭连接。
 
-Codex Desktop 自己拥有任务执行进程。Connector 通过 Desktop IPC 管理任务，不替换 Desktop app-server；关闭 Connector 不会主动中断 Desktop 中的任务。无 Desktop owner 时不会冒充任务空闲，也不会接管任务执行。
+### 分工与边界
 
-不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。当前仅支持 Apple Silicon Mac 的 Desktop 外部任务管理，Windows 桌面壳可构建，但尚不能完成同等的首次接入流程。
+任务执行进程由 Codex Desktop 管理。Connector 通过 Desktop IPC 管理任务，不替换 Desktop app-server；关闭 Connector 不会主动中断 Desktop 中的任务。Desktop 不可用时，Connector 不会接管任务执行，也不会把未知状态显示为空闲。
+
+不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。
 
 ## 开发
 
@@ -30,7 +40,11 @@ npm ci
 npm run dev:ui
 ```
 
-需要 Node 24.12+、Rust stable 和对应平台 SDK。开发预览使用 Vite 热更新，仅读取原生应用状态；没有原生应用时启动只读 Rust 预览进程，不启动 Tunnel。
+技术栈是 **Tauri + Rust + Vue**：Rust 管理连接、配置、MCP 与 Desktop 通信，Vue 运行在系统 WebView 中。安装包不携带 Node、npm、Rust 或 Cargo，Node 仅用于源码开发和前端构建。
+
+开发需要 Node 24.12+、Rust stable 和对应平台 SDK。开发预览使用 Vite 热更新，仅读取原生应用状态；没有原生应用时启动只读 Rust 预览进程，不启动 Tunnel。
+
+相关文档：
 
 - [安装与更新](docs/installation.md)
 - [发布维护](docs/release.md)
