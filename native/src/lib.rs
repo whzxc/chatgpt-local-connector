@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::Mutex;
+pub mod cli;
 pub mod control;
 pub mod desktop;
 pub mod https;

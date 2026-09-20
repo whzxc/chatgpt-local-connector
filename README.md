@@ -16,17 +16,21 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 
 安装包与可用版本以 [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) 为准。直接安装、Homebrew、系统拦截、更新与卸载见 [安装指南](docs/installation.md)。
 
-## 使用
+## 让 Codex 帮你配置（推荐）
 
-1. 确保本机 Codex Desktop 已安装、已登录且可用。
-2. 打开 Local Connector，首页未配置提示可直接前往设置，选择 OpenAI Tunnel 或 HTTPS MCP。所需隧道客户端由应用自动下载和管理。
-3. 官方模式：在 OpenAI Platform 创建通道，或向管理员取得 Tunnel ID 和 runtime API Key，并确认通道关联目标 ChatGPT 工作区及账号具备使用权限。将两项信息填入应用并保存；Codex 登录不能替代 Tunnel 凭据。
-   HTTPS 模式：Cloudflare 临时体验无需填写，固定域名填写 Tunnel Token 和公网 MCP URL、在 Cloudflare 配置公开路由；ngrok 只填 Authtoken。点击「保存并连接」启动隧道；选择自定义域名则填写公网 MCP URL，并自行配置 TLS 反向代理。
-4. 点击「开启连接」，等待本机传输和 Codex 就绪。
-5. 在 ChatGPT 开启开发者模式，进入 Plugins → ＋，填写名称和描述，官方模式选择 Tunnel 并填写 Tunnel ID；HTTPS 模式填写公网 MCP URL，认证选择 No authentication，然后创建连接。已有连接无须重复添加；本机安装不会自动完成网页端授权。
-6. 新建 ChatGPT 对话并选用 Local Connector，发送应用接入引导提供的验证消息，或执行一次本机项目只读查询。收到成功的远程工具调用后，应用会记录「已验证」。若要确认任务执行能力，再发起一个无害任务并读取完成结果。
+在这台电脑的 Codex 中发送下面的消息。Codex 会检查已有进度，完成安装、配置、排障和验收；需要登录、授权或填写凭据时再由你操作。默认使用官方 OpenAI Secure MCP Tunnel。
 
-Tunnel 身份、权限及 ChatGPT 接入详见[接入指南](docs/tunnel.md)。首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口保留菜单栏和连接，退出应用则关闭连接。
+```text
+请帮我在这台电脑上安装、配置并验收 ChatGPT Local Connector，默认使用官方 OpenAI Secure MCP Tunnel。先检查已有安装和配置；若应用提供 cli guide，请读取内嵌指南并用 cli doctor 继续，否则读取 https://github.com/whzxc/chatgpt-local-connector/blob/main/docs/codex-setup.md ，按实际发行版本操作。请完成能自动完成的安装、配置、排障和验收，只在需要我登录、授权、提供凭据或做必要选择时叫我；凭据让我直接填入本机应用，不要贴在聊天里。保留已有可用配置，不重复创建连接。最终分别确认本机连接、真实 ChatGPT 工具调用和无害 Codex 任务的完成结果；无法验证的部分明确说明。
+```
+
+之后遇到连接问题，也可以复制上面的消息，直接让 Codex 按同一指南排查。使用有本机命令执行能力的 Codex；ChatGPT 账号/工作区权限、Tunnel 身份和必要的用户授权仍需具备。
+
+[Codex 操作指南与 CLI](docs/codex-setup.md)提供配置流程和诊断方式；以实际发行包内的 `cli help` / `cli guide` 为准。希望自己配置，可阅读[手动接入指南](docs/tunnel.md)。
+
+## 日常使用
+
+首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口后连接继续运行，退出应用则关闭连接。macOS 可在「设置 → 通用 → 显示位置」选择「全部」「仅菜单栏」或「仅 Dock 栏」，修改立即生效并自动保存。
 
 ### 分工与边界
 

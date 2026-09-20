@@ -1,6 +1,6 @@
 # 接入 ChatGPT：OpenAI Tunnel 与 HTTPS MCP
 
-返回[项目首页](../README.md)。普通使用者在原生应用的设置页完成本机配置和连接启停，缺失的连接组件由应用自动准备，无须手工创建 Tunnel profile。
+返回[项目首页](../README.md)。推荐先复制首页消息，让本机 Codex 按[配置与排障指南](codex-setup.md)完成接入，默认使用官方 Tunnel。以下为手动操作说明。普通使用者在原生应用的设置页完成本机配置和连接启停，缺失的连接组件由应用自动准备，无须手工创建 Tunnel profile。
 
 ## HTTPS MCP
 

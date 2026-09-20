@@ -576,6 +576,13 @@ impl Service {
                 self.control.task_runtime(&route[14..]).await
             }
             ("GET", "status") => self.status().await,
+            ("POST", "verification/reset") => {
+                let mut v = self.verification.lock().await;
+                let next = json!({"binding":v["binding"],"code":id(),"verifiedAt":null});
+                save(&root().join("web/chatgpt.json"), &next)?;
+                *v = next;
+                Ok(json!({"code":v["code"],"verifiedAt":null}))
+            }
             ("GET", "core") => Ok(self.status().await?["core"].clone()),
             ("GET", "config/credentials") => {
                 let settings = self.settings.lock().await;
@@ -606,12 +613,28 @@ impl Service {
                 *settings = next;
                 Ok(json!({"ok":true}))
             }
-            ("PUT", "config") => {
+            ("PUT", "config") | ("PATCH", "config/tunnel") => {
                 if self.connected.load(std::sync::atomic::Ordering::SeqCst) {
                     return Err("请先关闭连接".into());
                 }
+                let mut body = if method == "PATCH" {
+                    let fields = body.as_object().ok_or("配置格式错误")?;
+                    if fields
+                        .keys()
+                        .any(|k| !["tunnelId", "apiKey"].contains(&k.as_str()))
+                    {
+                        return Err("仅接受 tunnelId 和 apiKey".into());
+                    }
+                    let mut next = self.settings.lock().await.clone();
+                    next["connectionMode"] = json!("tunnel");
+                    for (key, value) in fields {
+                        next[key] = value.clone();
+                    }
+                    next
+                } else {
+                    body
+                };
                 validate_config(&body)?;
-                let mut body = body;
                 if string(&body, "apiKey").is_empty() {
                     body["apiKey"] = self.settings.lock().await["apiKey"].clone();
                 }

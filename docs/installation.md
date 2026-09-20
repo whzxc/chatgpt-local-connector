@@ -9,7 +9,7 @@
 | macOS | `Local.Connector_<版本>_aarch64.dmg` | 仅支持 Apple Silicon |
 | Windows x64 | `…-setup.exe` / `….msi` | 预览包；Desktop 任务接入尚未实现，暂不支持同等的任务执行能力 |
 
-应用不需要用户安装 Node、npm、Rust 或 Cargo。使用前需安装并登录 Codex Desktop；官方模式填写 Tunnel ID/runtime API Key，连接组件在首次开启连接时自动准备；自备 HTTPS MCP 模式配置公网 URL、监听地址和访问密钥，不需要 Tunnel Client。两种方式都需在 ChatGPT 添加连接后才可远程使用，详见 [首次使用](../README.md#使用)。
+应用不需要用户安装 Node、npm、Rust 或 Cargo。使用前需安装并登录 Codex Desktop；官方模式填写 Tunnel ID/runtime API Key，连接组件在首次开启连接时自动准备；自备 HTTPS MCP 模式配置公网 URL、监听地址和访问密钥，不需要 Tunnel Client。两种方式都需在 ChatGPT 添加连接后才可远程使用，详见 [Codex 配置引导](codex-setup.md)。
 
 ## macOS 安装
 

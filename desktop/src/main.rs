@@ -3,6 +3,8 @@ use connector_core::service::Service;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::Manager;
+#[cfg(target_os = "macos")]
+mod appearance;
 mod tray;
 mod updates;
 #[cfg(target_os = "macos")]
@@ -21,6 +23,10 @@ async fn request(
             .load(std::sync::atomic::Ordering::SeqCst)
     {
         return Err("正在安装更新，请等待应用重启。".into());
+    }
+    #[cfg(target_os = "macos")]
+    if route == "appearance" {
+        return appearance::request(app, method, body).await;
     }
     if cfg!(debug_assertions) {
         return connector_core::transport::forward_request(route, method, body).await;
@@ -54,6 +60,12 @@ fn main() {
         .nth(1)
     {
         std::env::set_var("CLC_STATE_DIR", state_dir);
+    }
+    if std::env::args().nth(1).as_deref() == Some("cli") {
+        let runtime = tokio::runtime::Runtime::new().expect("CLI runtime");
+        std::process::exit(
+            runtime.block_on(connector_core::cli::run(std::env::args().skip(2).collect())),
+        );
     }
     if std::env::args().nth(1).as_deref() == Some("stdio") {
         let runtime = tokio::runtime::Runtime::new().expect("MCP runtime");
@@ -108,6 +120,8 @@ fn main() {
                 window_controls::align(&window);
             }
             tray::install(app)?;
+            #[cfg(target_os = "macos")]
+            appearance::install(app).map_err(std::io::Error::other)?;
             Ok(())
         })
         .on_window_event(|window, event| {

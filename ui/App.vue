@@ -38,7 +38,7 @@ const desktopLabel = computed(() => ({ ready: '已就绪', running: '已打开',
 const verified = computed(() => !!status.value?.core.chatgpt?.verifiedAt);
 const tunnelRunning = computed(() => status.value?.connection?.running ?? !['stopped','error'].includes(state.value));
 const progressing = computed(() => ['connect','disconnect'].includes(busy.value) || ['starting','stopping'].includes(state.value));
-const title = computed(() => needsConfiguration.value ? '请先配置连接。' : progressing.value ? (busy.value === 'disconnect' ? '正在关闭连接…' : '正在建立连接…') : connected.value ? (verified.value ? '已连接，可开始使用' : status.value?.config.connectionMode === 'https' ? '本机 MCP 已开启，等待公网验证。' : '本机连接已启动，等待 ChatGPT 验证。') : ['error','degraded'].includes(state.value) ? '连接异常，请重试。' : '连接 ChatGPT 与本机 Codex。');
+const title = computed(() => needsConfiguration.value ? '请先配置连接。' : progressing.value ? (busy.value === 'disconnect' ? '正在关闭连接…' : '正在建立连接…') : connected.value ? (verified.value ? '已连接，从 ChatGPT 开始' : status.value?.config.connectionMode === 'https' ? '本机 MCP 已开启，等待公网验证。' : '本机连接已启动，等待 ChatGPT 验证。') : ['error','degraded'].includes(state.value) ? '连接异常，请重试。' : '连接 ChatGPT 与本机 Codex。');
 const links = computed(() => {
   const pending = progressing.value;
   const failed = ['error', 'degraded'].includes(state.value);

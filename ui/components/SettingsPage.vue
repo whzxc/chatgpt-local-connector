@@ -28,6 +28,23 @@ async function changeProxy() {
   await run('network', saveProxy);
   proxyMode.value = status.value?.config.proxyMode || 'system';
 }
+const mac = navigator.platform.toLowerCase().includes('mac');
+const appearance = ref({ showMenuBar: true, showDock: true });
+const appearanceReady = ref(false);
+onMounted(async () => {
+  if (!mac || !isDesktop) return;
+  try {
+    appearance.value = await api<typeof appearance.value>('appearance');
+    appearanceReady.value = true;
+  } catch (error) { notify(error instanceof Error ? error.message : String(error), true); }
+});
+const displayPosition = computed(() => appearance.value.showMenuBar ? (appearance.value.showDock ? 'all' : 'menu') : 'dock');
+async function setAppearance(position: 'all' | 'menu' | 'dock') {
+  const next = { showMenuBar: position !== 'dock', showDock: position !== 'menu' };
+  await run('appearance', async () => {
+    appearance.value = await api<typeof appearance.value>('appearance', 'PUT', next);
+  });
+}
 const service = ref<Service>();
 const theme = ref(localStorage.getItem('theme') || 'system');
 const notifications = ref(localStorage.getItem('notifications') !== 'off');
@@ -97,6 +114,11 @@ async function setApproval(enabled: boolean) {
       <SettingsRow title="外观">
         <div class="settings-theme" role="group" aria-label="外观">
           <button v-for="option in [{value:'system',label:'跟随系统',icon:Monitor},{value:'light',label:'浅色',icon:Sun},{value:'dark',label:'深色',icon:Moon}]" :key="option.value" :aria-pressed="theme===option.value" :class="{active:theme===option.value}" @click="theme=option.value;preferences()"><component :is="option.icon" aria-hidden="true"/>{{option.label}}</button>
+        </div>
+      </SettingsRow>
+      <SettingsRow v-if="mac" title="显示位置">
+        <div class="mode-switch" role="group" aria-label="显示位置" :title="!isDesktop ? '请在桌面应用中设置' : undefined">
+          <button v-for="option in [{value:'all',label:'全部'},{value:'menu',label:'仅菜单栏'},{value:'dock',label:'仅 Dock 栏'}] as const" :key="option.value" type="button" :aria-pressed="displayPosition===option.value" :class="{active:displayPosition===option.value}" :disabled="!!busy || !appearanceReady" @click="setAppearance(option.value)">{{option.label}}</button>
         </div>
       </SettingsRow>
     </SettingsGroup>
