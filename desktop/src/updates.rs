@@ -10,6 +10,7 @@ pub struct UpdateState {
     cancel: watch::Sender<bool>,
     downloading: AtomicBool,
     pub installing: AtomicBool,
+    pub restarting: AtomicBool,
 }
 impl Default for UpdateState {
     fn default() -> Self {
@@ -18,6 +19,7 @@ impl Default for UpdateState {
             cancel: watch::channel(false).0,
             downloading: AtomicBool::new(false),
             installing: AtomicBool::new(false),
+            restarting: AtomicBool::new(false),
         }
     }
 }
@@ -98,13 +100,15 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         return Ok(json!({"available":false}));
     };
     state.installing.store(true, Ordering::SeqCst);
-    struct Reset<'a>(&'a AtomicBool);
+    struct Reset<'a>(&'a UpdateState);
     impl Drop for Reset<'_> {
         fn drop(&mut self) {
-            self.0.store(false, Ordering::SeqCst);
+            if !self.0.restarting.load(Ordering::SeqCst) {
+                self.0.installing.store(false, Ordering::SeqCst);
+            }
         }
     }
-    let _reset = Reset(&state.installing);
+    let _reset = Reset(&state);
     let _ = app.emit("update-progress", json!({"phase":"installing"}));
     let service = app
         .state::<std::sync::Arc<connector_core::service::Service>>()
@@ -117,11 +121,10 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         &resume_path(),
         &json!({"version":version,"connected":connected}),
     )?;
-    if connected {
-        if let Err(error) = service.request("stop", "POST", json!({})).await {
-            let _ = std::fs::remove_file(resume_path());
-            return Err(error);
-        }
+    // Drain auxiliary work even when the tunnel is already disconnected.
+    if let Err(error) = service.request("stop", "POST", json!({})).await {
+        let _ = std::fs::remove_file(resume_path());
+        return Err(error);
     }
     if let Err(error) = update.install(bytes) {
         let _ = std::fs::remove_file(resume_path());
@@ -135,5 +138,9 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
             Err(restore) => format!("安装失败：{error}；恢复连接失败：{restore}"),
         });
     }
-    app.restart();
+    // restart() never returns on a runtime worker. Let this command finish and
+    // release its guards before the event loop completes the restart instead.
+    state.restarting.store(true, Ordering::SeqCst);
+    app.request_restart();
+    Ok(json!({"available":true,"version":version,"restarting":true}))
 }

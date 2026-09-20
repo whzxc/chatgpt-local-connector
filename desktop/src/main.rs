@@ -147,8 +147,16 @@ fn main() {
         .expect("Local Connector 启动失败")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                if let Some(service) = app.try_state::<Arc<Service>>() {
-                    tauri::async_runtime::block_on(service.stop()).ok();
+                // The updater already drained the service before replacing the
+                // app. Do not block the event loop on a second async shutdown.
+                if !app
+                    .state::<updates::UpdateState>()
+                    .restarting
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    if let Some(service) = app.try_state::<Arc<Service>>() {
+                        tauri::async_runtime::block_on(service.stop()).ok();
+                    }
                 }
                 let metadata = connector_core::root().join("web/native.json");
                 if connector_core::load(&metadata).is_ok_and(|v| v["pid"] == std::process::id()) {

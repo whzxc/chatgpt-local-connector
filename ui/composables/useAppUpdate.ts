@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import { isDesktop, openUrl } from '../platform';
 const releaseUrl = 'https://github.com/whzxc/chatgpt-local-connector/releases/latest';
-type Update = { available: boolean; version?: string; notes?: string; date?: string };
+type Update = { available: boolean; version?: string; notes?: string; date?: string; restarting?: boolean };
 const update = ref<Update>();
 const checking = ref(false);
 const phase = ref<'idle' | 'downloading' | 'installing'>('idle');
@@ -37,6 +37,7 @@ async function install() {
   error.value = ''; message.value = ''; downloaded.value = 0; total.value = undefined;
   phase.value = 'downloading';
   let unlisten: (() => void) | undefined;
+  let restarting = false;
   try {
     const [{ invoke }, { listen }] = await Promise.all([import('@tauri-apps/api/core'), import('@tauri-apps/api/event')]);
     unlisten = await listen<{ downloaded?: number; total?: number; phase: 'downloading' | 'installing' }>('update-progress', event => {
@@ -45,11 +46,12 @@ async function install() {
       if (event.payload.total !== undefined) total.value = event.payload.total;
     });
     const result = await invoke<Update>('install_update', { version: update.value.version });
+    if (result.restarting) { restarting = true; phase.value = 'installing'; return; }
     if (!result.available) { update.value = result; message.value = '已是最新版本。'; }
   } catch (cause) {
     if (String(cause) === 'UPDATE_CANCELLED') message.value = '已取消下载，当前连接未改变。';
     else error.value = `更新失败：${String(cause)}`;
-  } finally { unlisten?.(); phase.value = 'idle'; }
+  } finally { unlisten?.(); if (!restarting) phase.value = 'idle'; }
 }
 async function cancel() {
   try { const { invoke } = await import('@tauri-apps/api/core'); await invoke('cancel_update'); } catch (cause) { error.value = String(cause); }
