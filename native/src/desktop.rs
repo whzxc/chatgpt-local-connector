@@ -2,6 +2,12 @@ use crate::*;
 use std::{collections::HashMap, time::Duration};
 #[cfg(unix)]
 use tokio::net::UnixStream;
+#[cfg(unix)]
+type DesktopStream = UnixStream;
+#[cfg(windows)]
+type DesktopStream = tokio::net::windows::named_pipe::NamedPipeClient;
+#[cfg(windows)]
+mod windows;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{oneshot, Notify},
@@ -11,6 +17,7 @@ pub struct Installation {
     pub app: PathBuf,
     pub binary: PathBuf,
 }
+#[cfg(not(windows))]
 pub fn installation() -> Option<Installation> {
     if !cfg!(target_os = "macos") {
         return None;
@@ -29,17 +36,19 @@ pub fn installation() -> Option<Installation> {
     }
     None
 }
+#[cfg(windows)]
+pub fn installation() -> Option<Installation> {
+    windows::installation()
+}
 pub fn require_installation() -> Result<Installation> {
-    installation()
-        .ok_or_else(|| "请先安装 macOS Codex Desktop；Windows 外部任务管理尚未实现".into())
+    installation().ok_or_else(|| "请先安装 Codex Desktop，并确认其捆绑的 Codex CLI 可用".into())
 }
 struct Pending {
     tx: oneshot::Sender<Result<Value>>,
     target: Option<String>,
 }
 pub struct Ipc {
-    #[cfg(unix)]
-    writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
+    writer: Arc<Mutex<tokio::io::WriteHalf<DesktopStream>>>,
     pending: Arc<Mutex<HashMap<String, Pending>>>,
     owners: Arc<Mutex<HashMap<String, String>>>,
     snapshots: Arc<Mutex<HashMap<String, Value>>>,
@@ -54,27 +63,28 @@ impl Drop for Ipc {
     }
 }
 impl Ipc {
-    #[cfg(not(unix))]
-    pub async fn open(_events: SharedEvents, _session: &str) -> Result<Self> {
-        Err("DESKTOP_PLATFORM_UNSUPPORTED".into())
-    }
-    #[cfg(unix)]
     pub async fn open(events: SharedEvents, session: &str) -> Result<Self> {
-        use std::os::unix::fs::{FileTypeExt, MetadataExt};
         require_installation()?;
-        let home = std::env::var_os("CODEX_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| dirs::home_dir().unwrap().join(".codex"));
-        let socket = home.join("ipc/ipc.sock");
-        let stat = std::fs::symlink_metadata(&socket).map_err(|e| e.to_string())?;
-        if !stat.file_type().is_socket() || stat.uid() != unsafe { libc::geteuid() } {
-            return Err("DESKTOP_SOCKET_OWNER_MISMATCH".into());
-        }
-        let socket = tokio::time::timeout(Duration::from_secs(3), UnixStream::connect(socket))
-            .await
-            .map_err(|_| "DESKTOP_CONNECT_TIMEOUT")?
-            .map_err(|e| e.to_string())?;
-        let (mut rd, wr) = socket.into_split();
+        #[cfg(unix)]
+        let socket = {
+            use std::os::unix::fs::{FileTypeExt, MetadataExt};
+            let home = std::env::var_os("CODEX_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| dirs::home_dir().unwrap().join(".codex"));
+            let socket = home.join("ipc/ipc.sock");
+            let stat = std::fs::symlink_metadata(&socket).map_err(|e| e.to_string())?;
+            if !stat.file_type().is_socket() || stat.uid() != unsafe { libc::geteuid() } {
+                return Err("DESKTOP_SOCKET_OWNER_MISMATCH".into());
+            }
+            let socket = tokio::time::timeout(Duration::from_secs(3), UnixStream::connect(socket))
+                .await
+                .map_err(|_| "DESKTOP_CONNECT_TIMEOUT")?
+                .map_err(|e| e.to_string())?;
+            socket
+        };
+        #[cfg(windows)]
+        let socket = windows::connect().await?;
+        let (mut rd, wr) = tokio::io::split(socket);
         let writer = Arc::new(Mutex::new(wr));
         let pending: Arc<Mutex<HashMap<String, Pending>>> = Default::default();
         let owners: Arc<Mutex<HashMap<String, String>>> = Default::default();
@@ -189,8 +199,7 @@ impl Ipc {
         ipc.client = string(&init["result"], "clientId").into();
         Ok(ipc)
     }
-    #[cfg(unix)]
-    async fn frame(w: &Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>, v: Value) -> Result<()> {
+    async fn frame(w: &Arc<Mutex<tokio::io::WriteHalf<DesktopStream>>>, v: Value) -> Result<()> {
         let bytes = serde_json::to_vec(&v).map_err(|e| e.to_string())?;
         let mut w = w.lock().await;
         w.write_u32_le(bytes.len() as u32)
@@ -199,15 +208,7 @@ impl Ipc {
         w.write_all(&bytes).await.map_err(|e| e.to_string())
     }
     async fn write(&self, v: Value) -> Result<()> {
-        #[cfg(unix)]
-        {
-            Self::frame(&self.writer, v).await
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = v;
-            Err("DESKTOP_PLATFORM_UNSUPPORTED".into())
-        }
+        Self::frame(&self.writer, v).await
     }
     pub fn alive(&self) -> bool {
         self.alive.load(std::sync::atomic::Ordering::SeqCst)
@@ -335,6 +336,34 @@ impl Ipc {
             "turn/start" => {
                 let mut args = args.clone();
                 args["input"] = input(&args["input"])?;
+                // Desktop inherits collaborationMode separately from model/effort;
+                // its settings take precedence when App Server starts the turn.
+                if args["collaborationMode"].is_null() {
+                    let state = self.read(thread, false).await?;
+                    let settings = &state["latestThreadSettings"];
+                    if args["model"].is_null() {
+                        let model = settings["model"]
+                            .as_str()
+                            .filter(|model| !model.is_empty())
+                            .unwrap_or_else(|| string(&state, "latestModel"));
+                        if model.is_empty() {
+                            return Err("DESKTOP_MODEL_UNAVAILABLE".into());
+                        }
+                        args["model"] = json!(model);
+                    }
+                    let mut mode = settings
+                        .get("collaborationMode")
+                        .filter(|mode| mode.is_object())
+                        .unwrap_or(&state["latestCollaborationMode"])
+                        .clone();
+                    if mode.is_object() {
+                        mode["settings"]["model"] = args["model"].clone();
+                        if let Some(effort) = args.get("effort") {
+                            mode["settings"]["reasoning_effort"] = effort.clone();
+                        }
+                        args["collaborationMode"] = mode;
+                    }
+                }
                 let r = self
                     .request(
                         "thread-follower-start-turn",
@@ -413,13 +442,8 @@ pub fn input(v: &Value) -> Result<Value> {
 }
 pub async fn open_thread(thread: &str) -> Result<Value> {
     uuid::Uuid::parse_str(thread).map_err(|_| "INVALID_THREAD_ID")?;
-    let i = require_installation()?;
     let url = format!("codex://threads/{thread}");
-    output(
-        "/usr/bin/open",
-        &["-a", i.app.to_str().ok_or("invalid path")?, &url],
-    )
-    .await?;
+    open_url(Some(&url)).await?;
     Ok(json!({"state":"opened","url":url}))
 }
 pub async fn reveal(ipc: &Ipc, thread: &str) -> Result<Value> {
@@ -437,5 +461,26 @@ pub async fn reveal(ipc: &Ipc, thread: &str) -> Result<Value> {
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+pub async fn open_app() -> Result<()> {
+    open_url(None).await
+}
+async fn open_url(url: Option<&str>) -> Result<()> {
+    let installation = require_installation()?;
+    #[cfg(windows)]
+    {
+        let _ = installation;
+        windows::open(url.unwrap_or("codex://"))
+    }
+    #[cfg(not(windows))]
+    {
+        let mut args = vec!["-a", installation.app.to_str().ok_or("invalid path")?];
+        if let Some(url) = url {
+            args.push(url);
+        }
+        output("/usr/bin/open", &args).await?;
+        Ok(())
     }
 }

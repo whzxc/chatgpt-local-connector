@@ -985,7 +985,7 @@
     },
     {
       "name": "codex_create",
-      "description": "创建并执行持久任务。默认交给 macOS Codex Desktop，Connector 断开不停止 Desktop 任务；关闭自动打开设置时新任务由 Connector App Server 后台执行，关闭 Connector 连接会停止后台执行，不保证 Desktop 可操作。任务归属固定，续接和中断沿用原执行方。仅支持文本输入；Desktop 兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。",
+      "description": "创建并执行持久任务。默认交给本机 Codex Desktop，Connector 断开不停止 Desktop 任务；关闭自动打开设置时新任务由 Connector App Server 后台执行，关闭 Connector 连接会停止后台执行，不保证 Desktop 可操作。任务归属固定，续接和中断沿用原执行方。仅支持文本输入；Desktop 兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。",
       "inputSchema": {
         "type": "object",
         "properties": {

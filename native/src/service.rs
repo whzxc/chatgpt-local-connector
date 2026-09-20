@@ -322,16 +322,12 @@ impl Service {
         }
         self.stop().await?;
         if self.control.auto_open_codex()? {
-            let install = crate::desktop::require_installation()?;
+            crate::desktop::require_installation()?;
             if crate::desktop::Ipc::open(Default::default(), &self.control.session)
                 .await
                 .is_err()
             {
-                output(
-                    "/usr/bin/open",
-                    &["-a", install.app.to_str().ok_or("invalid path")?],
-                )
-                .await?;
+                crate::desktop::open_app().await?;
                 let deadline = Instant::now() + Duration::from_secs(15);
                 loop {
                     if crate::desktop::Ipc::open(Default::default(), &self.control.session)
@@ -701,10 +697,7 @@ impl Service {
                 Ok(json!({"state":if out.status.success(){"authenticated"}else{"unauthenticated"}}))
             }
             ("POST", "codex/login") => {
-                let app = crate::desktop::installation()
-                    .ok_or("请先安装 Codex Desktop")?
-                    .app;
-                output("/usr/bin/open", &["-a", app.to_str().unwrap()]).await?;
+                crate::desktop::open_app().await?;
                 Ok(json!({"state":"unauthenticated","message":"请在 Codex Desktop 中完成登录"}))
             }
             ("POST", "install") => {

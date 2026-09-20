@@ -24,8 +24,8 @@ async fn doctor() -> crate::Result<Value> {
     };
     add(
         "PLATFORM_SUPPORTED",
-        cfg!(target_os = "macos"),
-        "当前 Desktop 任务接入仅支持 macOS，Windows 预览包不能完成同等任务验收。",
+        cfg!(target_os = "macos") || cfg!(windows),
+        "Desktop 任务接入支持 macOS 和 Windows。",
     );
     add(
         "OFFICIAL_TUNNEL",

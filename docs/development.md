@@ -41,7 +41,7 @@ cargo fmt --manifest-path native/Cargo.toml -- --check
 cargo fmt --manifest-path desktop/Cargo.toml -- --check
 ```
 
-Desktop IPC 外部任务管理仅支持 macOS。
+Desktop IPC 外部任务管理支持 macOS Unix socket 和 Windows 命名管道；Windows 使用已安装的 Microsoft Store 版 Codex Desktop。
 
 ## 发行构建
 

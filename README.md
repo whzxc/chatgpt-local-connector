@@ -10,7 +10,7 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 - **聊到哪，做到哪**：在对话里创建、续接或中断 Codex 任务，也能查看任务进展和结果。
 - **连接有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，连接状态一眼可见。
 
-日常使用无需安装 Node、npm、Rust 或 Cargo。当前支持 **Apple Silicon Mac** 的完整接入；Windows 提供桌面预览包，尚不支持同等的 Desktop 任务接入。
+日常使用无需安装 Node、npm、Rust 或 Cargo。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
 
 ## 安装
 

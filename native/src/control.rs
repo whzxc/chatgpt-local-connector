@@ -691,6 +691,9 @@ impl Control {
             };
             let thread = string(&result["thread"], "id");
             let mut turn = configured(args, string(&result["thread"], "cwd"))?;
+            if !background && turn["model"].is_null() {
+                turn["model"] = result["model"].clone();
+            }
             turn["threadId"] = json!(thread);
             turn["input"] = input;
             r["state"] = json!("turn-submitting");

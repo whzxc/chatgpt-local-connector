@@ -4,7 +4,7 @@
 
 ## 入口与安装
 
-必须使用能够在目标电脑执行命令的本机 Codex。云端任务不能直接配置用户电脑。先检查现有安装和运行状态，不重复安装，不覆盖已有可用配置。当前完整 Desktop 任务接入仅支持 Apple Silicon macOS；Windows 是预览包，不能声称已具备同等任务能力。
+必须使用能够在目标电脑执行命令的本机 Codex。云端任务不能直接配置用户电脑。先检查现有安装和运行状态，不重复安装，不覆盖已有可用配置。Desktop 任务接入支持 Apple Silicon macOS 和 Windows x64；Windows 需要安装 Microsoft Store 版 Codex Desktop。
 
 未安装时，从 https://github.com/whzxc/chatgpt-local-connector/releases/latest 获取对应安装包和 SHA256SUMS.txt，核对同一版本的哈希后安装到 Applications。也可使用安装指南中的 Homebrew Cask。无需 Node、npm、Rust 或克隆源码。系统拦截按安装指南处理，不关闭系统整体安全机制。不要让用户从 DMG 内长期运行应用。
 
@@ -16,7 +16,7 @@
 "/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli doctor
 ```
 
-以实际安装位置为准，应用包中的 `Contents/Info.plist` 的 `CFBundleExecutable` 指明可执行文件。Windows 可用安装目录中的 `local-connector-desktop.exe cli help`，通过重定向读取 JSON 输出，但任务接入限制仍然存在。
+以实际安装位置为准，应用包中的 `Contents/Info.plist` 的 `CFBundleExecutable` 指明可执行文件。Windows 可用安装目录中的 `local-connector-desktop.exe cli help`，通过重定向读取 JSON 输出。
 
 `cli guide` 是当前二进制内嵌的匹配版本指南，优先于网页。若旧版本不提供 CLI，不反复尝试未知参数；核对发行包是否已提供该能力，再升级。网页文档不代表最新发行包已经包含所有命令。
 
