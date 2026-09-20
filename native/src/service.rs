@@ -115,7 +115,10 @@ impl Service {
                 if let Ok(url) = std::fs::read_to_string(dir.join("health.url")) {
                     if let Ok(url) = reqwest::Url::parse(url.trim()) {
                         if url.scheme() == "http" && url.host_str() == Some("127.0.0.1") {
-                            if let Ok(r) = reqwest::Client::new()
+                            if let Ok(r) = reqwest::Client::builder()
+                                .no_proxy()
+                                .build()
+                                .map_err(|e| e.to_string())?
                                 .get(url.join("/readyz").map_err(|e| e.to_string())?)
                                 .timeout(Duration::from_secs(2))
                                 .send()
@@ -168,7 +171,8 @@ impl Service {
                 .ready_logged
                 .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            self.log("INFO", "连接已就绪").await;
+            self.log("INFO", "本机 Tunnel 已启动，远程连通请在 ChatGPT 中验证")
+                .await;
         }
         let health = self.control.health().await;
         let core = json!({"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),"backendSession":self.control.session,"package":{"version":env!("CARGO_PKG_VERSION"),"sha":"native"},"desktop":desktop,"chatgpt":chat,"appServer":{"state":health["appServer"],"observedAt":now(),"evidence":"native-connector","stale":false},"account":{"state":"unknown","observedAt":null},"transport":{"state":state,"error":error},"logs":logs,"activeTurns":0,"activeWrites":health["activeWrites"],"pendingInteractions":self.control.events.lock().await.pending.len(),"liveProcesses":0,"uncertain":false,"draining":false,"lastInbound":null,"toolCount":catalog()["tools"].as_array().unwrap().len(),"registered":running,"schemaDiscovered":"unknown","operationVerified":"business-delivery-not-assessed"});
@@ -275,8 +279,11 @@ impl Service {
         if port == 0 {
             return Err("本机通信尚未启动".into());
         }
+        let proxy = crate::proxy::TunnelProxy::detect().await;
+        self.log("INFO", proxy.message).await;
         let result = async {
             let mut init = tunnel_command(&binary);
+            proxy.apply(&mut init);
             init.args([
                 "init",
                 "--sample",
@@ -302,6 +309,7 @@ impl Service {
                 return Err("生成 Tunnel 配置失败".into());
             }
             let mut cmd = tunnel_command(&binary);
+            proxy.apply(&mut cmd);
             cmd.args([
                 "run",
                 "--profile",

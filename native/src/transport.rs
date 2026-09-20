@@ -202,6 +202,7 @@ pub async fn stdio() -> Result<()> {
         .map_err(|_| "invalid port")?;
     let token = std::env::var("CLC_NATIVE_TOKEN").map_err(|_| "missing connector token")?;
     let client = reqwest::Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;
@@ -247,7 +248,10 @@ pub async fn stdio() -> Result<()> {
 pub async fn preview_request(service: &Arc<Service>, route: &str) -> Result<Value> {
     if let Ok(info) = load(&root().join("web/native.json")) {
         if let Some(port) = info["port"].as_u64().filter(|p| *p > 0 && *p <= 65535) {
-            let client = reqwest::Client::new();
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .map_err(|e| e.to_string())?;
             if let Ok(response) = client
                 .get(format!("http://127.0.0.1:{port}/api/{route}"))
                 .bearer_auth(string(&info, "token"))

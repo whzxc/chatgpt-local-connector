@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 pub mod control;
 pub mod desktop;
 pub mod projects;
+mod proxy;
 pub mod rpc;
 pub mod service;
 pub mod transport;
