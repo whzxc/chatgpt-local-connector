@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Local Connector",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "identifier": "com.whzxc.local-connector.desktop",
   "build": {
     "frontendDist": "../dist/ui"
@@ -38,9 +38,18 @@
       "signingIdentity": "-",
       "dmg": {
         "background": "assets/dmg-background.png",
-        "windowSize": { "width": 720, "height": 480 },
-        "appPosition": { "x": 205, "y": 210 },
-        "applicationFolderPosition": { "x": 515, "y": 210 }
+        "windowSize": {
+          "width": 720,
+          "height": 480
+        },
+        "appPosition": {
+          "x": 205,
+          "y": 210
+        },
+        "applicationFolderPosition": {
+          "x": 515,
+          "y": 210
+        }
       }
     }
   },

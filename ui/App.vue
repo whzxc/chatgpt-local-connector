@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { Logs, Settings, Pause, Play, ArrowRight, ArrowLeft, RefreshCw, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
+import { LayoutDashboard, Logs, Settings, Pause, Play, ArrowRight, ArrowLeft, RefreshCw, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
 import { provideConnector, api } from './composables/useConnector';
 import { isDesktop, isDevelopment, notifyNative } from './platform';
 import logo from './assets/local-connector.png';
@@ -12,11 +12,14 @@ const appUpdate = useAppUpdate();
 let stopUpdateChecks = () => {};
 onMounted(() => { stopUpdateChecks = startUpdateChecks(); });
 onUnmounted(() => stopUpdateChecks());
+import TasksPage from './components/TasksPage.vue';
+import { useTasks } from './composables/useTasks';
+const tasks = useTasks();
 import RecordsPage from './components/RecordsPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import ChatGuide from './components/ChatGuide.vue';
 const { status, busy, loading, connectionError, feedback, run, refresh, notify } = provideConnector();
-type Page = 'guide' | 'overview' | 'logs' | 'settings';
+type Page = 'guide' | 'overview' | 'logs' | 'settings' | 'tasks';
 const page = ref<Page>('overview');
 const workspace = ref<HTMLElement>();
 watch(page, () => workspace.value?.scrollTo({ top: 0 }));
@@ -47,7 +50,7 @@ const unlisteners: (() => void)[] = [];
 onMounted(async () => {
   if (!isDesktop) return;
   const { listen } = await import('@tauri-apps/api/event');
-  unlisteners.push(await listen<string>('navigate', event => { if (['overview','settings','logs'].includes(event.payload)) navigate(event.payload as Page); }));
+  unlisteners.push(await listen<string>('navigate', event => { if (['overview','settings','logs','tasks'].includes(event.payload)) navigate(event.payload as Page); }));
   unlisteners.push(await listen<string>('connection-error', event => notify(event.payload, true)));
 });
 onUnmounted(() => unlisteners.forEach(stop => stop()));
@@ -81,9 +84,10 @@ async function reconnect() {
   <div class="app-scene" :class="{desktop:isDesktop,mac}">
     <header class="app-header" data-tauri-drag-region>
       <button v-if="page==='overview'||page==='guide'" class="brand ghost" @click="navigate('overview')" aria-label="首页"><img :src="logo" alt=""/> <span>Local Connector</span></button>
-      <div v-else class="header-page-title"><button class="ghost" aria-label="返回首页" @click="navigate('overview')"><ArrowLeft aria-hidden="true"/></button><h1>{{page==='settings'?'设置':'记录'}}</h1></div>
+      <div v-else class="header-page-title"><button class="ghost" aria-label="返回首页" @click="navigate('overview')"><ArrowLeft aria-hidden="true"/></button><h1>{{page==='settings'?'设置':page==='tasks'?'任务':'记录'}}</h1></div>
       <nav class="top-nav" aria-label="主导航">
         <span v-if="isDevelopment" class="development-badge" title="页面实时更新，只读取后台；不会重启服务或修改连接。">开发预览 · 只读</span>
+        <button class="tasks-nav" :class="{active:page==='tasks'}" :aria-pressed="page==='tasks'" aria-label="任务" title="任务" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
         <button :class="{active:page==='logs'}" :aria-pressed="page==='logs'" aria-label="记录" title="记录" @click="navigate('logs')"><Logs aria-hidden="true" /></button>
         <button :class="{active:page==='settings'}" :aria-pressed="page==='settings'" aria-label="设置" title="设置" @click="navigate('settings')"><Settings aria-hidden="true" /></button>
       </nav>
@@ -110,7 +114,9 @@ async function reconnect() {
             </section>
           </section>
 
+
       </template>
+      <template v-else-if="page==='tasks'"><TasksPage :records="tasks.records.value" :error="tasks.error.value" @refresh="tasks.refresh"/></template>
       <template v-else-if="page==='logs'">
         <RecordsPage/>
       </template>

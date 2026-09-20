@@ -53,8 +53,8 @@ export default defineConfig({
       server.middlewares.use((request, response, next) => {
         if (!request.url?.startsWith('/api/')) return next();
         response.setHeader('Cache-Control', 'no-store');
-        if (request.method !== 'GET' || request.headers.host !== '127.0.0.1:5173'
-          || (request.headers.origin && request.headers.origin !== 'http://127.0.0.1:5173')
+        if (request.method !== 'GET' || request.headers.host !== '127.0.0.1:5187'
+          || (request.headers.origin && request.headers.origin !== 'http://127.0.0.1:5187')
           || request.headers['sec-fetch-site'] === 'cross-site'
           || (request.url === '/api/config/credentials' && request.headers['x-clc-request'] !== '1')) {
           response.writeHead(403, { 'Content-Type': 'application/json' });
@@ -78,5 +78,5 @@ export default defineConfig({
     },
   }],
   build: { outDir: '../dist/ui', emptyOutDir: true },
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  server: { host: '127.0.0.1', port: 5187, strictPort: true },
 });

@@ -19,6 +19,7 @@ export interface Config {
   hasApiKey: boolean;
 }
 export interface Status {
+  taskApprovalEnabled: boolean;
   core: CoreSnapshot;
   connection?: { running: boolean; updateAvailable: boolean };
   deviceName: string;

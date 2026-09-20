@@ -173,7 +173,7 @@ impl Service {
         let health = self.control.health().await;
         let core = json!({"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),"backendSession":self.control.session,"package":{"version":env!("CARGO_PKG_VERSION"),"sha":"native"},"desktop":desktop,"chatgpt":chat,"appServer":{"state":health["appServer"],"observedAt":now(),"evidence":"native-connector","stale":false},"account":{"state":"unknown","observedAt":null},"transport":{"state":state,"error":error},"logs":logs,"activeTurns":0,"activeWrites":health["activeWrites"],"pendingInteractions":self.control.events.lock().await.pending.len(),"liveProcesses":0,"uncertain":false,"draining":false,"lastInbound":null,"toolCount":catalog()["tools"].as_array().unwrap().len(),"registered":running,"schemaDiscovered":"unknown","operationVerified":"business-delivery-not-assessed"});
         Ok(
-            json!({"core":core,"connection":{"running":running,"updateAvailable":false},"config":config,"tunnel":{"state":state,"error":error},"connector":{"state":state},"logs":logs,"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"deviceName":std::env::var("HOSTNAME").unwrap_or_else(|_|"本机".into()),"chatgptUrl":"https://chatgpt.com/plugins"}),
+            json!({"core":core,"connection":{"running":running,"updateAvailable":false},"config":config,"tunnel":{"state":state,"error":error},"connector":{"state":state},"logs":logs,"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"deviceName":std::env::var("HOSTNAME").unwrap_or_else(|_|"本机".into()),"taskApprovalEnabled":self.control.approval_mode()?,"chatgptUrl":"https://chatgpt.com/plugins"}),
         )
     }
     pub async fn stop(&self) -> Result<()> {
@@ -387,6 +387,24 @@ impl Service {
             None
         };
         match (method, route) {
+            ("GET", "task-settings") => Ok(json!({"enabled":self.control.approval_mode()?})),
+            ("PUT", "task-settings") => {
+                let enabled = body["enabled"].as_bool().ok_or("invalid enabled")?;
+                save(
+                    &root().join("task-settings.json"),
+                    &json!({"enabled":enabled}),
+                )?;
+                Ok(json!({"enabled":enabled}))
+            }
+            ("POST", "tasks/decision") => {
+                self.control
+                    .decide(string(&body, "requestId"), string(&body, "action"), "local")
+                    .await
+            }
+            ("GET", "tasks") => Ok(json!({"records":self.control.task_records().await?})),
+            ("GET", route) if route.starts_with("tasks/runtime/") => {
+                self.control.task_runtime(&route[14..]).await
+            }
             ("GET", "status") => self.status().await,
             ("GET", "core") => Ok(self.status().await?["core"].clone()),
             ("GET", "config/credentials") => {

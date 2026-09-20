@@ -54,6 +54,9 @@ function preferences() {
   localStorage.setItem('theme', theme.value); document.documentElement.dataset.theme = theme.value;
   localStorage.setItem('notifications', notifications.value ? 'on' : 'off');
 }
+async function setApproval(enabled: boolean) {
+  await run('task-settings', async () => { await api('task-settings', 'PUT', { enabled }); await refresh(); });
+}
 </script>
 <template>
   <div class="settings-page">
@@ -74,6 +77,7 @@ function preferences() {
     </section>
     <section class="settings-block">
       <h2>偏好</h2>
+      <label class="preference-row"><span><strong>任务审批模式</strong><small>{{status?.taskApprovalEnabled?'默认先确认；云端仍可批准或绕过。':'收到任务请求后直接提交。'}} 用户意图始终优先。</small></span><input type="checkbox" role="switch" aria-label="任务审批模式" :checked="!!status?.taskApprovalEnabled" :disabled="!!busy || !status || isDevelopment" @change="setApproval(($event.target as HTMLInputElement).checked)"/></label>
       <label class="preference-row"><span><strong>登录系统时开启连接</strong><small>登录后自动开启连接；关闭窗口不影响连接。</small></span><input type="checkbox" role="switch" :checked="service?.enabled" :disabled="!!busy || !service?.supported" @change="startup" /></label>
       <div class="preference-row"><span><strong>外观</strong><small>选择你习惯的界面颜色。</small></span><div class="theme-options" role="group" aria-label="外观"><button v-for="option in [{value:'system',label:'跟随系统',icon:Monitor},{value:'light',label:'浅色',icon:Sun},{value:'dark',label:'深色',icon:Moon}]" :key="option.value" :aria-label="option.label" :title="option.label" :aria-pressed="theme===option.value" :class="{active:theme===option.value}" @click="theme=option.value;preferences()"><component :is="option.icon" aria-hidden="true"/></button></div></div>
       <label v-if="isDesktop" class="preference-row"><span><strong>连接异常通知</strong><small>连接需要处理时提醒我。</small></span><input v-model="notifications" type="checkbox" role="switch" @change="preferences" /></label>

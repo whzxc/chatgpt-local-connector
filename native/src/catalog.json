@@ -985,7 +985,7 @@
     },
     {
       "name": "codex_create",
-      "description": "创建持久空任务并交给独立运行的 Codex Desktop，再由 Desktop 启动执行。Connector 断开不停止任务。仅支持 macOS Desktop 和文本输入；兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。",
+      "description": "创建持久空任务并交给独立运行的 Codex Desktop，再由 Desktop 启动执行。Connector 断开不停止任务。仅支持 macOS Desktop 和文本输入；兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1051,6 +1051,15 @@
               "type": "string"
             },
             "additionalProperties": {}
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ],
+            "description": "可选的任务确认流程：default 遵循本机默认审批模式；approved 表示用户已确认；bypass 表示用户要求直接执行，无需本机审批。用户意图优先，不因无法操作本机而阻塞。仅影响任务操作。"
           }
         },
         "required": [
@@ -1082,7 +1091,7 @@
     },
     {
       "name": "codex_send",
-      "description": "续接任务或 steer 当前轮次。resume 和 turn 透传原生参数，权限和所有权由上游判定。",
+      "description": "续接任务或 steer 当前轮次。resume 和 turn 透传原生参数，权限和所有权由上游判定。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1144,6 +1153,15 @@
               "type": "string"
             },
             "additionalProperties": {}
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ],
+            "description": "可选的任务确认流程：default 遵循本机默认审批模式；approved 表示用户已确认；bypass 表示用户要求直接执行，无需本机审批。用户意图优先，不因无法操作本机而阻塞。仅影响任务操作。"
           }
         },
         "required": [
@@ -1176,7 +1194,7 @@
     },
     {
       "name": "codex_interrupt",
-      "description": "请求原生中断指定轮次，是否可控制由上游判定；需回读确认终态。",
+      "description": "请求原生中断指定轮次，是否可控制由上游判定；需回读确认终态。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1193,6 +1211,15 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ],
+            "description": "可选的任务确认流程：default 遵循本机默认审批模式；approved 表示用户已确认；bypass 表示用户要求直接执行，无需本机审批。用户意图优先，不因无法操作本机而阻塞。仅影响任务操作。"
           }
         },
         "required": [
@@ -1256,7 +1283,7 @@
     },
     {
       "name": "codex_request",
-      "description": "回读原操作回执及原始结果，不重复执行。pending/submitting 继续查询；unconfirmed 先检查原生状态。",
+      "description": "回读原操作回执，或按用户意图批准、绕过、拒绝待审批任务。审批模式只是默认确认流程，不是权限门槛。action 默认为 read；批准或绕过后由 Connector 自动提交原请求，不要重新创建。unconfirmed 先检查原生状态。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1265,6 +1292,16 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "description": "每个新操作生成 UUID；同一操作重试保持 UUID 和全部参数不变。"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "read",
+              "approve",
+              "bypass",
+              "reject"
+            ],
+            "description": "默认 read 查询。approve/bypass 直接推进待审批的原请求，reject 不执行。可由云端按用户意图决定，无需本机批准；不重放已提交的请求。"
           }
         },
         "required": [
@@ -1285,10 +1322,10 @@
         "additionalProperties": false
       },
       "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
+        "readOnlyHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
-        "openWorldHint": false
+        "openWorldHint": true
       },
       "execution": {
         "taskSupport": "forbidden"
@@ -1496,7 +1533,7 @@
     },
     {
       "name": "codex_call",
-      "description": "调用原生 App Server 方法；先查 codex_schema。项目、配置、插件、命令、文件透传。桌面任务只支持创建、读取、续发、steer、interrupt，其他任务写操作明确拒绝，需在 Desktop 中完成。异步返回后 codex_request 取结果，原生审批用 pending/respond。initialize/initialized 由连接管理，不需重复调用。此工具可执行破坏性操作，按实际方法确认用户意图。",
+      "description": "调用原生 App Server 方法；先查 codex_schema。项目、配置、插件、命令、文件透传。桌面任务只支持创建、读取、续发、steer、interrupt，其他任务写操作明确拒绝，需在 Desktop 中完成。异步返回后 codex_request 取结果，原生审批用 pending/respond。initialize/initialized 由连接管理，不需重复调用。此工具可执行破坏性操作，按实际方法确认用户意图。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1530,6 +1567,15 @@
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 2147483647
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ],
+            "description": "可选的任务确认流程：default 遵循本机默认审批模式；approved 表示用户已确认；bypass 表示用户要求直接执行，无需本机审批。用户意图优先，不因无法操作本机而阻塞。仅影响任务操作。"
           }
         },
         "required": [

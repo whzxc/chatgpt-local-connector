@@ -13,6 +13,7 @@ pub struct Control {
     monitor: Mutex<Option<Ipc>>,
     jobs: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     schemas: Mutex<Option<Value>>,
+    archived_tasks: Mutex<Option<(std::time::Instant, HashMap<String, Value>)>>,
 }
 impl Control {
     pub fn new(binary: PathBuf) -> Arc<Self> {
@@ -24,6 +25,7 @@ impl Control {
             monitor: Mutex::new(None),
             jobs: Default::default(),
             schemas: Mutex::new(None),
+            archived_tasks: Mutex::new(None),
         })
     }
     pub async fn utility(&self) -> Result<Arc<Rpc>> {
@@ -79,6 +81,9 @@ impl Control {
             let thread = string(&response["thread"], "id");
             if let Some(r) = receipt {
                 r["threadId"] = json!(thread);
+                if r["task"].is_object() {
+                    r["task"]["directory"] = response["thread"]["cwd"].clone();
+                }
                 r["state"] = json!("thread-created");
                 self.checkpoint(r)?;
             }
@@ -251,7 +256,7 @@ impl Control {
         if r["backendSession"] != self.session
             && !matches!(
                 string(&r, "state"),
-                "completed" | "rejected" | "not-executed" | "unconfirmed"
+                "completed" | "rejected" | "not-executed" | "unconfirmed" | "awaiting-approval"
             )
         {
             r["previousState"] = r["state"].clone();
@@ -274,7 +279,22 @@ impl Control {
             old["replayed"] = json!(true);
             return Ok(old);
         }
-        let mut receipt = json!({"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","updatedAt":now()});
+        let mut receipt = json!({"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","createdAt":now(),"updatedAt":now()});
+        if let Some(task) = task_details(operation, &args)? {
+            let decision = match string(&args, "approval") {
+                "approved" => "approved",
+                "bypass" => "bypass",
+                _ if self.approval_mode()? => "pending",
+                _ => "automatic",
+            };
+            receipt["task"] = task;
+            receipt["arguments"] = args.clone();
+            receipt["approval"] = json!({"decision":decision,"source":"cloud","at":now()});
+            if decision == "pending" {
+                receipt["state"] = json!("awaiting-approval");
+                receipt["nextAction"] = json!("codex_request: approve, bypass or reject; user intent overrides the default approval mode");
+            }
+        }
         use std::io::Write;
         let mut opts = std::fs::OpenOptions::new();
         opts.write(true).create_new(true);
@@ -286,6 +306,24 @@ impl Control {
         let mut file = opts.open(&path).map_err(|e| e.to_string())?;
         file.write_all(receipt.to_string().as_bytes())
             .map_err(|e| e.to_string())?;
+        if receipt["state"] == "awaiting-approval" {
+            return Ok(receipt);
+        }
+        let rx = self.launch(operation, args, receipt, &mut jobs);
+        drop(jobs);
+        match tokio::time::timeout(Duration::from_millis(100), rx).await {
+            Ok(Ok(r)) => r,
+            _ => Ok(json!({"requestId":request,"state":"pending","nextAction":"codex_request"})),
+        }
+    }
+    fn launch(
+        self: &Arc<Self>,
+        operation: &str,
+        args: Value,
+        mut receipt: Value,
+        jobs: &mut HashMap<String, tokio::task::JoinHandle<()>>,
+    ) -> tokio::sync::oneshot::Receiver<Result<Value>> {
+        let request = string(&receipt, "requestId").to_owned();
         let c = self.clone();
         let op = operation.to_owned();
         let key = request.clone();
@@ -314,11 +352,175 @@ impl Control {
             c.jobs.lock().await.remove(&key);
         });
         jobs.insert(request.clone(), job);
-        drop(jobs);
-        match tokio::time::timeout(Duration::from_millis(100), rx).await {
-            Ok(Ok(r)) => r,
-            _ => Ok(json!({"requestId":request,"state":"pending","nextAction":"codex_request"})),
+        rx
+    }
+    pub fn approval_mode(&self) -> Result<bool> {
+        let path = root().join("task-settings.json");
+        Ok(path.exists() && load(&path)?["enabled"] == true)
+    }
+    pub async fn decide(
+        self: &Arc<Self>,
+        request: &str,
+        action: &str,
+        source: &str,
+    ) -> Result<Value> {
+        if !matches!(action, "approve" | "bypass" | "reject") {
+            return Err("invalid approval action".into());
         }
+        let mut jobs = self.jobs.lock().await;
+        let mut r = self.receipt(request).await?;
+        if r["state"] != "awaiting-approval" {
+            return Ok(r);
+        }
+        r["approval"] = json!({"decision":if action=="approve"{"approved"}else{action},"source":source,"at":now()});
+        r.as_object_mut().unwrap().remove("nextAction");
+        r["state"] = json!(if action == "reject" {
+            "not-executed"
+        } else {
+            "reserved"
+        });
+        r["backendSession"] = json!(self.session);
+        self.checkpoint(&mut r)?;
+        if action != "reject" {
+            let op = string(&r, "operation").to_owned();
+            let _rx = self.launch(&op, r["arguments"].clone(), r.clone(), &mut jobs);
+        }
+        Ok(r)
+    }
+    pub async fn task_records(&self) -> Result<Vec<Value>> {
+        let mut records = Vec::new();
+        for entry in std::fs::read_dir(root()).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let Some(request) = path.file_stem().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            if uuid::Uuid::parse_str(request).is_err() {
+                continue;
+            }
+            let mut r = self.receipt(request).await?;
+            if !r["task"].is_object() {
+                let kind = string(&r, "operation");
+                let thread_id = r["threadId"]
+                    .as_str()
+                    .or_else(|| r["result"]["threadId"].as_str())
+                    .or_else(|| r["result"]["resolved"]["thread"]["id"].as_str())
+                    .or_else(|| r["result"]["thread"]["id"].as_str());
+                if !matches!(kind, "create" | "send" | "interrupt") && thread_id.is_none() {
+                    continue;
+                }
+                let thread_id = thread_id.map(str::to_owned);
+                let resolved = &r["result"]["resolved"];
+                let thread = resolved.get("thread").unwrap_or(&r["result"]["thread"]);
+                r["task"] = json!({"kind":kind,"title":thread["name"],"prompt":"",
+                    "project":null,"directory":thread.get("cwd").unwrap_or(&resolved["cwd"]),
+                    "threadId":thread_id,"model":r["requested"]["model"],"effort":r["requested"]["effort"],
+                    "detailsRecorded":false});
+                r["threadId"] = json!(thread_id);
+            }
+            if !r["createdAt"].is_string() {
+                r["createdAt"] = r["updatedAt"].clone();
+            }
+            if !r["approval"].is_object() {
+                r["approval"] =
+                    json!({"decision":"unrecorded","source":"cloud","at":r["createdAt"]});
+            }
+            if let Some(thread_id) = r["threadId"]
+                .as_str()
+                .or_else(|| r["task"]["threadId"].as_str())
+            {
+                if uuid::Uuid::parse_str(thread_id).is_ok() {
+                    if let Ok(mut runtime) =
+                        load(&root().join("tasks").join(format!("{thread_id}.json")))
+                    {
+                        runtime["stale"] = json!(true);
+                        r["runtime"] = runtime;
+                    }
+                }
+            }
+            r["error"] = r["result"]["error"].clone();
+            r.as_object_mut().unwrap().remove("arguments");
+            r.as_object_mut().unwrap().remove("result");
+            records.push(r);
+        }
+        records.sort_by(|a, b| string(b, "createdAt").cmp(string(a, "createdAt")));
+        Ok(records)
+    }
+    async fn archived_task(&self, id: &str) -> Result<Option<Value>> {
+        let mut cache = self.archived_tasks.lock().await;
+        if cache
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() >= Duration::from_secs(30))
+        {
+            let rpc = self.utility().await?;
+            let mut tasks = HashMap::new();
+            let mut params = json!({"archived":true,"limit":100,"sourceKinds":[]});
+            loop {
+                let page = rpc.call("thread/list", params.clone(), 5000).await?;
+                for thread in page["data"].as_array().into_iter().flatten() {
+                    let mut task = summary(thread);
+                    task["archived"] = json!(true);
+                    tasks.insert(string(thread, "id").to_owned(), task);
+                }
+                match page["nextCursor"].as_str() {
+                    Some(cursor) => params["cursor"] = json!(cursor),
+                    None => break,
+                }
+            }
+            *cache = Some((std::time::Instant::now(), tasks));
+        }
+        Ok(cache.as_ref().and_then(|(_, tasks)| tasks.get(id).cloned()))
+    }
+    pub async fn task_runtime(&self, id: &str) -> Result<Value> {
+        uuid::Uuid::parse_str(id).map_err(|_| "INVALID_THREAD_ID")?;
+        let path = root().join("tasks").join(format!("{id}.json"));
+        let archived = self.archived_task(id).await;
+        if let Ok(Some(task)) = &archived {
+            save(&path, task)?;
+            return Ok(task.clone());
+        }
+        let live = tokio::time::timeout(
+            Duration::from_secs(5),
+            self.request(
+                "thread/read",
+                json!({"threadId":id,"includeTurns":false}),
+                5000,
+            ),
+        )
+        .await;
+        let mut snapshot = match live {
+            Ok(Ok(result)) => summary(&result["thread"]),
+            _ => {
+                // Unloaded tasks still have native basic metadata; never load conversation items.
+                let result = self
+                    .utility()
+                    .await?
+                    .call(
+                        "thread/read",
+                        json!({"threadId":id,"includeTurns":false}),
+                        5000,
+                    )
+                    .await?;
+                let mut thread = result["thread"].clone();
+                thread["status"] = json!({"type":"notLoaded"});
+                let mut snapshot = summary(&thread);
+                if let Ok(previous) = load(&path) {
+                    snapshot["runtimeStatus"] = previous["runtimeStatus"].clone();
+                    snapshot["observedAt"] = previous["observedAt"].clone();
+                }
+                snapshot["stale"] = json!(true);
+                snapshot
+            }
+        };
+        if archived.is_ok() {
+            snapshot["archived"] = json!(false);
+        } else if let Ok(previous) = load(&path) {
+            snapshot["archived"] = previous["archived"].clone();
+        }
+        save(&path, &snapshot)?;
+        Ok(snapshot)
     }
     async fn perform(&self, operation: &str, args: &Value, r: &mut Value) -> Result<Value> {
         if operation == "respond" {
@@ -387,6 +589,7 @@ impl Control {
                     seed.entry("projectId").or_insert(json!(pid));
                 }
             }
+            r["task"]["directory"] = seed.get("cwd").cloned().unwrap_or(Value::Null);
             r["state"] = json!("thread-submitting");
             self.checkpoint(r)?;
             let result = self
@@ -511,7 +714,15 @@ impl Control {
             }
             "file_search" => self.request("fuzzyFileSearch", args, 60000).await,
             "codex_schema" => self.schema(&args).await,
-            "codex_request" => self.receipt(string(&args, "requestId")).await,
+            "codex_request" => {
+                let action = args["action"].as_str().unwrap_or("read");
+                if action == "read" {
+                    self.receipt(string(&args, "requestId")).await
+                } else {
+                    self.decide(string(&args, "requestId"), action, "cloud")
+                        .await
+                }
+            }
             "codex_pending" => Ok(
                 json!({"backendSession":self.session,"requests":self.events.lock().await.pending.values().cloned().collect::<Vec<_>>() }),
             ),
@@ -605,6 +816,50 @@ impl Control {
             _ => Err("UNKNOWN_TOOL".into()),
         }
     }
+}
+fn task_details(operation: &str, args: &Value) -> Result<Option<Value>> {
+    let kind = match operation {
+        "create" | "send" | "interrupt" => operation,
+        "native" => match string(args, "method") {
+            "thread/start" => "create",
+            "turn/start" | "turn/steer" | "thread/resume" => "send",
+            "turn/interrupt" => "interrupt",
+            _ => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    let native = operation == "native";
+    let p = if native {
+        args["params"].clone()
+    } else {
+        configured(args, "")?
+    };
+    let input = if native {
+        p["input"].clone()
+    } else if kind != "interrupt" {
+        task_input(args)?
+    } else {
+        json!([])
+    };
+    let prompt = input
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let model = p
+        .get("model")
+        .or_else(|| args["thread"].get("model"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    Ok(Some(
+        json!({"kind":kind,"title":args["title"],"prompt":prompt,"input":input,
+        "project":args["project"],"directory":if native{p["cwd"].clone()}else{args["thread"]["cwd"].clone()},
+        "threadId":if native{p["threadId"].clone()}else{args["threadId"].clone()},
+        "model":model,"effort":p["effort"],
+        "settings":if native{json!({"params":p})}else{json!({"thread":args["thread"],"turn":args["turn"],"resume":args["resume"],"mode":args["mode"],"networkAccess":args["networkAccess"],"serviceTier":args["serviceTier"]})}}),
+    ))
 }
 fn task_input(args: &Value) -> Result<Value> {
     desktop::input(
