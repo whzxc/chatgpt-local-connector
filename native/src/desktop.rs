@@ -271,6 +271,9 @@ impl Ipc {
     }
     pub async fn follow(&self, thread: &str) -> Result<()> {
         let owner = self.owner(thread).await?;
+        self.follow_owner(thread, &owner).await
+    }
+    async fn follow_owner(&self, thread: &str, owner: &str) -> Result<()> {
         self.write(json!({"type":"broadcast","sourceClientId":self.client,"targetClientIds":[owner],"method":"thread-stream-following-changed","version":1,"params":{"hostId":"local","conversationId":thread,"following":true}})).await
     }
     async fn wait(&self, thread: &str, revision: u64) -> Result<Value> {
@@ -296,7 +299,7 @@ impl Ipc {
     pub async fn read(&self, thread: &str, complete: bool) -> Result<Value> {
         let owner = self.owner(thread).await?;
         self.snapshots.lock().await.remove(thread);
-        self.follow(thread).await?;
+        self.follow_owner(thread, &owner).await?;
         let mut state = self.wait(thread, 0).await?;
         if complete && state["turnHistory"]["history"]["isComplete"] != true {
             let r = self
@@ -322,8 +325,12 @@ impl Ipc {
     }
     pub async fn mutate(&self, method: &str, args: &Value) -> Result<Value> {
         let thread = string(args, "threadId");
-        let owner = self.owner(thread).await?;
-        self.follow(thread).await?;
+        let known_owner = self.owners.lock().await.get(thread).cloned();
+        let owner = match known_owner {
+            Some(owner) => owner,
+            None => self.owner(thread).await?,
+        };
+        self.follow_owner(thread, &owner).await?;
         match method {
             "turn/start" => {
                 let mut args = args.clone();
@@ -404,7 +411,7 @@ pub fn input(v: &Value) -> Result<Value> {
     }
     Ok(json!(out))
 }
-pub async fn reveal(ipc: &Ipc, thread: &str) -> Result<Value> {
+pub async fn open_thread(thread: &str) -> Result<Value> {
     uuid::Uuid::parse_str(thread).map_err(|_| "INVALID_THREAD_ID")?;
     let i = require_installation()?;
     let url = format!("codex://threads/{thread}");
@@ -413,10 +420,18 @@ pub async fn reveal(ipc: &Ipc, thread: &str) -> Result<Value> {
         &["-a", i.app.to_str().ok_or("invalid path")?, &url],
     )
     .await?;
+    Ok(json!({"state":"opened","url":url}))
+}
+pub async fn reveal(ipc: &Ipc, thread: &str) -> Result<Value> {
+    let opened = open_thread(thread).await?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
     loop {
         match ipc.owner(thread).await {
-            Ok(_) => return Ok(json!({"state":"owner-confirmed","sharedBackend":false,"url":url})),
+            Ok(_) => {
+                return Ok(
+                    json!({"state":"owner-confirmed","sharedBackend":false,"url":opened["url"]}),
+                )
+            }
             Err(e) if e.contains("no-client-found") && tokio::time::Instant::now() < deadline => {
                 tokio::time::sleep(Duration::from_millis(250)).await
             }

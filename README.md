@@ -29,7 +29,7 @@ Tunnel 身份、权限及 ChatGPT 接入详见[接入指南](docs/tunnel.md)。�
 
 ### 分工与边界
 
-任务执行进程由 Codex Desktop 管理。Connector 通过 Desktop IPC 管理任务，不替换 Desktop app-server；关闭 Connector 不会主动中断 Desktop 中的任务。Desktop 不可用时，Connector 不会接管任务执行，也不会把未知状态显示为空闲。
+设置中的「自动打开 Codex 任务」默认开启，新任务由 Desktop 接管执行；关闭后，新任务由 Connector 后台执行，不自动打开 Desktop，也不保证可在 Desktop 中操作。开关仅影响新任务，已有任务仍由原执行方管理。关闭 Connector 会停止其后台执行，但不会主动中断 Desktop 所有的任务；未知状态不显示为空闲。
 
 不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。
 

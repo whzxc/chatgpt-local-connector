@@ -20,6 +20,7 @@ export interface Config {
 }
 export interface Status {
   taskApprovalEnabled: boolean;
+  autoOpenCodex: boolean;
   core: CoreSnapshot;
   connection?: { running: boolean; updateAvailable: boolean };
   deviceName: string;

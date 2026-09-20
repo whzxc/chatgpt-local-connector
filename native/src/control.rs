@@ -68,6 +68,75 @@ impl Control {
             rpc.close().await;
         }
     }
+    pub fn auto_open_codex(&self) -> Result<bool> {
+        let path = root().join("task-settings.json");
+        Ok(!path.exists() || load(&path)?["autoOpenCodex"] != false)
+    }
+    fn background(&self, thread: &str) -> Result<bool> {
+        if thread.is_empty() {
+            return Ok(false);
+        }
+        uuid::Uuid::parse_str(thread).map_err(|_| "INVALID_THREAD_ID")?;
+        let path = root().join("execution").join(format!("{thread}.json"));
+        Ok(path.exists() && load(&path)?["owner"] == "connector")
+    }
+    async fn create_background(
+        &self,
+        args: Value,
+        title: &str,
+        receipt: Option<&mut Value>,
+    ) -> Result<Value> {
+        if args["ephemeral"] == true {
+            return Err("BACKGROUND_TASK_MUST_PERSIST".into());
+        }
+        let rpc = self.utility().await?;
+        let mut args = args;
+        args["ephemeral"] = json!(false);
+        let result = rpc.call("thread/start", args, 60000).await?;
+        let thread = string(&result["thread"], "id");
+        uuid::Uuid::parse_str(thread).map_err(|_| "INVALID_THREAD_ID")?;
+        save(
+            &root().join("execution").join(format!("{thread}.json")),
+            &json!({"owner":"connector"}),
+        )?;
+        if let Some(r) = receipt {
+            r["threadId"] = json!(thread);
+            r["task"]["directory"] = result["thread"]["cwd"].clone();
+            r["state"] = json!("thread-created");
+            self.checkpoint(r)?;
+        }
+        if !title.is_empty() {
+            rpc.call(
+                "thread/name/set",
+                json!({"threadId":thread,"name":title}),
+                60000,
+            )
+            .await?;
+        }
+        Ok(result)
+    }
+    async fn background_request(&self, method: &str, args: Value, timeout: u64) -> Result<Value> {
+        let rpc = self.utility().await?;
+        // Resume only an explicit new-turn write; reads and interrupts never restart a task.
+        if method == "turn/start" {
+            let state = rpc
+                .call(
+                    "thread/read",
+                    json!({"threadId":args["threadId"],"includeTurns":false}),
+                    60000,
+                )
+                .await?;
+            if state["thread"]["status"]["type"] == "notLoaded" {
+                rpc.call("thread/resume", json!({"threadId":args["threadId"]}), 60000)
+                    .await?;
+            }
+        }
+        let mut result = rpc.call(method, args, timeout).await?;
+        if method == "thread/read" {
+            result["thread"]["runtimeSource"] = json!("connector-app-server");
+        }
+        Ok(result)
+    }
     async fn seed(&self, args: Value, title: &str, receipt: Option<&mut Value>) -> Result<Value> {
         self.ipc().await?;
         if args["ephemeral"] == true {
@@ -126,12 +195,18 @@ impl Control {
             return self.utility().await?.call(method, args, timeout).await;
         }
         #[allow(unreachable_code)]
+        if self.background(string(&args, "threadId"))? {
+            return self.background_request(method, args, timeout).await;
+        }
         if matches!(method, "turn/start" | "turn/steer" | "turn/interrupt") {
             let ipc = self.ipc().await?;
             self.follow(string(&args, "threadId")).await?;
             return ipc.mutate(method, &args).await;
         }
         if method == "thread/start" {
+            if !self.auto_open_codex()? {
+                return self.create_background(args, "", None).await;
+            }
             let result = self.seed(args, "", None).await?;
             desktop::reveal(&self.ipc().await?, string(&result["thread"], "id")).await?;
             return Ok(result);
@@ -280,6 +355,13 @@ impl Control {
             return Ok(old);
         }
         let mut receipt = json!({"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","createdAt":now(),"updatedAt":now()});
+        if operation == "create" || (operation == "native" && args["method"] == "thread/start") {
+            receipt["executionOwner"] = json!(if self.auto_open_codex()? {
+                "desktop"
+            } else {
+                "connector"
+            });
+        }
         if let Some(task) = task_details(operation, &args)? {
             let decision = match string(&args, "approval") {
                 "approved" => "approved",
@@ -440,6 +522,13 @@ impl Control {
                     }
                 }
             }
+            if let Some(thread_id) = r["threadId"].as_str() {
+                r["executionOwner"] = json!(if self.background(thread_id)? {
+                    "connector"
+                } else {
+                    "desktop"
+                });
+            }
             r["error"] = r["result"]["error"].clone();
             r.as_object_mut().unwrap().remove("arguments");
             r.as_object_mut().unwrap().remove("result");
@@ -592,20 +681,37 @@ impl Control {
             r["task"]["directory"] = seed.get("cwd").cloned().unwrap_or(Value::Null);
             r["state"] = json!("thread-submitting");
             self.checkpoint(r)?;
-            let result = self
-                .seed(json!(seed), string(args, "title"), Some(r))
-                .await?;
+            let background = r["executionOwner"] == "connector";
+            let result = if background {
+                self.create_background(json!(seed), string(args, "title"), Some(r))
+                    .await?
+            } else {
+                self.seed(json!(seed), string(args, "title"), Some(r))
+                    .await?
+            };
             let thread = string(&result["thread"], "id");
-            desktop::reveal(&self.ipc().await?, thread).await?;
             let mut turn = configured(args, string(&result["thread"], "cwd"))?;
             turn["threadId"] = json!(thread);
             turn["input"] = input;
             r["state"] = json!("turn-submitting");
             self.checkpoint(r)?;
-            let out = self.request("turn/start", turn, timeout).await?;
+            let out = if background {
+                self.request("turn/start", turn, timeout).await?
+            } else {
+                // Prepare the input before navigation and keep the same IPC connection
+                // through owner discovery and submission to shorten the empty-page interval.
+                let ipc = self.ipc().await?;
+                desktop::reveal(&ipc, thread).await?;
+                let out = ipc.mutate("turn/start", &turn).await?;
+                r["turnId"] = out["turn"]["id"].clone();
+                self.checkpoint(r)?;
+                // Monitoring is best effort after acceptance, never a submission failure.
+                let _ = self.follow(thread).await;
+                out
+            };
             r["turnId"] = out["turn"]["id"].clone();
             return Ok(
-                json!({"threadId":thread,"turnId":r["turnId"],"resolved":result,"submitted":true,"desktopUrl":format!("codex://threads/{thread}"),"desktop":{"state":"owner-confirmed","sharedBackend":false}}),
+                json!({"threadId":thread,"turnId":r["turnId"],"resolved":result,"submitted":true,"desktopUrl":format!("codex://threads/{thread}"),"executionOwner":if background {"connector"} else {"desktop"},"desktop":{"state":if background {"not-opened"} else {"owner-confirmed"},"sharedBackend":false}}),
             );
         }
         if operation == "send" {
@@ -613,17 +719,31 @@ impl Control {
                 .as_object()
                 .is_some_and(|m| m.keys().any(|k| k != "threadId"))
             {
-                return Err("Desktop resume 仅支持 threadId；配置请通过 turn 提交".into());
+                return Err("resume 仅支持 threadId；配置请通过 turn 提交".into());
             }
             let input = task_input(args)?;
             let thread = string(args, "threadId");
             r["threadId"] = json!(thread);
-            let ipc = self.ipc().await?;
-            desktop::reveal(&ipc, thread).await?;
-            let state = ipc.read(thread, true).await?;
-            let turns = desktop::turns(&state)?;
+            let state = if self.background(thread)? {
+                self.request(
+                    "thread/read",
+                    json!({"threadId":thread,"includeTurns":true}),
+                    60000,
+                )
+                .await?["thread"]
+                    .clone()
+            } else {
+                let ipc = self.ipc().await?;
+                desktop::reveal(&ipc, thread).await?;
+                crate::control::thread(&ipc.read(thread, true).await?, true)?
+            };
+            let turns = state["turns"].as_array().cloned().unwrap_or_default();
             let config = configured(args, string(&state, "cwd"))?;
-            if let Some(active) = turns.iter().rev().find(|t| t["status"] == "inProgress") {
+            if let Some(active) = turns
+                .iter()
+                .rev()
+                .find(|t| state["status"]["type"] == "active" && t["status"] == "inProgress")
+            {
                 if config.as_object().is_some_and(|m| !m.is_empty()) {
                     return Err("steer cannot change turn configuration".into());
                 }
@@ -643,7 +763,9 @@ impl Control {
         r["threadId"] = params["threadId"].clone();
         r["state"] = json!("submitting");
         self.checkpoint(r)?;
-        let result = if method == "thread/start" {
+        let result = if method == "thread/start" && r["executionOwner"] == "connector" {
+            self.create_background(params, "", Some(r)).await?
+        } else if method == "thread/start" {
             let out = self.seed(params, "", Some(r)).await?;
             desktop::reveal(&self.ipc().await?, string(&out["thread"], "id")).await?;
             out
@@ -811,7 +933,7 @@ impl Control {
                 )
             }
             "codex_capabilities" => Ok(
-                json!({"version":env!("CARGO_PKG_VERSION"),"backendSession":self.session,"executionOwner":"desktop","models":self.request("model/list",json!({}),60000).await?,"configuration":self.request("config/read",json!({}),60000).await?}),
+                json!({"version":env!("CARGO_PKG_VERSION"),"backendSession":self.session,"executionOwner":if self.auto_open_codex()? {"desktop"} else {"connector"},"models":self.request("model/list",json!({}),60000).await?,"configuration":self.request("config/read",json!({}),60000).await?}),
             ),
             _ => Err("UNKNOWN_TOOL".into()),
         }

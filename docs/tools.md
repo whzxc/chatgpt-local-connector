@@ -16,7 +16,7 @@
 | process | App Server 主机上的非 Codex sandbox 进程及 PTY/stdin/终止控制 |
 | mcp | 已配置 downstream MCP 的目录、资源、工具调用、OAuth 和事件订阅 |
 | file_search | fuzzyFileSearch 模糊文件名/路径查找 |
-| codex_thread | 原生线程领域参数入口；当前 Desktop 接入拒绝此入口的扩展操作，使用下列任务工具 |
+| codex_thread | 原生线程领域参数入口；Desktop 任务的扩展操作受接入范围限制；后台任务转发到 Connector app-server |
 | codex_account | 当前账号、用量、额度和工作区消息 |
 | codex_capabilities | 服务版本、安装版本、原生模型目录和连接边界 |
 | codex_tasks / codex_read / codex_items | 所有原生可访问任务、状态、历史与完整条目分页 |
@@ -97,7 +97,7 @@ mcp 的 list 可携带 threadId 读取线程上下文中的目录；tool/call �
 使用已有线程，不隐式创建或续接线程。服务名、工具名、arguments、_meta 完整透传；下游不可用或不支持时返回原生错误。
 oauth/login 返回原生登录结果，认证仍由原生完成；订阅启动/停止的 mutation 使用现有 requestId 回执。
 
-当前支持的任务操作为创建、读取、续接、追加输入和中断。其他 `thread/`、`turn/` 扩展操作由连接器明确拒绝，需在 Desktop 中完成；原生 Schema 中存在某方法不代表 Connector 支持调用。账号结果直接来自 App Server。
+当前支持的任务操作为创建、读取、续接、追加输入和中断。Desktop 任务的其他 `thread/`、`turn/` 扩展操作由连接器明确拒绝，需在 Desktop 中完成；原生 Schema 中存在某方法不代表 Connector 支持调用。账号结果直接来自 App Server。
 
 ## 参数与默认行为
 
@@ -167,12 +167,12 @@ codex_call 与领域 mutation 在短等待后可返回 pending；随后 codex_re
 completed 是控制操作完成，任务完成需要检查对应轮次终态。
 
 桌面任务执行归 Desktop 所有，Connector 通过本机版本化协调 IPC 管理，不接管其 app-server。
-独立 App Server 只承担历史与工具能力。没有 Desktop owner 时 runtimeStatus 为 unknown，不表示空闲。
+关闭「自动打开 Codex 任务」后，新任务归 Connector 的 App Server 后台执行，读取、续接和中断按持久化的任务归属路由。后台任务不保证可在 Desktop 中操作。没有执行方实时状态时 runtimeStatus 为 unknown，不表示空闲。
 桌面 Thread/Turn 查询是 owner 快照的明确投影；显示层 steeringUserMessage 等 item 可能不同于公开 App Server union。
 兼容性边界和支持的任务写操作见 [桌面说明](desktop.md)，未支持的方法明确拒绝；不使用受签名保护的 app-tools 管道、不绕过账号和系统权限。
 跨设备不是自动路由能力；可通过原生命令在用户已有 SSH 环境中执行明确的远端操作。
 
-关闭连接停止 Connector 的 Tunnel、转发与辅助 RPC，界面保持可用；Desktop 自行管理任务生命周期。
+关闭连接停止 Connector 的 Tunnel、转发与 App Server，包括 Connector 后台任务；界面保持可用，Desktop 自行管理其任务生命周期。
 重启后旧提交中回执标记 unconfirmed，不自动重放；尚未提交的待审批请求继续保留。
 事件缓冲最多保留最近 2000 条或 8 MiB，gap/reset 明确报告缺口；完整已落盘结果应从原生任务/回执读取。
 Chat 页面不会因任务完成自动被唤醒，交互请求也需要调用方主动查询。

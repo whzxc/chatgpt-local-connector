@@ -7,7 +7,7 @@ import CopyField from './CopyField.vue';
 const emit = defineEmits<{ done: [] }>();
 const { status, busy, run } = useConnector();
 const step = ref(-1);
-const online = computed(() => status.value?.tunnel.state === 'ready' && status.value?.core.desktop?.state === 'ready');
+const online = computed(() => status.value?.tunnel.state === 'ready' && (status.value?.autoOpenCodex === false ? status.value?.core.appServer?.state === 'ready' : status.value?.core.desktop?.state === 'ready'));
 const verified = computed(() => status.value?.core.chatgpt?.verifiedAt);
 const prompt = computed(() => `请使用 Local Connector 插件调用 connector_verify，code 为 ${status.value?.core.chatgpt?.code || ''}。只验证连接，不创建任务。`);
 const open = (url: string) => run('chatgpt-open', () => openUrl(url));

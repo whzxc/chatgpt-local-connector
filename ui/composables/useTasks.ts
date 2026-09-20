@@ -5,6 +5,7 @@ import { notifyNative } from '../platform';
 
 export interface TaskRecord {
   requestId: string;
+  executionOwner?: 'desktop' | 'connector';
   threadId?: string;
   turnId?: string;
   runtime?: TaskRuntime;

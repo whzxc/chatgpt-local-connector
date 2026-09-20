@@ -173,7 +173,7 @@ impl Service {
         let health = self.control.health().await;
         let core = json!({"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),"backendSession":self.control.session,"package":{"version":env!("CARGO_PKG_VERSION"),"sha":"native"},"desktop":desktop,"chatgpt":chat,"appServer":{"state":health["appServer"],"observedAt":now(),"evidence":"native-connector","stale":false},"account":{"state":"unknown","observedAt":null},"transport":{"state":state,"error":error},"logs":logs,"activeTurns":0,"activeWrites":health["activeWrites"],"pendingInteractions":self.control.events.lock().await.pending.len(),"liveProcesses":0,"uncertain":false,"draining":false,"lastInbound":null,"toolCount":catalog()["tools"].as_array().unwrap().len(),"registered":running,"schemaDiscovered":"unknown","operationVerified":"business-delivery-not-assessed"});
         Ok(
-            json!({"core":core,"connection":{"running":running,"updateAvailable":false},"config":config,"tunnel":{"state":state,"error":error},"connector":{"state":state},"logs":logs,"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"deviceName":std::env::var("HOSTNAME").unwrap_or_else(|_|"本机".into()),"taskApprovalEnabled":self.control.approval_mode()?,"chatgptUrl":"https://chatgpt.com/plugins"}),
+            json!({"core":core,"connection":{"running":running,"updateAvailable":false},"config":config,"tunnel":{"state":state,"error":error},"connector":{"state":state},"logs":logs,"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"deviceName":std::env::var("HOSTNAME").unwrap_or_else(|_|"本机".into()),"taskApprovalEnabled":self.control.approval_mode()?,"autoOpenCodex":self.control.auto_open_codex()?,"chatgptUrl":"https://chatgpt.com/plugins"}),
         )
     }
     pub async fn stop(&self) -> Result<()> {
@@ -226,29 +226,34 @@ impl Service {
             return Ok(());
         }
         self.stop().await?;
-        let install = crate::desktop::require_installation()?;
-        if crate::desktop::Ipc::open(Default::default(), &self.control.session)
-            .await
-            .is_err()
-        {
-            output(
-                "/usr/bin/open",
-                &["-a", install.app.to_str().ok_or("invalid path")?],
-            )
-            .await?;
-            let deadline = Instant::now() + Duration::from_secs(15);
-            loop {
-                if crate::desktop::Ipc::open(Default::default(), &self.control.session)
-                    .await
-                    .is_ok()
-                {
-                    break;
+        if self.control.auto_open_codex()? {
+            let install = crate::desktop::require_installation()?;
+            if crate::desktop::Ipc::open(Default::default(), &self.control.session)
+                .await
+                .is_err()
+            {
+                output(
+                    "/usr/bin/open",
+                    &["-a", install.app.to_str().ok_or("invalid path")?],
+                )
+                .await?;
+                let deadline = Instant::now() + Duration::from_secs(15);
+                loop {
+                    if crate::desktop::Ipc::open(Default::default(), &self.control.session)
+                        .await
+                        .is_ok()
+                    {
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err("请确认 Codex Desktop 已打开".into());
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
                 }
-                if Instant::now() >= deadline {
-                    return Err("请确认 Codex Desktop 已打开".into());
-                }
-                tokio::time::sleep(Duration::from_millis(250)).await;
             }
+        }
+        if !self.control.auto_open_codex()? {
+            self.control.utility().await?;
         }
         let settings = self.settings.lock().await.clone();
         if string(&settings, "tunnelId").is_empty() || string(&settings, "apiKey").is_empty() {
@@ -307,7 +312,12 @@ impl Service {
                 dir.join("health.url").to_str().unwrap(),
             ])
             // The official Tunnel admin bridge otherwise resolves the npm Codex launcher.
-            .env("TUNNEL_CLIENT_CODEX_APP_SERVER_CMD", &install.binary)
+            .env(
+                "TUNNEL_CLIENT_CODEX_APP_SERVER_CMD",
+                crate::desktop::installation()
+                    .map(|i| i.binary)
+                    .unwrap_or_else(|| PathBuf::from(string(&settings, "codexBinary"))),
+            )
             .env("TUNNEL_CLIENT_CODEX_APP_SERVER_ARGS", "app-server")
             .env("CLC_NATIVE_PORT", port.to_string())
             .env("CLC_NATIVE_TOKEN", &self.token)
@@ -387,14 +397,18 @@ impl Service {
             None
         };
         match (method, route) {
-            ("GET", "task-settings") => Ok(json!({"enabled":self.control.approval_mode()?})),
+            ("GET", "task-settings") => Ok(
+                json!({"enabled":self.control.approval_mode()?,"autoOpenCodex":self.control.auto_open_codex()?}),
+            ),
             ("PUT", "task-settings") => {
-                let enabled = body["enabled"].as_bool().ok_or("invalid enabled")?;
-                save(
-                    &root().join("task-settings.json"),
-                    &json!({"enabled":enabled}),
-                )?;
-                Ok(json!({"enabled":enabled}))
+                let mut settings = json!({"enabled":self.control.approval_mode()?,"autoOpenCodex":self.control.auto_open_codex()?});
+                for key in ["enabled", "autoOpenCodex"] {
+                    if let Some(value) = body.get(key) {
+                        settings[key] = json!(value.as_bool().ok_or("invalid task setting")?);
+                    }
+                }
+                save(&root().join("task-settings.json"), &settings)?;
+                Ok(settings)
             }
             ("POST", "tasks/decision") => {
                 self.control
@@ -402,6 +416,7 @@ impl Service {
                     .await
             }
             ("GET", "tasks") => Ok(json!({"records":self.control.task_records().await?})),
+            ("POST", "tasks/open") => crate::desktop::open_thread(string(&body, "threadId")).await,
             ("GET", route) if route.starts_with("tasks/runtime/") => {
                 self.control.task_runtime(&route[14..]).await
             }

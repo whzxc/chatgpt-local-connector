@@ -4,7 +4,7 @@ const { update, checking, phase, active, available, progress, downloaded, error,
 </script>
 <template>
   <section class="settings-block app-update">
-    <div class="card-head"><div><h2>应用更新</h2><p>更新完成后重启应用，并恢复更新前的连接状态。</p></div><button :disabled="!supported || checking || active" @click="check()">{{checking ? '正在检查…' : '检查更新'}}</button></div>
+    <div class="card-head"><div><h2>应用更新</h2><p>更新完成后重启应用，并恢复更新前的连接状态。</p></div><button class="small-button" :disabled="!supported || checking || active" @click="check()">{{checking ? '正在检查…' : '检查更新'}}</button></div>
     <label v-if="supported" class="preference-row"><span><strong>自动检查更新</strong><small>有新版本时提醒，由你决定何时安装。</small></span><input type="checkbox" role="switch" :checked="autoCheck" @change="setAutoCheck(($event.target as HTMLInputElement).checked)" /></label>
     <p v-else class="hint">开发预览不检查或安装更新。</p>
     <template v-if="available">

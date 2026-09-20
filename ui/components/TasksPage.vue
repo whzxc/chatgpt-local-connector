@@ -4,10 +4,10 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useClipboard, useIntervalFn, usePreferredReducedMotion, useResizeObserver } from '@vueuse/core';
 import { api, useConnector } from '../composables/useConnector';
 import type { TaskRecord, TaskRuntime } from '../composables/useTasks';
-import { isDevelopment, openUrl } from '../platform';
+import { isDevelopment } from '../platform';
 const props = defineProps<{ records: TaskRecord[]; error: string }>();
 const emit = defineEmits<{ refresh: [] }>();
-const { busy, run, notify } = useConnector();
+const { busy, run } = useConnector();
 const runtimes = ref<Record<string, TaskRuntime>>({});
 const { copy, copied } = useClipboard();
 const runtimeLabels: Record<string,string> = { waiting:'等待交互', active:'运行中', idle:'空闲', systemError:'运行异常' };
@@ -63,10 +63,18 @@ async function decide(r: TaskRecord, action: string) {
   });
 }
 async function copyPrompt(prompt: string) {
-  try { await copy(prompt); } catch { notify('复制失败，请手动选择正文复制。', true); }
+  actionError.value = '';
+  try { await copy(prompt); } catch { actionError.value = '复制失败，请手动选择正文复制。'; }
 }
+const actionError = ref('');
+const openingTask = ref(false);
 async function openTask(id: string) {
-  try { await openUrl(`codex://threads/${encodeURIComponent(id)}`); } catch { notify('无法打开 Codex，请在 Codex 中查看任务。', true); }
+  if (openingTask.value) return;
+  actionError.value = '';
+  openingTask.value = true;
+  try { await api('tasks/open', 'POST', { threadId: id }); }
+  catch { if (selectedId.value === id) actionError.value = '无法打开 Codex，请确认 Codex 已启动后重试。'; }
+  finally { openingTask.value = false; }
 }
 const selectedId = ref<string>();
 const selected = computed(() => groups.value.find(g => g.id === selectedId.value));
@@ -118,6 +126,7 @@ async function morphCard(opening: boolean) {
 }
 async function focusCard(id: string, event: MouseEvent) {
   if (selectedId.value) return;
+  actionError.value = '';
   source = event.currentTarget as HTMLElement;
   selectedId.value = id;
   await nextTick();
@@ -164,6 +173,7 @@ onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
             <button class="task-focus-close" aria-label="关闭任务详情" @click="closeCard"><X aria-hidden="true"/></button>
           </header>
           <div class="task-focus-content">
+          <p v-if="selected.first.executionOwner === 'connector'" class="hint">此任务由 Connector 后台执行；关闭连接会停止后台执行，不保证可在 Codex Desktop 中继续或中断。</p>
         <section v-for="r in [...selected.records].reverse()" :key="r.requestId" class="task-entry">
           <div class="task-entry-heading"><strong>{{kinds[r.task.kind] || '管理任务'}}</strong><span v-if="r.task.model" class="task-tag">{{r.task.model}}</span><span v-if="r.task.effort" class="task-tag">{{r.task.effort}}</span><time>{{time(r.createdAt)}}</time><button v-if="r.task.prompt" class="text-button" @click="copyPrompt(r.task.prompt)">{{copied?'已复制':'复制 Prompt'}}</button></div>
           <pre v-if="r.task.prompt" class="task-prompt">{{r.task.prompt}}</pre>
@@ -172,7 +182,8 @@ onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
           <div v-if="r.state==='awaiting-approval'" class="task-entry-actions"><button class="primary" :disabled="!!busy || isDevelopment" @click="decide(r,'approve')">批准并提交</button><button :disabled="!!busy || isDevelopment" @click="decide(r,'reject')">拒绝</button></div>
         </section>
           </div>
-          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" @click="openTask(selected.id)">在 Codex 中打开 ↗</button></footer>
+          <p v-if="actionError" class="status-banner warning" role="alert">{{actionError}}</p>
+          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask || isDevelopment" @click="openTask(selected.id)">{{openingTask ? '正在打开…' : '在 Codex 中打开 ↗'}}</button></footer>
         </div>
       </dialog>
     </Teleport>
