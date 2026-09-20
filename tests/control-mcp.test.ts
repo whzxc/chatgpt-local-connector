@@ -93,8 +93,8 @@ async function completed(name: string, args: Record<string, unknown>) {
   return result;
 }
 
-test('MCP lists all 22 existing tools and seven discoverable native domains with valid object schemas', async () => {
-  const existing = ['connector_verify', 'projects', 'overview', 'tree', 'search', 'read', 'git', 'codex_tasks', 'codex_read', 'codex_create', 'codex_send', 'codex_interrupt', 'codex_capabilities', 'codex_request', 'codex_items', 'codex_schema', 'codex_query', 'codex_call', 'codex_pending', 'codex_respond', 'codex_events', 'control_output'];
+test('MCP lists all existing tools and seven discoverable native domains with valid object schemas', async () => {
+  const existing = ['connector_verify', 'projects', 'overview', 'tree', 'search', 'read', 'git', 'codex_tasks', 'codex_read', 'codex_wait', 'codex_create', 'codex_send', 'codex_interrupt', 'codex_capabilities', 'codex_request', 'codex_items', 'codex_schema', 'codex_query', 'codex_call', 'codex_pending', 'codex_respond', 'codex_events', 'control_output'];
   assert.deepEqual(inventory.tools.map(tool => tool.name).sort(), [...existing, 'fs', 'command', 'process', 'mcp', 'file_search', 'codex_thread', 'codex_account'].sort());
   for (const tool of inventory.tools) {
     assert.equal(tool.inputSchema.type, 'object');

@@ -8,6 +8,7 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 
 - **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，讨论有据可依。
 - **聊到哪，做到哪**：在对话里创建、续接或中断 Codex 任务，也能查看任务进展和结果。
+- **一次等到关键进展**：创建或续接后用 `codex_wait` 等待完成、失败或需要交互，单次最长五分钟；超时不终止任务。
 - **连接有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，连接状态一眼可见。
 
 日常使用无需安装 Node、npm、Rust 或 Cargo。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
@@ -34,6 +35,8 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 ## 日常使用
 
 首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口后连接继续运行，退出应用则关闭连接。macOS 可在「设置 → 通用 → 显示位置」选择「全部」「仅菜单栏」或「仅 Dock 栏」，修改立即生效并自动保存。
+
+`codex_wait` 在本机连接期间等待，保留 `codex_read` 的历史读取和 `codex_events` 的事件查询。普通 Chat 回复结束后不会继续后台等待；它不提供定时唤醒或主动推送。详见[等待工具](docs/tools.md#任务等待)。
 
 ### 分工与边界
 

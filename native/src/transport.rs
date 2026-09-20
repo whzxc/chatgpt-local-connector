@@ -120,7 +120,15 @@ async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
         }
     }
     let result = if path == "/mcp" && method == "POST" {
-        mcp(&s, body).await
+        if body["method"] == "tools/call" && body["params"]["name"] == "codex_wait" {
+            let mut disconnected = [0u8; 1];
+            tokio::select! {
+                result = mcp(&s, body) => result,
+                _ = stream.read(&mut disconnected) => return Ok(()),
+            }
+        } else {
+            mcp(&s, body).await
+        }
     } else if method == "GET" && path == "/healthz" {
         Ok(json!({"runtime":"rust","instance":s.control.session,"pid":std::process::id()}))
     } else if let Some(route) = path.strip_prefix("/api/") {
@@ -160,6 +168,24 @@ pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
         }
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools":catalog()["tools"]})),
+        "tools/call" if request["params"]["name"] == "codex_wait" => {
+            let key = id.as_ref().ok_or("wait requires a request id")?.to_string();
+            let (guard, mut cancel) = s.wait_calls.register(key)?;
+            let args = request["params"]
+                .get("arguments")
+                .cloned()
+                .unwrap_or(json!({}));
+            let started = std::time::Instant::now();
+            let response = tokio::select! {
+                result = s.call("codex_wait", args.clone()) => result,
+                _ = cancel.changed() => {
+                    let value = json!({"state":"unconfirmed","reason":"wait-cancelled","threadId":args["threadId"],"turnId":args["turnId"],"runtimeStatus":"unknown","recordedStatus":null,"finalResponse":null,"interaction":[],"changed":false,"conditionMet":false,"observedAt":null,"returnedAt":now(),"elapsedMs":started.elapsed().as_millis() as u64});
+                    Ok(json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":{"result":value},"isError":false}))
+                }
+            };
+            drop(guard);
+            response
+        }
         "tools/call" => {
             s.call(
                 string(&request["params"], "name"),
@@ -170,7 +196,12 @@ pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
             )
             .await
         }
-        "notifications/initialized" | "notifications/cancelled" => return Ok(Value::Null),
+        "notifications/cancelled" => {
+            s.wait_calls
+                .cancel(&request["params"]["requestId"].to_string());
+            return Ok(Value::Null);
+        }
+        "notifications/initialized" => return Ok(Value::Null),
         _ => Err("method not found".into()),
     };
     if id.is_none() {
@@ -209,6 +240,13 @@ pub async fn stdio() -> Result<()> {
             let response = client
                 .post(format!("http://127.0.0.1:{port}/mcp"))
                 .bearer_auth(token)
+                .timeout(Duration::from_secs(
+                    if request["params"]["name"] == "codex_wait" {
+                        330
+                    } else {
+                        120
+                    },
+                ))
                 .json(&request)
                 .send()
                 .await;
@@ -282,5 +320,44 @@ pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<V
         Ok(value)
     } else {
         Err(string(&value, "error").into())
+    }
+}
+
+// Stateless ingress has no MCP sessions. Active wait request IDs must be unique
+// across callers; collisions are rejected rather than cancelling another wait.
+#[derive(Default)]
+pub(crate) struct WaitCalls(
+    Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::watch::Sender<bool>>>>,
+);
+struct WaitCallGuard {
+    calls:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::watch::Sender<bool>>>>,
+    key: String,
+}
+impl Drop for WaitCallGuard {
+    fn drop(&mut self) {
+        self.calls.lock().unwrap().remove(&self.key);
+    }
+}
+impl WaitCalls {
+    fn register(&self, key: String) -> Result<(WaitCallGuard, tokio::sync::watch::Receiver<bool>)> {
+        let mut calls = self.0.lock().unwrap();
+        if calls.contains_key(&key) {
+            return Err("duplicate active wait request id".into());
+        }
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        calls.insert(key.clone(), tx);
+        Ok((
+            WaitCallGuard {
+                calls: self.0.clone(),
+                key,
+            },
+            rx,
+        ))
+    }
+    fn cancel(&self, key: &str) {
+        if let Some(tx) = self.0.lock().unwrap().get(key) {
+            let _ = tx.send(true);
+        }
     }
 }

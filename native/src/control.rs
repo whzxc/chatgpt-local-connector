@@ -8,6 +8,7 @@ use std::{collections::HashMap, time::Duration};
 pub struct Control {
     pub session: String,
     pub events: SharedEvents,
+    pub(crate) shutdown: tokio::sync::watch::Sender<u64>,
     binary: PathBuf,
     rpc: Mutex<Option<Arc<Rpc>>>,
     monitor: Mutex<Option<Ipc>>,
@@ -20,6 +21,7 @@ impl Control {
         Arc::new(Self {
             session: id(),
             events: Default::default(),
+            shutdown: tokio::sync::watch::channel(0).0,
             binary,
             rpc: Mutex::new(None),
             monitor: Mutex::new(None),
@@ -48,7 +50,11 @@ impl Control {
     pub async fn health(&self) -> Value {
         json!({"appServer":if self.rpc.lock().await.as_ref().is_some_and(|r|r.alive()){"ready"}else{"stopped"},"activeWrites":self.jobs.lock().await.len()})
     }
+    pub fn stop_waits(&self) {
+        self.shutdown.send_modify(|v| *v = v.wrapping_add(1));
+    }
     pub async fn close(&self) {
+        self.stop_waits();
         for (request, job) in self.jobs.lock().await.drain() {
             job.abort();
             let _ = job.await;
@@ -72,7 +78,7 @@ impl Control {
         let path = root().join("task-settings.json");
         Ok(!path.exists() || load(&path)?["autoOpenCodex"] != false)
     }
-    fn background(&self, thread: &str) -> Result<bool> {
+    pub(crate) fn background(&self, thread: &str) -> Result<bool> {
         if thread.is_empty() {
             return Ok(false);
         }
@@ -873,6 +879,7 @@ impl Control {
                     json!({"observedAt":now(),"tasks":page["data"].as_array().into_iter().flatten().map(summary).collect::<Vec<_>>(),"nextCursor":page["nextCursor"]}),
                 )
             }
+            "codex_wait" => crate::waiter::codex_wait(self, &args).await,
             "codex_read" => {
                 let id = string(&args, "threadId");
                 let mut t = self
@@ -1024,7 +1031,7 @@ fn configured(args: &Value, cwd: &str) -> Result<Value> {
     }
     Ok(p)
 }
-fn thread(s: &Value, complete: bool) -> Result<Value> {
+pub(crate) fn thread(s: &Value, complete: bool) -> Result<Value> {
     let mut t = json!({"id":s["id"],"name":s["title"],"cwd":s["cwd"],"path":s["rolloutPath"],"createdAt":s["createdAt"].as_u64().unwrap_or(0)/1000,"updatedAt":s["updatedAt"].as_u64().unwrap_or(0)/1000,"model":s["latestModel"],"reasoningEffort":s["latestReasoningEffort"],"status":s["threadRuntimeStatus"],"runtimeSource":"codex-desktop-owner"});
     if complete {
         t["turns"] = json!(desktop::turns(s)?)
@@ -1061,7 +1068,7 @@ fn summary(t: &Value) -> Value {
     };
     json!({"threadId":t["id"],"project":t["cwd"],"title":t["name"],"preview":t["preview"],"cwd":t["cwd"],"runtimeStatus":state,"runtimeSource":if state=="unknown"{json!("persisted-history-only")}else{t["runtimeSource"].clone()},"configuration":{"scope":"thread-defaults","source":"thread/read-or-list","model":t.get("model").unwrap_or(&json!("unknown")),"effort":t.get("reasoningEffort").unwrap_or(&json!("unknown")),"modelProvider":t.get("modelProvider").unwrap_or(&json!("unknown")),"turnEffective":"unknown"},"actions":{"read":true,"send":if state=="idle"{"new-turn"}else if state=="active"{"steer"}else{"requires-native-ownership-check"},"interrupt":"native-ownership-check","configurationChange":if state=="idle"{"new-turn-and-subsequent"}else{"requires-idle"}},"activeFlags":t["status"].get("activeFlags").unwrap_or(&json!([])),"updatedAt":t["updatedAt"],"observedAt":now(),"businessDelivery":"not-assessed","desktopUrl":format!("codex://threads/{}",string(t,"id"))})
 }
-fn item(v: &Value, offset: usize, len: usize) -> Value {
+pub(crate) fn item(v: &Value, offset: usize, len: usize) -> Value {
     let text = match string(v, "type") {
         "agentMessage" => string(v, "text").to_owned(),
         "userMessage" => v["content"]

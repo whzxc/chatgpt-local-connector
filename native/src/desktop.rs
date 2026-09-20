@@ -53,6 +53,7 @@ pub struct Ipc {
     owners: Arc<Mutex<HashMap<String, String>>>,
     snapshots: Arc<Mutex<HashMap<String, Value>>>,
     wake: Arc<Notify>,
+    pub(crate) changes: Arc<Notify>,
     client: String,
     reader: tokio::task::JoinHandle<()>,
     alive: Arc<std::sync::atomic::AtomicBool>,
@@ -90,6 +91,8 @@ impl Ipc {
         let owners: Arc<Mutex<HashMap<String, String>>> = Default::default();
         let snapshots: Arc<Mutex<HashMap<String, Value>>> = Default::default();
         let wake = Arc::new(Notify::new());
+        let changes = Arc::new(Notify::new());
+        let changed = changes.clone();
         let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let (w, p, o, s, n, a) = (
             writer.clone(),
@@ -101,6 +104,7 @@ impl Ipc {
         );
         let session = session.to_owned();
         let reader = tokio::spawn(async move {
+            let mut revisions = HashMap::new();
             loop {
                 let Ok(len) = rd.read_u32_le().await else {
                     break;
@@ -164,6 +168,14 @@ impl Ipc {
                                 .insert(thread.into(), params["change"].clone());
                         }
                         n.notify_waiters();
+                        // Follow/read can repeat an unchanged snapshot. Wake task waiters
+                        // only for a changed revision, not another reader's refresh.
+                        let revision = params["change"]["revision"].as_u64();
+                        if revision.is_none()
+                            || revisions.insert(thread.to_owned(), revision) != Some(revision)
+                        {
+                            changed.notify_waiters();
+                        }
                         let mut params = params.clone();
                         params["ownerClientId"] = msg["sourceClientId"].clone();
                         crate::event(
@@ -182,6 +194,8 @@ impl Ipc {
                 let _ = r.tx.send(Err("DESKTOP_DISCONNECTED".into()));
             }
             n.notify_waiters();
+            changed.notify_waiters();
+            events.lock().await.wake.notify_waiters();
         });
         let mut ipc = Self {
             writer,
@@ -189,6 +203,7 @@ impl Ipc {
             owners,
             snapshots,
             wake,
+            changes,
             client: String::new(),
             reader,
             alive,
@@ -299,6 +314,14 @@ impl Ipc {
     }
     pub async fn read(&self, thread: &str, complete: bool) -> Result<Value> {
         let owner = self.owner(thread).await?;
+        self.read_owned(thread, complete, &owner).await
+    }
+    pub(crate) async fn read_owned(
+        &self,
+        thread: &str,
+        complete: bool,
+        owner: &str,
+    ) -> Result<Value> {
         self.snapshots.lock().await.remove(thread);
         self.follow_owner(thread, &owner).await?;
         let mut state = self.wait(thread, 0).await?;

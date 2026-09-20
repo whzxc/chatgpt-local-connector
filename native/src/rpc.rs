@@ -4,7 +4,16 @@ use tokio::{
     io::{AsyncWriteExt, BufReader},
     sync::oneshot,
 };
-type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value>>>>>;
+type Pending = Arc<std::sync::Mutex<HashMap<String, oneshot::Sender<Result<Value>>>>>;
+struct PendingCall {
+    pending: Pending,
+    key: String,
+}
+impl Drop for PendingCall {
+    fn drop(&mut self) {
+        self.pending.lock().unwrap().remove(&self.key);
+    }
+}
 pub struct Rpc {
     input: Mutex<tokio::process::ChildStdin>,
     child: Mutex<tokio::process::Child>,
@@ -23,6 +32,7 @@ impl Rpc {
         #[cfg(unix)]
         command.process_group(0);
         let mut child = command
+            .kill_on_drop(true)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -55,6 +65,13 @@ impl Rpc {
                     if let Some(key) = msg.get("id") {
                         events.lock().await.pending.insert(key.to_string(),json!({"id":key,"method":msg["method"],"params":msg["params"],"backendSession":session}));
                     }
+                    if string(&msg, "method") == "serverRequest/resolved" {
+                        events
+                            .lock()
+                            .await
+                            .pending
+                            .remove(&msg["params"]["requestId"].to_string());
+                    }
                     crate::event(
                         &events,
                         &session,
@@ -63,7 +80,7 @@ impl Rpc {
                     )
                     .await;
                 } else if let Some(key) = msg.get("id") {
-                    if let Some(tx) = pending.lock().await.remove(&key.to_string()) {
+                    if let Some(tx) = pending.lock().unwrap().remove(&key.to_string()) {
                         let result = if msg.get("error").is_some() {
                             Err(format!("RPC_REJECTED:{}", msg["error"]))
                         } else {
@@ -74,10 +91,12 @@ impl Rpc {
                 }
             }
             alive.store(false, std::sync::atomic::Ordering::SeqCst);
-            for (_, tx) in pending.lock().await.drain() {
+            for (_, tx) in pending.lock().unwrap().drain() {
                 let _ = tx.send(Err("TRANSPORT_CLOSED: execution state unknown".into()));
             }
-            events.lock().await.pending.clear();
+            let mut events = events.lock().await;
+            events.pending.clear();
+            events.wake.notify_waiters();
         });
         rpc.call("initialize",json!({"clientInfo":{"name":"local-connector","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}),60000).await?;
         rpc.write(json!({"method":"initialized"})).await?;
@@ -99,16 +118,23 @@ impl Rpc {
         }
         let key = id();
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().await.insert(json!(key).to_string(), tx);
+        let _guard = PendingCall {
+            pending: self.pending.clone(),
+            key: json!(key).to_string(),
+        };
+        self.pending
+            .lock()
+            .unwrap()
+            .insert(json!(key).to_string(), tx);
         if let Err(e) = self
             .write(json!({"id":key,"method":method,"params":params}))
             .await
         {
-            self.pending.lock().await.remove(&json!(key).to_string());
+            self.pending.lock().unwrap().remove(&json!(key).to_string());
             return Err(e);
         }
         let out = tokio::time::timeout(Duration::from_millis(timeout), rx).await;
-        self.pending.lock().await.remove(&json!(key).to_string());
+        self.pending.lock().unwrap().remove(&json!(key).to_string());
         out.map_err(|_| format!("RPC_TIMEOUT_UNCONFIRMED: {method}"))?
             .map_err(|_| "TRANSPORT_CLOSED".to_string())?
     }

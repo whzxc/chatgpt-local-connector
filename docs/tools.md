@@ -4,7 +4,7 @@
 
 ## 能力清单
 
-当前入口包含 29 个 MCP 工具。原生方法及参数 Schema 从本机 Codex 二进制动态发现；
+当前入口包含 30 个 MCP 工具。原生方法及参数 Schema 从本机 Codex 二进制动态发现；
 工具数量不保证不同 Codex 版本拥有相同的原生能力，各项功能取决于当前原生服务提供的能力。
 
 | 工具 | 用途 |
@@ -19,6 +19,7 @@
 | codex_thread | 原生线程领域参数入口；Desktop 任务的扩展操作受接入范围限制；后台任务转发到 Connector app-server |
 | codex_account | 当前账号、用量、额度和工作区消息 |
 | codex_capabilities | 服务版本、安装版本、原生模型目录和连接边界 |
+| codex_wait | 一次等待原生轮次终态或交互，默认 60 秒、最长 5 分钟 |
 | codex_tasks / codex_read / codex_items | 所有原生可访问任务、状态、历史与完整条目分页 |
 | codex_create / codex_send / codex_interrupt | 创建、续接、追加输入和中断 |
 | codex_schema | 搜索当前原生方法、获取完整参数 JSON Schema；server 方向含回调响应 Schema |
@@ -205,3 +206,58 @@ codex_request {"requestId":"<原请求 UUID>","action":"reject"}
 任务页展示此 Connector 记录的请求，按原生任务 ID 汇总创建、续接和中断，按创建时间倒序排列内容自适应高度的瀑布流文档卡片，展示标题、项目、模型、推理等级、创建时间、当前状态及 Prompt 预览；点击卡片平滑放大到窗口中央，查看完整 Prompt 和请求记录。关闭按钮、Esc 或点击背景可缩回卡片；未归档任务的详情中也可打开 Codex，已归档任务显示归档状态并隐藏打开按钮。Prompt、请求模型、推理等级和项目来自持久化请求；未提供的配置不显示，不冒充实际执行配置。原生覆盖参数与 input 优先级反映在详情中。任务列表读取全部已持久化的任务回执，不限定当前连接或轮次；已有回执也纳入列表，未保存的 Prompt、配置和未知运行状态不显示，不扫描会话 JSONL 补造内容。
 
 运行状态通过原生任务快照刷新并保存最后一次基本信息，不解析会话 JSONL；关闭页面、应用重启或无法刷新时，仍保留任务记录和最后一次状态及时间。卡片只显示 Codex 原生运行状态，不将 Connector 回执状态映射为任务状态；原生 idle 显示“空闲”，不代表用户工作目标已完成。任务正文保存在权限受限的本机状态目录，不写入连接日志或系统通知。
+
+## 任务等待
+
+创建或发送任务后，先从原请求回执取得 threadId / turnId，再优先调用 `codex_wait`。不要重复创建任务，也无需用 `codex_read` 配合 sleep 高频轮询。`codex_read`、`codex_events`、`codex_request` 的用途和参数保持不变。
+
+```json
+{"threadId":"<thread-id>","turnId":"<turn-id>","timeoutMs":60000,"until":"terminal-or-interaction"}
+```
+
+输入是禁止额外属性的 object：
+
+| 字段 | 类型与含义 |
+| --- | --- |
+| threadId | 必填、非空 string |
+| turnId | 可选、非空 string；省略时固定首个观察到的当前活跃轮次，否则最近一轮；不会跳到后续轮次 |
+| timeoutMs | integer，1–300000，默认 60000；包括建立读取连接和原生读取时间 |
+| until | terminal / interaction-required / terminal-or-interaction（默认）；声明期望目标 |
+| expectedHash | 可选 string，上次返回的 snapshotHash，用于 changed 比较 |
+
+终态与需要交互都是退出条件：即使 until=terminal，遇到交互也会退出，避免等待一个需要用户推进的任务；until=interaction-required 遇到终态也退出。`conditionMet` 表示返回状态是否符合 until。expectedHash 不屏蔽已经存在的终态或交互；未提供时 changed 比较本次第一次成功读取的快照。观察时间不参与哈希。
+
+返回示例（位于 MCP structuredContent.result）：
+
+```json
+{
+  "state":"completed",
+  "reason":"native-turn-terminal",
+  "threadId":"<thread-id>",
+  "turnId":"<turn-id>",
+  "recordedStatus":"completed",
+  "runtimeStatus":"idle",
+  "runtimeSource":"connector-app-server",
+  "finalResponse":{"itemId":"<item-id>","type":"agentMessage","text":"完成","textTruncated":false,"nextOffset":null},
+  "interaction":[],
+  "conditionMet":true,
+  "changed":true,
+  "snapshotHash":"<hash>",
+  "observedAt":"<last-native-observation-time>",
+  "returnedAt":"<return-time>",
+  "elapsedMs":1234
+}
+```
+
+`finalResponse` 是选中轮次最近一条 assistant 输出，并不把 running 输出认定为最终交付；沿用条目的 textHash、UTF-16 offset/nextOffset，文本最多 6000 个 UTF-16 单位。余下内容通过 `codex_items` 读取，大结果沿用 `control_output` 分页。
+
+- completed / failed / cancelled 来自所选原生轮次；原生 interrupted 映射为 cancelled，recordedStatus 保留原值。
+- interaction-required 返回当前 Connector 原生 pending 的 id、responseId、method、params、backendSession；`codex_respond.id` 使用 responseId（保留原生数值/字符串 ID 的 JSON 编码）。不自动 approve。Desktop 通过 activeFlags 报告等待审批/输入时会立即退出，但其 IPC 不提供原生回调 ID；此时 interactionAction 指向 Desktop 处理，不伪造 ID。
+- timeout / deadline 仅代表这一次等待用尽时间；保留最后观察到的任务状态，不中断、不重发。继续等可再次调用 wait。
+- unconfirmed 表示本次无法确认，reason 区分 connection-closed、connector-shutdown、native-read-timeout、native-connect-timeout、runtime-owner-changed 等。运行状态 notLoaded/unknown、目标轮次不存在、状态矛盾也不会被当作成功或停止。读取本身未能在期限内确认时返回 unconfirmed，而不是用旧快照断言当前状态。observedAt 保留最后成功读取的时间，没有成功读取则为 null。
+
+等待固定使用实际运行连接，不在断线后重新启动/恢复任务。事件驱动唤醒并合并 250ms 内的流式通知，空闲每两秒回读原生状态；Desktop 重复的相同 revision 快照不会唤醒等待者，避免多个读取者互相触发回读；不依赖有限事件缓冲的连续 cursor。每个 wait 独立等待，不持有共享锁跨越网络读操作或等待。
+
+MCP notifications/cancelled 可取消对应 wait，返回 unconfirmed / wait-cancelled（若客户端仍接受响应），不会发送 turn/interrupt。当前无会话 MCP 入口要求并发等待使用唯一 JSON-RPC request ID，重复活跃 ID 会被拒绝。客户端关闭 HTTP/stdio 连接后释放等待；Connector shutdown 通知等待者退出。连接已经关闭时无法向原调用方交付响应，调用方应把结果视为未知并重新读取任务。客户端、Tunnel 或反向代理可能有更短的请求期限；本机 stdio 转发支持五分钟等待，但不能保证外部入口接受同样时长。
+
+这是有界同步等待，不是持久化监控订阅、定时任务或后台推送。普通 Chat 结束当前回复后不会继续执行等待。

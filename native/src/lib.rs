@@ -14,6 +14,7 @@ pub mod proxy;
 pub mod rpc;
 pub mod service;
 pub mod transport;
+pub mod waiter;
 pub type Result<T> = std::result::Result<T, String>;
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
@@ -133,6 +134,7 @@ pub async fn output(binary: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Resul
 }
 #[derive(Default)]
 pub struct Events {
+    pub wake: Arc<tokio::sync::Notify>,
     pub rows: Vec<Value>,
     pub bytes: usize,
     pub sequence: u64,
@@ -146,6 +148,7 @@ pub async fn event(events: &SharedEvents, session: &str, method: &str, params: V
     let row = json!({"cursor":e.sequence,"backendSession":session,"method":method,"params":params,"time":now()});
     e.bytes += row.to_string().len();
     e.rows.push(row.clone());
+    e.wake.notify_waiters();
     while e.rows.len() > 2000 || e.bytes > 8 * 1024 * 1024 {
         let removed = e.rows.remove(0);
         e.bytes -= removed.to_string().len();

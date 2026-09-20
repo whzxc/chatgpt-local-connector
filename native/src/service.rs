@@ -10,6 +10,7 @@ use tokio::{
 };
 pub struct Service {
     pub control: Arc<Control>,
+    pub(crate) wait_calls: crate::transport::WaitCalls,
     pub token: String,
     pub port: std::sync::atomic::AtomicU16,
     settings: Mutex<Value>,
@@ -72,6 +73,7 @@ impl Service {
             .collect();
         Ok(Arc::new(Self {
             control: Control::new(binary),
+            wait_calls: Default::default(),
             token: id() + &id(),
             port: std::sync::atomic::AtomicU16::new(0),
             settings: Mutex::new(settings),
@@ -134,6 +136,7 @@ impl Service {
             child.take();
             self.connected
                 .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.control.stop_waits();
             *self.failure.lock().await = "连接进程已退出，请重新连接".into();
         }
         let tunnel_running = child.is_some();
@@ -143,6 +146,7 @@ impl Service {
             https.take();
             self.connected
                 .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.control.stop_waits();
             *self.failure.lock().await = "MCP 监听已退出，请重新连接".into();
         }
         let https_running = https.is_some();
@@ -159,6 +163,7 @@ impl Service {
             match tunnel.ready().await {
                 Ok(ready) => ready,
                 Err(error) if lifecycle.is_some() => {
+                    self.control.stop_waits();
                     *self.failure.lock().await = error;
                     self.connected
                         .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -264,6 +269,7 @@ impl Service {
         )
     }
     pub async fn stop(&self) -> Result<()> {
+        self.control.stop_waits();
         self.stopping
             .store(true, std::sync::atomic::Ordering::SeqCst);
         self.ready_logged
