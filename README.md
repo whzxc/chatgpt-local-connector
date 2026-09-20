@@ -1,8 +1,8 @@
 # ChatGPT Local Connector
 
-**在 ChatGPT 里聊想法，让本机的 Codex 接着干。**
+**在 ChatGPT 里聊想法，让本机的 coding agent 接着干。**
 
-Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，支持 Codex Native、Pi 和 OpenCode（ACP）。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
 
 ![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
 
@@ -11,7 +11,9 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 - **一次等到关键进展**：创建或续接后用 `codex_wait` 等待完成、失败或需要交互，单次最长五分钟；超时不终止任务。
 - **连接有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，连接状态一眼可见。
 
-日常使用无需安装 Node、npm、Rust 或 Cargo。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
+CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使用各自所需的运行环境。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
+
+Codex 保持默认，原生能力完整保留。Pi/OpenCode 沿用本机配置和登录；设置中的 Agents 区域自动发现安装。公共任务使用 `agent_*` 工具，差异与使用方法见[本地 Agents](docs/agents.md)。
 
 ## 安装
 

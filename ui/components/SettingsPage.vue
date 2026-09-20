@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 import { api, useConnector, type Service } from '../composables/useConnector';
 import { isDesktop } from '../platform';
 import AppUpdate from './AppUpdate.vue';
+import AgentsSettings from './AgentsSettings.vue';
 import SettingsGroup from './SettingsGroup.vue';
 import SettingsRow from './SettingsRow.vue';
 import '../settings.css';
@@ -94,6 +95,8 @@ async function setApproval(enabled: boolean) {
         <ConnectionFields :form="form" :disabled="!!busy || !editable" />
       </form>
     </SettingsGroup>
+
+    <AgentsSettings />
 
     <SettingsGroup title="任务">
       <SettingsRow title="自动打开 Codex 任务" description="关闭后，新任务在后台执行。" control-id="settings-auto-open">

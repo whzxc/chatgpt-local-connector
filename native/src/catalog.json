@@ -1,5 +1,5 @@
 {
-  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。 创建或发送任务后优先调用 codex_wait 等待终态或交互，不要高频 codex_read + sleep 轮询。",
+  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。 创建或发送任务后优先调用 codex_wait 等待终态或交互，不要高频 codex_read + sleep 轮询。 通用 agent_* 支持 Codex Native、Pi RPC 和 OpenCode ACP。先 agents 发现；agent_create/send 使用 UUID requestId，agent_request 回读回执，agent_read 确认执行结果。Pi/ACP 的运行进程由 CLC 管理，关闭连接会终止进程。",
   "tools": [
     {
       "name": "connector_verify",
@@ -1845,6 +1845,588 @@
       },
       "annotations": {
         "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agents",
+      "description": "发现本机 Agent、版本与协议；installed 不代表 provider 已认证。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_capabilities",
+      "description": "读取公共能力；提供 taskId 返回实际协商能力。Codex 高级能力使用 codex_*。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_tasks",
+      "description": "列出任务；Pi/ACP 仅列出 CLC 创建的持久任务。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Codex 原生分页游标；Pi/ACP 使用 offset"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_create",
+      "description": "创建持久任务并可发送文本。写入返回回执，用 agent_request 回读，未知状态禁止换 requestId 重试。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "cwd": {
+            "type": "string",
+            "description": "本机绝对工作目录"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "cwd",
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_read",
+      "description": "读取任务状态、最后输出与原生元数据。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          }
+        },
+        "required": [
+          "agent",
+          "taskId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_send",
+      "description": "继续任务；停止的已确认会话按协商能力恢复。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "taskId",
+          "prompt",
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_interrupt",
+      "description": "请求取消；Codex 还需 turnId；回读任务确认终态。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approval": {
+            "type": "string",
+            "enum": [
+              "default",
+              "approved",
+              "bypass"
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "taskId",
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_events",
+      "description": "读取流式原生事件；完整归档通过 control_output。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "backendSession": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "taskId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_pending",
+      "description": "列出等待中的权限请求或 Pi 扩展交互，不自动批准。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          }
+        },
+        "required": [
+          "agent",
+          "taskId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_respond",
+      "description": "响应 pending；ACP 选择 optionId，Pi 按交互类型提供 value/confirmed，Codex 传原生 result/error 和 backendSession。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "interactionId": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "optionId": {
+            "type": "string"
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string"
+          },
+          "backendSession": {
+            "type": "string"
+          },
+          "result": {},
+          "error": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "agent",
+          "taskId",
+          "requestId",
+          "interactionId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "agent_request",
+      "description": "读取或决定幂等回执；completed 表示写操作完成，任务终态需 agent_read。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "default": "codex",
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "read",
+              "approve",
+              "bypass",
+              "reject"
+            ]
+          }
+        },
+        "required": [
+          "agent",
+          "requestId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false

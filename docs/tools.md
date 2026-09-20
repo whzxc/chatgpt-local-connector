@@ -4,11 +4,12 @@
 
 ## 能力清单
 
-当前入口包含 30 个 MCP 工具。原生方法及参数 Schema 从本机 Codex 二进制动态发现；
+当前入口包含 41 个 MCP 工具。原生方法及参数 Schema 从本机 Codex 二进制动态发现；
 工具数量不保证不同 Codex 版本拥有相同的原生能力，各项功能取决于当前原生服务提供的能力。
 
 | 工具 | 用途 |
 | --- | --- |
+| agents / agent_capabilities / agent_tasks / agent_create / agent_read / agent_send / agent_interrupt / agent_events / agent_pending / agent_respond / agent_request | 多 Agent 公共任务与幂等入口，详见[本地 Agents](agents.md) |
 | connector_verify | 回传引导中的验证码，确认连接调用到达本机，不执行任务 |
 | projects / overview / tree / search / read / git | 实时 Codex 本机项目、目录文件事实和只读 Git 查询 |
 | fs | 主机绝对路径的文件读写、目录、元数据、复制、删除和监听 |

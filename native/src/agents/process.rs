@@ -1,0 +1,283 @@
+use crate::*;
+use std::{collections::HashMap, process::Stdio, time::Duration};
+use tokio::{
+    io::{AsyncWriteExt, BufReader},
+    sync::oneshot,
+};
+type Replies = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value>>>>>;
+
+/// One owned stdio process per task. ACP and Pi share framing, not protocol semantics.
+pub struct Process {
+    input: Mutex<tokio::process::ChildStdin>,
+    child: Mutex<tokio::process::Child>,
+    replies: Replies,
+    pub events: SharedEvents,
+    pub state: Arc<Mutex<Value>>,
+    pub pi: bool,
+    pub alive: std::sync::atomic::AtomicBool,
+    pub capabilities: Mutex<Value>,
+}
+impl Process {
+    pub async fn start(
+        binary: &Path,
+        args: &[String],
+        cwd: &Path,
+        pi: bool,
+        mut state: Value,
+    ) -> Result<Arc<Self>> {
+        state["processSession"] = json!(id());
+        let mut cmd = launch_command(binary, args)?;
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd
+            .current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        let input = child.stdin.take().ok_or("MISSING_STDIN")?;
+        let stdout = child.stdout.take().ok_or("MISSING_STDOUT")?;
+        let process = Arc::new(Self {
+            input: Mutex::new(input),
+            child: Mutex::new(child),
+            replies: Default::default(),
+            events: Default::default(),
+            state: Arc::new(Mutex::new(state)),
+            pi,
+            alive: true.into(),
+            capabilities: Mutex::new(Value::Null),
+        });
+        let weak = Arc::downgrade(&process);
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                let frame = match crate::line(&mut reader, 32 * 1024 * 1024).await {
+                    Ok(b) if !b.is_empty() => b,
+                    _ => break,
+                };
+                let Some(p) = weak.upgrade() else { break };
+                let msg: Value = match serde_json::from_slice(&frame) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                let response = if pi {
+                    msg["type"] == "response"
+                } else {
+                    msg.get("method").is_none() && msg.get("id").is_some()
+                };
+                if response {
+                    if let Some(tx) = p.replies.lock().await.remove(&msg["id"].to_string()) {
+                        let result = if msg.get("error").is_some() || (pi && msg["success"] != true)
+                        {
+                            Err(format!("RPC_REJECTED:{}", msg))
+                        } else {
+                            Ok(msg[if pi { "data" } else { "result" }].clone())
+                        };
+                        let _ = tx.send(result);
+                    }
+                    continue;
+                }
+                let method = if pi {
+                    string(&msg, "type")
+                } else {
+                    string(&msg, "method")
+                };
+                if !pi && msg.get("id").is_some() && method != "session/request_permission" {
+                    let _ = p.write(json!({"jsonrpc":"2.0","id":msg["id"],"error":{"code":-32601,"message":"Client capability not supported"}})).await;
+                    continue;
+                }
+                let mut state = p.state.lock().await;
+                let task = string(&state, "taskId").to_owned();
+                crate::event(&p.events, &task, method, msg.clone()).await;
+                if method == "session/request_permission"
+                    || (method == "extension_ui_request"
+                        && matches!(
+                            string(&msg, "method"),
+                            "select" | "confirm" | "input" | "editor"
+                        ))
+                {
+                    p.events
+                        .lock()
+                        .await
+                        .pending
+                        .insert(msg["id"].to_string(), msg.clone());
+                    state["status"] = json!("waiting-permission");
+                }
+                if pi {
+                    if method == "message_end" && msg["message"]["role"] == "assistant" {
+                        state["lastMessage"] = msg["message"].clone();
+                        state["output"] = json!(msg["message"]["content"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter(|c| c["type"] == "text")
+                            .map(|c| string(c, "text"))
+                            .collect::<Vec<_>>()
+                            .join(""));
+                    }
+                    if method == "agent_settled" {
+                        state["status"] =
+                            json!(match string(&state["lastMessage"], "stopReason") {
+                                "error" => "failed",
+                                "aborted" => "cancelled",
+                                _ => "completed",
+                            });
+                    }
+                } else if method == "session/update" {
+                    let update = &msg["params"]["update"];
+                    if update["sessionUpdate"] == "agent_message_chunk"
+                        && update["content"]["type"] == "text"
+                    {
+                        let mut text = string(&state, "output").to_owned();
+                        text.push_str(string(&update["content"], "text"));
+                        // Complete protocol events remain available through control_output.
+                        if text.len() > 256 * 1024 {
+                            let mut start = text.len() - 256 * 1024;
+                            while !text.is_char_boundary(start) {
+                                start += 1;
+                            }
+                            text = text[start..].to_owned();
+                            state["outputTruncated"] = json!(true);
+                        }
+                        state["output"] = json!(text);
+                    }
+                }
+                state["updatedAt"] = json!(now());
+                if let Err(e) = super::save_task(&state) {
+                    state["storageError"] = json!(e);
+                }
+            }
+            if let Some(p) = weak.upgrade() {
+                p.alive.store(false, std::sync::atomic::Ordering::SeqCst);
+                for (_, tx) in p.replies.lock().await.drain() {
+                    let _ = tx.send(Err("PROCESS_EXIT_UNCONFIRMED".into()));
+                }
+                let mut s = p.state.lock().await;
+                if !matches!(string(&s, "status"), "completed" | "cancelled" | "failed") {
+                    s["status"] = json!("unknown");
+                }
+                s["processState"] = json!("exited");
+                let _ = super::save_task(&s);
+                p.events.lock().await.pending.clear();
+                if let Ok(Some(status)) = p.child.lock().await.try_wait() {
+                    s["exitCode"] = json!(status.code());
+                    let _ = super::save_task(&s);
+                }
+            }
+        });
+        Ok(process)
+    }
+    pub async fn write(&self, value: Value) -> Result<()> {
+        let mut input = self.input.lock().await;
+        input
+            .write_all(format!("{value}\n").as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
+        input.flush().await.map_err(|e| e.to_string())
+    }
+    pub async fn call(&self, method: &str, params: Value, timeout: u64) -> Result<Value> {
+        if !self.alive.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("PROCESS_EXIT_UNCONFIRMED".into());
+        }
+        let key = json!(id());
+        let (tx, rx) = oneshot::channel();
+        self.replies.lock().await.insert(key.to_string(), tx);
+        let request = if self.pi {
+            let mut p = params;
+            p["id"] = key.clone();
+            p["type"] = json!(method);
+            p
+        } else {
+            json!({"jsonrpc":"2.0","id":key,"method":method,"params":params})
+        };
+        if let Err(e) = self.write(request).await {
+            self.replies.lock().await.remove(&key.to_string());
+            return Err(e);
+        }
+        let result = tokio::time::timeout(Duration::from_millis(timeout), rx).await;
+        self.replies.lock().await.remove(&key.to_string());
+        result
+            .map_err(|_| format!("RPC_TIMEOUT_UNCONFIRMED:{method}"))?
+            .map_err(|_| "PROCESS_EXIT_UNCONFIRMED".to_owned())?
+    }
+    pub async fn close(&self) {
+        let _ = self.input.lock().await.shutdown().await;
+        let mut child = self.child.lock().await;
+        let pid = child.id();
+        if tokio::time::timeout(Duration::from_secs(2), child.wait())
+            .await
+            .is_err()
+        {
+            let _ = child.kill().await;
+        }
+        #[cfg(unix)]
+        if let Some(pid) = pid {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+        #[cfg(windows)]
+        if let Some(pid) = pid {
+            let _ = output("taskkill.exe", &["/PID", &pid.to_string(), "/T", "/F"]).await;
+        }
+        self.alive.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+// npm installs Pi as a .cmd launcher on Windows. Never interpolate prompts into a shell.
+fn agent_command(binary: &Path, args: &[String]) -> Result<tokio::process::Command> {
+    #[cfg(windows)]
+    if binary
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
+    {
+        let words = std::iter::once(binary.to_string_lossy().into_owned())
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>();
+        if words.iter().any(|s| {
+            s.chars().any(|c| {
+                matches!(
+                    c,
+                    '"' | '%' | '!' | '\r' | '\n' | '&' | '|' | '<' | '>' | '^'
+                )
+            })
+        }) {
+            return Err("UNSAFE_WINDOWS_LAUNCH_ARGUMENT".into());
+        }
+        let line = words
+            .iter()
+            .map(|s| format!("\"{s}\""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut c = command(std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into()));
+        c.args(["/d", "/s", "/c", &format!("\"{line}\"")]);
+        return Ok(c);
+    }
+    let mut c = command(binary);
+    c.args(args);
+    Ok(c)
+}
+
+fn launch_command(binary: &Path, args: &[String]) -> Result<tokio::process::Command> {
+    let mut c = agent_command(binary, args)?;
+    let mut paths = super::driver::search_paths();
+    if let Some(parent) = binary.parent() {
+        paths.push(parent.into());
+    }
+    c.env(
+        "PATH",
+        std::env::join_paths(paths).map_err(|e| e.to_string())?,
+    );
+    Ok(c)
+}
+pub(super) async fn version(binary: &Path) -> Result<String> {
+    let out = launch_command(binary, &["--version".into()])?
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err("VERSION_PROBE_FAILED".into());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().into())
+}

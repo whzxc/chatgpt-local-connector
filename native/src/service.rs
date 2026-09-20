@@ -10,6 +10,7 @@ use tokio::{
 };
 pub struct Service {
     pub control: Arc<Control>,
+    pub agents: Arc<crate::agents::AgentHost>,
     pub(crate) wait_calls: crate::transport::WaitCalls,
     pub token: String,
     pub port: std::sync::atomic::AtomicU16,
@@ -73,6 +74,7 @@ impl Service {
             .collect();
         Ok(Arc::new(Self {
             control: Control::new(binary),
+            agents: crate::agents::AgentHost::new()?,
             wait_calls: Default::default(),
             token: id() + &id(),
             port: std::sync::atomic::AtomicU16::new(0),
@@ -312,6 +314,7 @@ impl Service {
         }
         guard.take();
         drop(guard);
+        self.agents.close().await;
         self.control.close().await;
         if let Some(dir) = self.run_dir.lock().await.take() {
             let _ = std::fs::remove_dir_all(dir);
@@ -327,8 +330,7 @@ impl Service {
             return Ok(());
         }
         self.stop().await?;
-        if self.control.auto_open_codex()? {
-            crate::desktop::require_installation()?;
+        if self.control.auto_open_codex()? && crate::desktop::installation().is_some() {
             if crate::desktop::Ipc::open(Default::default(), &self.control.session)
                 .await
                 .is_err()
@@ -676,6 +678,7 @@ impl Service {
                 self.stop().await?;
                 Ok(json!({"ok":true}))
             }
+            ("GET", "agents") => Ok(self.agents.inventory().await),
             ("GET", "dependencies") => {
                 let s = self.settings.lock().await.clone();
                 let describe = |binary: Option<PathBuf>| async move {
@@ -738,6 +741,8 @@ impl Service {
             save(&root().join("web/chatgpt.json"), &next)?;
             *v = next;
             Ok(json!({"code":args["code"],"received":true}))
+        } else if name == "agents" || name.starts_with("agent_") {
+            self.agents.tool(&self.control, name, args).await
         } else {
             self.control.tool(name, args).await
         };
