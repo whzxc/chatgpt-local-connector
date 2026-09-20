@@ -55,8 +55,8 @@ gh workflow run check.yml --ref main
 检查成功后，为该次检查对应的提交推送 `v<版本>` 标签；若期间又提交了改动，需要对新提交重新手动检查。标签版本须与 `package.json` 及 `CHANGELOG.md` 一致。
 
 ```sh
-git tag v0.5.0
-git push origin v0.5.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 推送前确认目标 remote 为公开源码仓库；仅推送选定分支和版本标签，不使用 `--mirror` 或 `--all`。

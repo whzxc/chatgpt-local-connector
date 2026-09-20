@@ -1,5 +1,17 @@
 # 版本说明
 
+## 0.6.0
+
+多 Agent 支持与任务等待能力。
+
+- 新增 Pi 官方 RPC 与 OpenCode ACP 接入，自动发现本机安装并继承已有 provider、模型和登录配置。
+- 新增通用 Agent 工具，支持创建、续接、读取、取消任务，流式事件、权限交互与持久化幂等回执；Codex Native 及全部原生工具保持可用。
+- 设置页新增 Agents 区域，展示安装状态、版本与协议；支持通过本机 manifest 添加 ACP Agent。
+- 新增 `codex_wait`，等待任务终态或交互请求，减少主动轮询；等待取消不影响任务执行。
+- 优化 ChatGPT 接入与验收引导，区分连接就绪、实际入站调用与任务完成。
+
+支持 Apple Silicon Mac 与 Windows x64。Pi/ACP 子进程由 Connector 管理；关闭连接会停止其进程。通用 Agent 工具目前支持文本输入，Pi 的权限交互依赖自身扩展，Codex Desktop 任务继续沿用原执行归属。
+
 ## 0.5.0
 
 Windows Codex Desktop 任务接入。
