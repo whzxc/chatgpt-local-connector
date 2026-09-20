@@ -12,8 +12,9 @@ import ConnectionFields from './ConnectionFields.vue';
 import { useConnectionForm } from '../composables/useConnectionForm';
 const { status, busy, editable, run, refresh, notify } = useConnector();
 const { form, save: saveConnection } = useConnectionForm();
-const saveLabel = computed(() => busy.value === 'config' ? '保存中…' : editable.value ? '保存' : status.value?.tunnel.state === 'ready' ? '已连接' : status.value?.tunnel.state === 'starting' ? '连接中…' : '暂不可编辑');
-const saveHint = computed(() => !editable.value ? '关闭连接后可保存' : '保存连接信息');
+const managedHttps = computed(() => form.connectionMode === 'https' && form.httpsProvider !== 'custom');
+const saveLabel = computed(() => busy.value === 'config' ? (managedHttps.value ? '连接中…' : '保存中…') : editable.value ? (managedHttps.value ? '保存并连接' : '保存') : status.value?.tunnel.state === 'ready' ? '已连接' : status.value?.tunnel.state === 'starting' ? '连接中…' : '暂不可编辑');
+const saveHint = computed(() => !editable.value ? '关闭连接后可保存' : managedHttps.value ? '保存并启动本机隧道' : '保存连接信息');
 const proxyMode = ref(status.value?.config.proxyMode || 'system');
 const proxyUrl = ref(status.value?.config.proxyUrl || '');
 async function saveProxy() {
@@ -36,7 +37,13 @@ useIntervalFn(refreshService, 5000);
 async function save() {
   if (!status.value) return;
   await saveConnection();
-  await refresh(); notify('连接信息已保存。');
+  await refresh();
+  if (managedHttps.value) {
+    try { await api('start', 'POST'); } finally { await refresh(); }
+    notify(form.httpsProvider === 'cloudflare' && form.cloudflareMode === 'named'
+      ? '本机隧道已连接，请确认 Cloudflare 公开路由后，在 ChatGPT 添加接入地址。'
+      : '接入地址已生成，复制地址并在 ChatGPT 添加连接。');
+  } else notify('连接信息已保存。');
 }
 async function startup(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -97,7 +104,7 @@ async function setApproval(enabled: boolean) {
     <SettingsGroup title="网络">
       <SettingsRow title="代理" description="使用系统代理，或仅为 Local Connector 指定代理。">
         <div class="mode-switch" role="group" aria-label="代理方式">
-          <button v-for="option in [{value:'system',label:'跟随系统'},{value:'direct',label:'不使用代理'},{value:'custom',label:'自定义'}] as const" :key="option.value" type="button" :aria-pressed="proxyMode===option.value" :class="{active:proxyMode===option.value}" :disabled="!!busy" @click="proxyMode=option.value;changeProxy()">{{option.label}}</button>
+          <button v-for="option in [{value:'system',label:'系统代理'},{value:'direct',label:'不使用代理'},{value:'custom',label:'自定义'}] as const" :key="option.value" type="button" :aria-pressed="proxyMode===option.value" :class="{active:proxyMode===option.value}" :disabled="!!busy" @click="proxyMode=option.value;changeProxy()">{{option.label}}</button>
         </div>
       </SettingsRow>
       <SettingsRow v-if="proxyMode === 'custom'" title="代理地址" description="支持 HTTP/HTTPS 代理。保存后重新连接生效。" control-id="settings-proxy-url">

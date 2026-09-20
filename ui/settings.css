@@ -16,7 +16,7 @@
 
 .settings-preferences .settings-connection-form { padding: 0 16px 16px; }
 .settings-preferences .connection-fields { border-top: 1px solid var(--line); padding-top: 14px; gap: 16px; }
-.settings-preferences .connection-mode-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-preferences .connection-mode-row { flex-direction: column; align-items: flex-start; gap: 8px; }
 .settings-preferences .mode-switch { border: 0; border-radius: 8px; }
 .settings-preferences .mode-switch button { border-radius: var(--control-radius); }
 .settings-preferences .connection-help { font-size: 12px; line-height: 1.6; }
@@ -46,3 +46,8 @@
   .settings-preferences .connection-mode-row { flex-wrap: wrap; }
   .settings-preferences .mode-switch { max-width: 100%; }
 }
+
+.settings-preferences .connection-advanced { margin: 0; }
+.settings-preferences .connection-advanced summary { margin: 0; font-size: 12px; }
+.settings-preferences .connection-advanced[open] summary { margin-bottom: 14px; }
+.settings-preferences .connection-upstream { display: grid; gap: 7px; }

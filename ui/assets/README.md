@@ -14,3 +14,5 @@ npx tauri icon ui/assets/local-connector.png --output desktop/icons
 ```
 
 菜单栏使用 `desktop/icons/tray-logo.png`：应用头像去除底色后的透明彩色版本，不使用系统单色模板渲染。
+
+首页互动头像使用 `local-connector-head.png`（高清透明底），背景由 CSS 单独绘制，点击动画只作用于头像。

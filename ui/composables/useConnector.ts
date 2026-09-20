@@ -15,11 +15,13 @@ export interface Config {
   proxyMode: "system" | "direct" | "custom";
   proxyUrl: string;
   connectionMode: "tunnel" | "https";
-  httpsRequireAuth: boolean;
+  httpsProvider: "cloudflare" | "ngrok" | "custom";
+  hasNgrokAuthtoken: boolean;
+  cloudflareMode: "quick" | "named";
+  hasCloudflareToken: boolean;
   httpsUrl: string;
   httpsHost: string;
   httpsPort: number;
-  hasHttpsApiKey: boolean;
   configured: boolean;
   tunnelId: string;
   tunnelBinary: string;
@@ -31,7 +33,7 @@ export interface Status {
   taskApprovalEnabled: boolean;
   autoOpenCodex: boolean;
   core: CoreSnapshot;
-  connection?: { running: boolean; updateAvailable: boolean };
+  connection?: { running: boolean; updateAvailable: boolean; mcpUrl: string };
   deviceName: string;
   platform: string;
   version: string;

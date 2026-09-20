@@ -17,52 +17,57 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 
-pub async fn listen(service: Arc<Service>, settings: &Value) -> Result<JoinHandle<()>> {
-    let addr = SocketAddr::new(
-        string(settings, "httpsHost")
-            .parse::<IpAddr>()
-            .map_err(|e| e.to_string())?,
-        settings["httpsPort"].as_u64().ok_or("invalid port")? as u16,
-    );
+pub async fn listen(
+    service: Arc<Service>,
+    settings: &Value,
+) -> Result<(JoinHandle<()>, SocketAddr)> {
+    let managed = settings["httpsProvider"] != "custom";
+    let addr = if settings["httpsProvider"] == "cloudflare" && settings["cloudflareMode"] == "named"
+    {
+        "127.0.0.1:8787".parse::<SocketAddr>().unwrap()
+    } else if managed {
+        "127.0.0.1:0".parse::<SocketAddr>().unwrap()
+    } else {
+        SocketAddr::new(
+            string(settings, "httpsHost")
+                .parse::<IpAddr>()
+                .map_err(|e| e.to_string())?,
+            settings["httpsPort"].as_u64().ok_or("invalid port")? as u16,
+        )
+    };
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|e| format!("无法监听 MCP 地址 {addr}: {e}"))?;
-    let key = if settings["httpsRequireAuth"] == false {
-        None
-    } else {
-        Some(format!("Bearer {}", string(settings, "httpsApiKey")))
-    };
-    let origin = reqwest::Url::parse(string(settings, "httpsUrl"))
-        .map_err(|e| e.to_string())?
-        .origin()
-        .ascii_serialization();
+    let address = listener.local_addr().map_err(|e| e.to_string())?;
     let service = Arc::downgrade(&service);
-    Ok(tokio::spawn(async move {
-        let mut connections = JoinSet::new();
-        loop {
-            tokio::select! {
-                Some(_) = connections.join_next(), if !connections.is_empty() => {},
-                accepted = listener.accept() => {
-                    let Ok((stream, _)) = accepted else { break };
-                    if connections.len() >= 128 { continue; }
-                    let local_host = stream.local_addr().map(|addr|addr.to_string()).unwrap_or_default();
-                    let Some(service) = service.upgrade() else { break };
-                    let (key, origin) = (key.clone(), origin.clone());
-                    connections.spawn(async move {
-                        let handler = hyper::service::service_fn(move |request| {
-                            handle(request, service.clone(), key.clone(), origin.clone(), local_host.clone())
+    Ok((
+        tokio::spawn(async move {
+            let mut connections = JoinSet::new();
+            loop {
+                tokio::select! {
+                    Some(_) = connections.join_next(), if !connections.is_empty() => {},
+                    accepted = listener.accept() => {
+                        let Ok((stream, _)) = accepted else { break };
+                        if connections.len() >= 128 { continue; }
+                        let local_host = stream.local_addr().map(|addr|addr.to_string()).unwrap_or_default();
+                        let Some(service) = service.upgrade() else { break };
+                        connections.spawn(async move {
+                            let handler = hyper::service::service_fn(move |request| {
+                                handle(request, service.clone(), local_host.clone())
+                            });
+                            let _ = hyper::server::conn::http1::Builder::new()
+                                .timer(TokioTimer::new())
+                                .header_read_timeout(Duration::from_secs(10))
+                                .keep_alive(false)
+                                .serve_connection(TokioIo::new(stream), handler).await;
                         });
-                        let _ = hyper::server::conn::http1::Builder::new()
-                            .timer(TokioTimer::new())
-                            .header_read_timeout(Duration::from_secs(10))
-                            .keep_alive(false)
-                            .serve_connection(TokioIo::new(stream), handler).await;
-                    });
+                    }
                 }
             }
-        }
-        // Dropping JoinSet also closes accepted connections on stop.
-    }))
+            // Dropping JoinSet also closes accepted connections on stop.
+        }),
+        address,
+    ))
 }
 fn reply(code: u16, value: Option<Value>) -> Response<Full<Bytes>> {
     let mut response = Response::builder()
@@ -70,9 +75,6 @@ fn reply(code: u16, value: Option<Value>) -> Response<Full<Bytes>> {
         .header("Cache-Control", "no-store");
     if value.is_some() {
         response = response.header("Content-Type", "application/json");
-    }
-    if code == 401 {
-        response = response.header("WWW-Authenticate", "Bearer realm=\"Local Connector\"");
     }
     if code == 405 {
         response = response.header("Allow", "POST");
@@ -86,14 +88,17 @@ fn reply(code: u16, value: Option<Value>) -> Response<Full<Bytes>> {
 async fn handle(
     request: Request<Incoming>,
     service: Arc<Service>,
-    key: Option<String>,
-    origin: String,
     local_host: String,
 ) -> std::result::Result<Response<Full<Bytes>>, Infallible> {
     let error = |code, message| Ok(reply(code, Some(json!({"error":message}))));
     if request.uri().path() != "/mcp" || request.uri().query().is_some() {
         return error(404, "not found");
     }
+    let url = service.mcp_url.lock().await.clone();
+    let Ok(url) = reqwest::Url::parse(&url) else {
+        return error(503, "tunnel starting");
+    };
+    let origin = url.origin().ascii_serialization();
     let host = request
         .headers()
         .get("host")
@@ -102,12 +107,6 @@ async fn handle(
     let public_host = origin.strip_prefix("https://").unwrap_or("");
     if host != public_host && host != format!("{public_host}:443") && host != local_host {
         return error(403, "invalid host");
-    }
-    if let Some(key) = key {
-        // Compare fixed-size digests without short-circuiting on credential prefixes.
-        let supplied = request.headers().get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
-        let different = hash(supplied).bytes().zip(hash(&key).bytes()).fold(0u8, |diff, (a,b)| diff | (a ^ b));
-        if different != 0 { return error(401, "unauthorized"); }
     }
     if let Some(value) = request.headers().get("origin") {
         if value.to_str().ok() != Some(origin.as_str()) {

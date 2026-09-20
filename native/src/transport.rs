@@ -267,7 +267,11 @@ pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<V
             format!("http://127.0.0.1:{port}/api/{route}"),
         )
         .bearer_auth(string(&info, "token"))
-        .timeout(Duration::from_secs(120));
+        .timeout(Duration::from_secs(if route == "start" {
+            360
+        } else {
+            120
+        }));
     if method != reqwest::Method::GET {
         request = request.json(&body);
     }

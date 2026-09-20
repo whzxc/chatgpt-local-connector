@@ -2,7 +2,7 @@
 
 **在 ChatGPT 里聊想法，让本机的 Codex 接着干。**
 
-Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通过官方 Secure MCP Tunnel 或自备 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通过OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
 
 ![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
 
@@ -19,11 +19,11 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 ## 使用
 
 1. 确保本机 Codex Desktop 已安装、已登录且可用。
-2. 打开 Local Connector，首页未配置提示可直接前往设置，选择官方 Tunnel 或自备 HTTPS MCP。官方模式在首次开启连接时由应用自动准备、校验和配置连接组件；HTTPS 模式无需此组件。
+2. 打开 Local Connector，首页未配置提示可直接前往设置，选择 OpenAI Tunnel 或 HTTPS MCP。所需隧道客户端由应用自动下载和管理。
 3. 官方模式：在 OpenAI Platform 创建通道，或向管理员取得 Tunnel ID 和 runtime API Key，并确认通道关联目标 ChatGPT 工作区及账号具备使用权限。将两项信息填入应用并保存；Codex 登录不能替代 Tunnel 凭据。
-   HTTPS 模式：填写公网 `https://你的域名/mcp`、本机监听 IP 和端口，选择访问认证并保存。自行配置 TLS 反向代理，将 `/mcp` 转发至该监听端口。
+   HTTPS 模式：Cloudflare 临时体验无需填写，固定域名填写 Tunnel Token 和公网 MCP URL、在 Cloudflare 配置公开路由；ngrok 只填 Authtoken。点击「保存并连接」启动隧道；选择自定义域名则填写公网 MCP URL，并自行配置 TLS 反向代理。
 4. 点击「开启连接」，等待本机传输和 Codex 就绪。
-5. 在 ChatGPT 开启开发者模式，进入 Plugins → ＋，填写名称和描述，官方模式选择 Tunnel 并填写 Tunnel ID；HTTPS 模式填写公网 MCP URL，按本机配置选择 API key（Bearer）并填入密钥，或选择 No authentication，然后创建连接。已有连接无须重复添加；本机安装不会自动完成网页端授权。
+5. 在 ChatGPT 开启开发者模式，进入 Plugins → ＋，填写名称和描述，官方模式选择 Tunnel 并填写 Tunnel ID；HTTPS 模式填写公网 MCP URL，认证选择 No authentication，然后创建连接。已有连接无须重复添加；本机安装不会自动完成网页端授权。
 6. 新建 ChatGPT 对话并选用 Local Connector，发送应用接入引导提供的验证消息，或执行一次本机项目只读查询。收到成功的远程工具调用后，应用会记录「已验证」。若要确认任务执行能力，再发起一个无害任务并读取完成结果。
 
 Tunnel 身份、权限及 ChatGPT 接入详见[接入指南](docs/tunnel.md)。首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口保留菜单栏和连接，退出应用则关闭连接。

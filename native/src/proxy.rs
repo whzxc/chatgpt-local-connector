@@ -92,6 +92,13 @@ impl NetworkProxy {
         Ok(proxy)
     }
 
+    pub fn tunnel_proxy_url(&self) -> Option<&str> {
+        self.https
+            .as_ref()
+            .or(self.http.as_ref())
+            .map(|url| url.as_str())
+    }
+
     pub fn apply(&self, command: &mut tokio::process::Command) {
         // The explicit UI choice must not be overridden by the launching shell.
         for key in PROXY_KEYS {

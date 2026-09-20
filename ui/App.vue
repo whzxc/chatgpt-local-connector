@@ -2,8 +2,9 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { LayoutDashboard, Logs, Settings, Pause, Play, ArrowRight, ArrowLeft, RefreshCw, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
 import { provideConnector, api } from './composables/useConnector';
-import { isDesktop, notifyNative } from './platform';
+import { isDesktop, notifyNative, openUrl } from './platform';
 import logo from './assets/local-connector.png';
+import PlayfulMascot from './components/PlayfulMascot.vue';
 import chatgptLogo from './assets/chatgpt.png';
 import codexLogo from './assets/codex.png';
 import { startUpdateChecks, useAppUpdate } from './composables/useAppUpdate';
@@ -27,7 +28,7 @@ const needsConfiguration = computed(() => {
   const config = status.value?.config;
   if (!config) return false;
   return config.connectionMode === 'https'
-    ? !config.httpsUrl || (config.httpsRequireAuth && !config.hasHttpsApiKey)
+    ? (config.httpsProvider === 'ngrok' ? !config.hasNgrokAuthtoken : config.httpsProvider === 'cloudflare' ? config.cloudflareMode === 'named' && (!config.hasCloudflareToken || !config.httpsUrl) : !config.httpsUrl)
     : !config.tunnelId || !config.hasApiKey;
 });
 const state = computed(() => status.value?.tunnel.state || 'stopped');
@@ -37,7 +38,7 @@ const desktopLabel = computed(() => ({ ready: '已就绪', running: '已打开',
 const verified = computed(() => !!status.value?.core.chatgpt?.verifiedAt);
 const tunnelRunning = computed(() => status.value?.connection?.running ?? !['stopped','error'].includes(state.value));
 const progressing = computed(() => ['connect','disconnect'].includes(busy.value) || ['starting','stopping'].includes(state.value));
-const title = computed(() => needsConfiguration.value ? '请先配置连接。' : progressing.value ? (busy.value === 'disconnect' ? '正在关闭连接…' : '正在建立连接…') : connected.value ? (verified.value ? '本机连接已启动，可从 ChatGPT 发起调用。' : status.value?.config.connectionMode === 'https' ? '本机 MCP 已开启，等待公网验证。' : '本机连接已启动，等待 ChatGPT 验证。') : ['error','degraded'].includes(state.value) ? '连接异常，请重试。' : '连接 ChatGPT 与本机 Codex。');
+const title = computed(() => needsConfiguration.value ? '请先配置连接。' : progressing.value ? (busy.value === 'disconnect' ? '正在关闭连接…' : '正在建立连接…') : connected.value ? (verified.value ? '已连接，可开始使用' : status.value?.config.connectionMode === 'https' ? '本机 MCP 已开启，等待公网验证。' : '本机连接已启动，等待 ChatGPT 验证。') : ['error','degraded'].includes(state.value) ? '连接异常，请重试。' : '连接 ChatGPT 与本机 Codex。');
 const links = computed(() => {
   const pending = progressing.value;
   const failed = ['error', 'degraded'].includes(state.value);
@@ -110,13 +111,13 @@ async function reconnect() {
               <button v-if="needsConfiguration" class="primary connection-action" @click="navigate('settings')"><Settings aria-hidden="true" />前往设置</button>
               <button v-else class="primary connection-action" :disabled="progressing || loading || !status" @click="toggle"><Pause v-if="tunnelRunning" aria-hidden="true" /><Play v-else aria-hidden="true" />{{progressing?'请稍候…':tunnelRunning?'关闭连接':'开启连接'}}</button>
             </div>
-            <div class="connection-art" aria-hidden="true"><img :src="logo"/><span class="art-orbit"></span><span class="art-orbit second"></span></div>
+            <div class="connection-art"><PlayfulMascot/><span class="art-orbit" aria-hidden="true"></span><span class="art-orbit second" aria-hidden="true"></span></div>
             <section class="connection-path" aria-label="连接状态">
-              <div class="path-node" :class="{ready:verified}"><img class="product-logo" :src="chatgptLogo" alt=""/><strong>ChatGPT</strong><button v-if="!verified && !needsConfiguration && status" class="text-button" @click="navigate('guide')">接入引导 <ArrowRight aria-hidden="true"/></button></div>
+              <div class="path-node" :class="{ready:verified}"><a class="path-shortcut" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" aria-label="打开 ChatGPT 网页" title="打开 ChatGPT 网页" @click="isDesktop && ($event.preventDefault(), run('chatgpt-open', () => openUrl('https://chatgpt.com/')))"><img class="product-logo" :src="chatgptLogo" alt=""/><strong>ChatGPT</strong></a><button v-if="!verified && !needsConfiguration && status" class="text-button" @click="navigate('guide')">接入引导 <ArrowRight aria-hidden="true"/></button></div>
               <span class="path-link" :class="{ready:links[0].ready,pending:links[0].pending,failed:links[0].failed}" role="img" :aria-label="links[0].label" :title="links[0].label"><component :is="linkIcon(links[0])" aria-hidden="true"/></span>
               <div class="path-node" :class="{ready:state==='ready'}"><img class="product-logo connector-logo" :src="logo" alt=""/><strong>Connector</strong></div>
               <span class="path-link" :class="{ready:links[1].ready,pending:links[1].pending,failed:links[1].failed}" role="img" :aria-label="links[1].label" :title="links[1].label"><component :is="linkIcon(links[1])" aria-hidden="true"/></span>
-              <div class="path-node" :class="{ready:desktopState==='ready'}"><img class="product-logo" :src="codexLogo" alt=""/><strong>Codex</strong></div>
+              <div class="path-node" :class="{ready:desktopState==='ready'}"><button type="button" class="path-shortcut" aria-label="打开 Codex Desktop" title="打开 Codex Desktop" :disabled="!!busy" @click="run('codex-open', async () => { await api('codex/login', 'POST'); })"><img class="product-logo" :src="codexLogo" alt=""/><strong>Codex</strong></button></div>
             </section>
           </section>
 
