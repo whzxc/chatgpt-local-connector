@@ -11,8 +11,8 @@ export function useConnectionForm() {
     httpsPort: config.httpsPort || 8787, httpsApiKey: '',
   });
   async function save() {
-    const { tunnelBinary, codexBinary, autoStart } = status.value!.config;
-    await api('config', 'PUT', { ...form, tunnelBinary, codexBinary, autoStart,
+    const { tunnelBinary, codexBinary, autoStart, proxyMode, proxyUrl } = status.value!.config;
+    await api('config', 'PUT', { ...form, tunnelBinary, codexBinary, autoStart, proxyMode, proxyUrl,
       tunnelId: form.tunnelId.trim(), apiKey: form.apiKey.trim(),
       httpsUrl: form.httpsUrl.trim(), httpsHost: form.httpsHost.trim(), httpsApiKey: form.httpsApiKey.trim(),
     });

@@ -35,7 +35,7 @@ impl Service {
         } else {
             json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false})
         };
-        for (key, value) in json!({"connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787,"httpsApiKey":"","httpsRequireAuth":false}).as_object().unwrap() {
+        for (key, value) in json!({"proxyMode":"system","proxyUrl":"","connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787,"httpsApiKey":"","httpsRequireAuth":false}).as_object().unwrap() {
             settings.as_object_mut().ok_or("配置格式错误")?.entry(key.clone()).or_insert(value.clone());
         }
         validate_config(&settings)?;
@@ -82,6 +82,10 @@ impl Service {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(service)
     }
+    pub async fn network_proxy(&self) -> Result<crate::proxy::NetworkProxy> {
+        let settings = self.settings.lock().await.clone();
+        crate::proxy::NetworkProxy::resolve(&settings).await
+    }
     pub async fn log(&self, level: &str, msg: &str) {
         let settings = self.settings.lock().await;
         let mut msg = msg.replace(&self.token, "[REDACTED]");
@@ -117,7 +121,8 @@ impl Service {
         let mut https = self.https.lock().await;
         if https.as_ref().is_some_and(|task| task.is_finished()) {
             https.take();
-            self.connected.store(false, std::sync::atomic::Ordering::SeqCst);
+            self.connected
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             *self.failure.lock().await = "MCP 监听已退出，请重新连接".into();
         }
         let https_running = https.is_some();
@@ -129,7 +134,10 @@ impl Service {
                 if let Ok(url) = std::fs::read_to_string(dir.join("health.url")) {
                     if let Ok(url) = reqwest::Url::parse(url.trim()) {
                         if url.scheme() == "http" && url.host_str() == Some("127.0.0.1") {
-                            if let Ok(r) = reqwest::Client::new()
+                            if let Ok(r) = reqwest::Client::builder()
+                                .no_proxy()
+                                .build()
+                                .map_err(|e| e.to_string())?
                                 .get(url.join("/readyz").map_err(|e| e.to_string())?)
                                 .timeout(Duration::from_secs(2))
                                 .send()
@@ -185,7 +193,8 @@ impl Service {
                 .ready_logged
                 .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            self.log("INFO", "连接已就绪").await;
+            self.log("INFO", "本机连接已启动，远程连通请在 ChatGPT 中验证")
+                .await;
         }
         let health = self.control.health().await;
         let core = json!({"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),"backendSession":self.control.session,"package":{"version":env!("CARGO_PKG_VERSION"),"sha":"native"},"desktop":desktop,"chatgpt":chat,"appServer":{"state":health["appServer"],"observedAt":now(),"evidence":"native-connector","stale":false},"account":{"state":"unknown","observedAt":null},"transport":{"state":state,"error":error},"logs":logs,"activeTurns":0,"activeWrites":health["activeWrites"],"pendingInteractions":self.control.events.lock().await.pending.len(),"liveProcesses":0,"uncertain":false,"draining":false,"lastInbound":null,"toolCount":catalog()["tools"].as_array().unwrap().len(),"registered":running,"schemaDiscovered":"unknown","operationVerified":"business-delivery-not-assessed"});
@@ -283,16 +292,26 @@ impl Service {
         if settings["connectionMode"] == "https" {
             let task = crate::https::listen(self.clone(), &settings).await?;
             *self.https.lock().await = Some(task);
-            self.stopping.store(false, std::sync::atomic::Ordering::SeqCst);
-            self.connected.store(true, std::sync::atomic::Ordering::SeqCst);
-            self.log("INFO", "MCP 本机监听已开启，公网 HTTPS 连通性需在 ChatGPT 验证").await;
+            self.stopping
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.connected
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.log(
+                "INFO",
+                "MCP 本机监听已开启，公网 HTTPS 连通性需在 ChatGPT 验证",
+            )
+            .await;
             return Ok(());
         }
+        let proxy = crate::proxy::NetworkProxy::resolve(&settings).await?;
+        self.log("INFO", proxy.message).await;
         let binary = match executable(string(&settings, "tunnelBinary")) {
             Some(binary) => binary,
             None => {
                 self.log("INFO", "正在准备连接组件，首次使用需要下载").await;
-                let binary = install_tunnel().await.map_err(|e| format!("准备连接组件失败，请检查网络后重试：{e}"))?;
+                let binary = install_tunnel(&proxy)
+                    .await
+                    .map_err(|e| format!("准备连接组件失败，请检查网络后重试：{e}"))?;
                 let mut config = self.settings.lock().await;
                 config["tunnelBinary"] = json!(binary);
                 save(&root().join("web/settings.json"), &config)?;
@@ -315,6 +334,7 @@ impl Service {
         }
         let result = async {
             let mut init = tunnel_command(&binary);
+            proxy.apply(&mut init);
             init.args([
                 "init",
                 "--sample",
@@ -340,6 +360,7 @@ impl Service {
                 return Err("生成 Tunnel 配置失败".into());
             }
             let mut cmd = tunnel_command(&binary);
+            proxy.apply(&mut cmd);
             cmd.args([
                 "run",
                 "--profile",
@@ -476,6 +497,18 @@ impl Service {
                 save(&root().join("web/settings.json"), &s)?;
                 Ok(json!({"supported":true,"enabled":enabled}))
             }
+            ("PUT", "network") => {
+                let mode = body["proxyMode"].as_str().ok_or("代理模式无效")?;
+                let address = body["proxyUrl"].as_str().ok_or("代理地址无效")?.trim();
+                crate::proxy::validate(mode, address)?;
+                let mut settings = self.settings.lock().await;
+                let mut next = settings.clone();
+                next["proxyMode"] = json!(mode);
+                next["proxyUrl"] = json!(address);
+                save(&root().join("web/settings.json"), &next)?;
+                *settings = next;
+                Ok(json!({"ok":true}))
+            }
             ("PUT", "config") => {
                 if self.connected.load(std::sync::atomic::Ordering::SeqCst) {
                     return Err("请先关闭连接".into());
@@ -488,7 +521,9 @@ impl Service {
                 if string(&body, "httpsApiKey").is_empty() {
                     body["httpsApiKey"] = self.settings.lock().await["httpsApiKey"].clone();
                 }
-                if !configured(&body) { return Err("请补齐所选连接方式的信息".into()); }
+                if !configured(&body) {
+                    return Err("请补齐所选连接方式的信息".into());
+                }
                 save(&root().join("web/settings.json"), &body)?;
                 let binding = binding(&body);
                 *self.settings.lock().await = body;
@@ -551,7 +586,8 @@ impl Service {
                 if body["component"] != "tunnel" {
                     return Err("请安装官方 Codex Desktop".into());
                 }
-                let binary = install_tunnel().await?;
+                let proxy = self.network_proxy().await?;
+                let binary = install_tunnel(&proxy).await?;
                 let mut s = self.settings.lock().await;
                 s["tunnelBinary"] = json!(binary);
                 save(&root().join("web/settings.json"), &s)?;
@@ -603,16 +639,36 @@ impl Service {
 }
 fn configured(s: &Value) -> bool {
     if s["connectionMode"] == "https" {
-        !string(s, "httpsUrl").is_empty() && (s["httpsRequireAuth"] == false || !string(s, "httpsApiKey").is_empty())
-    } else { !string(s, "tunnelId").is_empty() && !string(s, "apiKey").is_empty() }
+        !string(s, "httpsUrl").is_empty()
+            && (s["httpsRequireAuth"] == false || !string(s, "httpsApiKey").is_empty())
+    } else {
+        !string(s, "tunnelId").is_empty() && !string(s, "apiKey").is_empty()
+    }
 }
 fn binding(s: &Value) -> String {
-    if s["connectionMode"] == "https" { hash(json!(["https",s["httpsRequireAuth"],s["httpsUrl"],s["httpsApiKey"],s["httpsHost"],s["httpsPort"]]).to_string()) }
-    else { hash(json!([s["tunnelId"],s["apiKey"]]).to_string()) }
+    if s["connectionMode"] == "https" {
+        hash(
+            json!([
+                "https",
+                s["httpsRequireAuth"],
+                s["httpsUrl"],
+                s["httpsApiKey"],
+                s["httpsHost"],
+                s["httpsPort"]
+            ])
+            .to_string(),
+        )
+    } else {
+        hash(json!([s["tunnelId"], s["apiKey"]]).to_string())
+    }
 }
 fn validate_config(s: &Value) -> Result<()> {
     let o = s.as_object().ok_or("配置格式错误")?;
-    if o.len() != 11 || !s["autoStart"].is_boolean() || !s["httpsRequireAuth"].is_boolean() {
+    crate::proxy::validate(
+        s["proxyMode"].as_str().ok_or("代理模式无效")?,
+        s["proxyUrl"].as_str().ok_or("代理地址无效")?,
+    )?;
+    if o.len() != 13 || !s["autoStart"].is_boolean() || !s["httpsRequireAuth"].is_boolean() {
         return Err("配置字段错误".into());
     }
     for (k, max) in [
@@ -630,15 +686,40 @@ fn validate_config(s: &Value) -> Result<()> {
             return Err("配置内容无效".into());
         }
     }
-    if !["tunnel", "https"].contains(&string(s, "connectionMode")) { return Err("连接方式无效".into()); }
-    string(s, "httpsHost").parse::<std::net::IpAddr>().map_err(|_| "监听地址必须是 IP 地址")?;
-    if !s["httpsPort"].as_u64().is_some_and(|p| (1..=65535).contains(&p)) { return Err("监听端口无效".into()); }
+    if !["tunnel", "https"].contains(&string(s, "connectionMode")) {
+        return Err("连接方式无效".into());
+    }
+    string(s, "httpsHost")
+        .parse::<std::net::IpAddr>()
+        .map_err(|_| "监听地址必须是 IP 地址")?;
+    if !s["httpsPort"]
+        .as_u64()
+        .is_some_and(|p| (1..=65535).contains(&p))
+    {
+        return Err("监听端口无效".into());
+    }
     let key = string(s, "httpsApiKey");
-    if !key.is_empty() && (key.len() < 32 || !key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')) { return Err("访问密钥至少 32 位，仅支持字母、数字、下划线和短横线".into()); }
+    if !key.is_empty()
+        && (key.len() < 32
+            || !key
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'))
+    {
+        return Err("访问密钥至少 32 位，仅支持字母、数字、下划线和短横线".into());
+    }
     let url = string(s, "httpsUrl");
     if !url.is_empty() {
         let u = reqwest::Url::parse(url).map_err(|_| "HTTPS URL 无效")?;
-        if u.scheme() != "https" || u.host_str().is_none() || u.path() != "/mcp" || u.query().is_some() || u.fragment().is_some() || !u.username().is_empty() || u.password().is_some() { return Err("请填写以 https:// 开头、以 /mcp 结尾且不含凭据或查询参数的地址".into()); }
+        if u.scheme() != "https"
+            || u.host_str().is_none()
+            || u.path() != "/mcp"
+            || u.query().is_some()
+            || u.fragment().is_some()
+            || !u.username().is_empty()
+            || u.password().is_some()
+        {
+            return Err("请填写以 https:// 开头、以 /mcp 结尾且不含凭据或查询参数的地址".into());
+        }
     }
     let id = string(s, "tunnelId");
     if !id.is_empty()
@@ -698,8 +779,9 @@ fn executable(name: &str) -> Option<PathBuf> {
         .map(|p| p.join(name))
         .find(|p| p.is_file())
 }
-async fn install_tunnel() -> Result<PathBuf> {
-    let client = reqwest::Client::builder()
+async fn install_tunnel(proxy: &crate::proxy::NetworkProxy) -> Result<PathBuf> {
+    let client = proxy
+        .client(reqwest::Client::builder())
         .user_agent("chatgpt-local-connector")
         .timeout(Duration::from_secs(120))
         .build()

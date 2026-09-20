@@ -6,11 +6,12 @@ use std::{
 use tokio::sync::Mutex;
 pub mod control;
 pub mod desktop;
+pub mod https;
 pub mod projects;
+pub mod proxy;
 pub mod rpc;
 pub mod service;
 pub mod transport;
-pub mod https;
 pub type Result<T> = std::result::Result<T, String>;
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)

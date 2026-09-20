@@ -12,6 +12,8 @@ import {
 import { useIntervalFn } from "@vueuse/core";
 
 export interface Config {
+  proxyMode: "system" | "direct" | "custom";
+  proxyUrl: string;
   connectionMode: "tunnel" | "https";
   httpsRequireAuth: boolean;
   httpsUrl: string;

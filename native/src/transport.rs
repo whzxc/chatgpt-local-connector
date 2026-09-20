@@ -191,6 +191,7 @@ pub async fn stdio() -> Result<()> {
         .map_err(|_| "invalid port")?;
     let token = std::env::var("CLC_NATIVE_TOKEN").map_err(|_| "missing connector token")?;
     let client = reqwest::Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;

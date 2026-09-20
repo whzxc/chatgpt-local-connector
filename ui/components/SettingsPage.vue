@@ -14,6 +14,19 @@ const { status, busy, editable, run, refresh, notify } = useConnector();
 const { form, save: saveConnection } = useConnectionForm();
 const saveLabel = computed(() => busy.value === 'config' ? '保存中…' : editable.value ? '保存' : status.value?.tunnel.state === 'ready' ? '已连接' : status.value?.tunnel.state === 'starting' ? '连接中…' : '暂不可编辑');
 const saveHint = computed(() => !editable.value ? '关闭连接后可保存' : '保存连接信息');
+const proxyMode = ref(status.value?.config.proxyMode || 'system');
+const proxyUrl = ref(status.value?.config.proxyUrl || '');
+async function saveProxy() {
+  await api('network', 'PUT', { proxyMode: proxyMode.value, proxyUrl: proxyMode.value === 'custom' ? proxyUrl.value.trim() : '' });
+  await refresh();
+  proxyUrl.value = status.value?.config.proxyUrl || '';
+  notify(status.value?.connection?.running ? '代理已保存，重新连接后生效；新的下载使用新设置。' : '代理设置已保存。');
+}
+async function changeProxy() {
+  if (proxyMode.value === 'custom') return;
+  await run('network', saveProxy);
+  proxyMode.value = status.value?.config.proxyMode || 'system';
+}
 const service = ref<Service>();
 const theme = ref(localStorage.getItem('theme') || 'system');
 const notifications = ref(localStorage.getItem('notifications') !== 'off');
@@ -58,6 +71,20 @@ async function setApproval(enabled: boolean) {
       </form>
     </SettingsGroup>
 
+    <SettingsGroup title="网络">
+      <SettingsRow title="代理" description="使用系统代理，或仅为 Local Connector 指定代理。" control-id="settings-proxy">
+        <select id="settings-proxy" v-model="proxyMode" :disabled="!!busy" @change="changeProxy">
+          <option value="system">跟随系统</option><option value="direct">不使用代理</option><option value="custom">自定义</option>
+        </select>
+      </SettingsRow>
+      <SettingsRow v-if="proxyMode === 'custom'" title="代理地址" description="支持 HTTP/HTTPS 代理。保存后重新连接生效。" control-id="settings-proxy-url">
+        <form class="proxy-form" @submit.prevent="run('network', saveProxy)">
+          <input id="settings-proxy-url" v-model="proxyUrl" type="url" required placeholder="http://127.0.0.1:7890" :disabled="!!busy" />
+          <button type="submit" :disabled="!!busy" class="primary">保存</button>
+        </form>
+      </SettingsRow>
+    </SettingsGroup>
+
     <SettingsGroup title="任务">
       <SettingsRow title="自动打开 Codex 任务" description="关闭后，新任务在后台执行。" control-id="settings-auto-open">
         <input id="settings-auto-open" class="settings-switch" type="checkbox" role="switch" :checked="status?.autoOpenCodex !== false" :disabled="!!busy || !status" @change="setAutoOpen" />
@@ -85,3 +112,9 @@ async function setApproval(enabled: boolean) {
     <footer class="settings-version">Local Connector <span v-if="status">{{status.version}}</span></footer>
   </div>
 </template>
+
+<style scoped>
+.proxy-form { display: flex; gap: 8px; max-width: 100%; }
+.proxy-form input { width: 260px; min-width: 0; }
+@media (max-width: 600px) { .proxy-form input { width: 190px; } }
+</style>

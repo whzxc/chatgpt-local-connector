@@ -35,18 +35,25 @@ pub fn take_resume() -> Option<bool> {
     let _ = std::fs::remove_file(path);
     resume
 }
-fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+async fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     if cfg!(debug_assertions) {
         return Err("当前应用不支持自动更新，请从下载页获取安装包。".into());
     }
+    let service = app.state::<std::sync::Arc<connector_core::service::Service>>();
+    let proxy = service.network_proxy().await?;
     app.updater_builder()
+        .configure_client(move |builder| proxy.client(builder))
         .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<Value, String> {
-    let update = updater(&app)?.check().await.map_err(|e| e.to_string())?;
+    let update = updater(&app)
+        .await?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(match update {
         Some(u) => {
             json!({"available":true,"version":u.version,"notes":u.body,"date":u.date.map(|d|d.to_string())})
@@ -71,7 +78,7 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
     state.downloading.store(true, Ordering::SeqCst);
     let result = tokio::select! {
         result = async {
-            let Some(update) = updater(&app)?.check().await.map_err(|e| e.to_string())? else {
+            let Some(update) = updater(&app).await?.check().await.map_err(|e| e.to_string())? else {
                 return Ok(None);
             };
             if update.version != version {
