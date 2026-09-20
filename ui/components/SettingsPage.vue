@@ -71,20 +71,6 @@ async function setApproval(enabled: boolean) {
       </form>
     </SettingsGroup>
 
-    <SettingsGroup title="网络">
-      <SettingsRow title="代理" description="使用系统代理，或仅为 Local Connector 指定代理。" control-id="settings-proxy">
-        <select id="settings-proxy" v-model="proxyMode" :disabled="!!busy" @change="changeProxy">
-          <option value="system">跟随系统</option><option value="direct">不使用代理</option><option value="custom">自定义</option>
-        </select>
-      </SettingsRow>
-      <SettingsRow v-if="proxyMode === 'custom'" title="代理地址" description="支持 HTTP/HTTPS 代理。保存后重新连接生效。" control-id="settings-proxy-url">
-        <form class="proxy-form" @submit.prevent="run('network', saveProxy)">
-          <input id="settings-proxy-url" v-model="proxyUrl" type="url" required placeholder="http://127.0.0.1:7890" :disabled="!!busy" />
-          <button type="submit" :disabled="!!busy" class="primary">保存</button>
-        </form>
-      </SettingsRow>
-    </SettingsGroup>
-
     <SettingsGroup title="任务">
       <SettingsRow title="自动打开 Codex 任务" description="关闭后，新任务在后台执行。" control-id="settings-auto-open">
         <input id="settings-auto-open" class="settings-switch" type="checkbox" role="switch" :checked="status?.autoOpenCodex !== false" :disabled="!!busy || !status" @change="setAutoOpen" />
@@ -105,6 +91,20 @@ async function setApproval(enabled: boolean) {
         <div class="settings-theme" role="group" aria-label="外观">
           <button v-for="option in [{value:'system',label:'跟随系统',icon:Monitor},{value:'light',label:'浅色',icon:Sun},{value:'dark',label:'深色',icon:Moon}]" :key="option.value" :aria-pressed="theme===option.value" :class="{active:theme===option.value}" @click="theme=option.value;preferences()"><component :is="option.icon" aria-hidden="true"/>{{option.label}}</button>
         </div>
+      </SettingsRow>
+    </SettingsGroup>
+
+    <SettingsGroup title="网络">
+      <SettingsRow title="代理" description="使用系统代理，或仅为 Local Connector 指定代理。">
+        <div class="mode-switch" role="group" aria-label="代理方式">
+          <button v-for="option in [{value:'system',label:'跟随系统'},{value:'direct',label:'不使用代理'},{value:'custom',label:'自定义'}] as const" :key="option.value" type="button" :aria-pressed="proxyMode===option.value" :class="{active:proxyMode===option.value}" :disabled="!!busy" @click="proxyMode=option.value;changeProxy()">{{option.label}}</button>
+        </div>
+      </SettingsRow>
+      <SettingsRow v-if="proxyMode === 'custom'" title="代理地址" description="支持 HTTP/HTTPS 代理。保存后重新连接生效。" control-id="settings-proxy-url">
+        <form class="proxy-form" @submit.prevent="run('network', saveProxy)">
+          <input id="settings-proxy-url" v-model="proxyUrl" type="url" required placeholder="http://127.0.0.1:7890" :disabled="!!busy" />
+          <button type="submit" :disabled="!!busy" class="primary">保存</button>
+        </form>
       </SettingsRow>
     </SettingsGroup>
 
