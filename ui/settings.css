@@ -18,7 +18,7 @@
 .settings-preferences .connection-fields { border-top: 1px solid var(--line); padding-top: 14px; gap: 16px; }
 .settings-preferences .connection-mode-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
 .settings-preferences .mode-switch { border: 0; border-radius: 8px; }
-.settings-preferences .mode-switch button { border-radius: 6px; }
+.settings-preferences .mode-switch button { border-radius: var(--control-radius); }
 .settings-preferences .connection-help { font-size: 12px; line-height: 1.6; }
 .settings-preferences input[readonly] { color: var(--muted); background: var(--soft); }
 .settings-preferences .settings-switch {
@@ -38,7 +38,7 @@
 .settings-preferences .settings-switch:checked::after { transform: translateX(14px); }
 .settings-preferences .settings-switch:disabled { opacity: .45; cursor: default; }
 .settings-preferences .settings-theme { display: flex; padding: 3px; gap: 2px; background: var(--soft); border-radius: 8px; }
-.settings-preferences .settings-theme button { gap: 5px; padding: 0 10px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
+.settings-preferences .settings-theme button { gap: 5px; padding: 0 10px; height: var(--control-height); border: 1px solid transparent; border-radius: var(--control-radius); background: transparent; }
 .settings-preferences .settings-theme button.active { background: var(--surface); border-color: var(--line); box-shadow: 0 1px 3px #00000008; color: var(--green); }
 .settings-preferences .settings-theme svg { width: 14px; height: 14px; }
 .settings-preferences .settings-version { text-align: center; color: var(--muted); font-size: 11px; line-height: 20px; }

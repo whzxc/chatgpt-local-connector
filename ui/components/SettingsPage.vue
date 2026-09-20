@@ -115,6 +115,6 @@ async function setApproval(enabled: boolean) {
 
 <style scoped>
 .proxy-form { display: flex; gap: 8px; max-width: 100%; }
-.proxy-form input { width: 260px; min-width: 0; }
+.proxy-form input { width: 220px; min-width: 0; }
 @media (max-width: 600px) { .proxy-form input { width: 190px; } }
 </style>
