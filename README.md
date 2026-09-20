@@ -18,10 +18,13 @@ Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通�
 
 ## 让 Codex 帮你配置（推荐）
 
-在这台电脑的 Codex 中发送下面的消息。Codex 会检查已有进度，完成安装、配置、排障和验收；需要登录、授权或填写凭据时再由你操作。默认使用官方 OpenAI Secure MCP Tunnel。
+在这台电脑的 Codex 中发送下面的消息。Codex 会检查已有进度，完成安装、配置、排障和验收；可提供已登录的 ChatGPT 网页让它继续代操作；只有本人确认或工具无法可靠完成的步骤再由你操作。默认使用官方 OpenAI Secure MCP Tunnel。
 
 ```text
-请帮我在这台电脑上安装、配置并验收 ChatGPT Local Connector，默认使用官方 OpenAI Secure MCP Tunnel。先检查已有安装和配置；若应用提供 cli guide，请读取内嵌指南并用 cli doctor 继续，否则读取 https://github.com/whzxc/chatgpt-local-connector/blob/main/docs/codex-setup.md ，按实际发行版本操作。请完成能自动完成的安装、配置、排障和验收，只在需要我登录、授权、提供凭据或做必要选择时叫我；凭据让我直接填入本机应用，不要贴在聊天里。保留已有可用配置，不重复创建连接。最终分别确认本机连接、真实 ChatGPT 工具调用和无害 Codex 任务的完成结果；无法验证的部分明确说明。
+请在这台电脑上安装、配置并完整验收 ChatGPT Local Connector。默认使用官方 Secure MCP Tunnel，保留已有可用 Tunnel / HTTPS 配置，不引入 CLC 云服务或公共 relay。先检查安装，读取 cli help、cli guide、cli doctor；没有 CLI 时读取 https://github.com/whzxc/chatgpt-local-connector/blob/main/docs/codex-setup.md ，按实际发行版本操作。
+优先自动完成所有可自动化步骤。若我提供已登录 ChatGPT 的网页或浏览器环境，请实际使用可用的浏览器 / GUI / Computer Use 操作当前可见页面：检查 Developer Mode、复用或创建自定义 MCP、填入连接资料、刷新工具并选用连接。不要仅给我操作教程；不使用私有 API、Cookie 提取、固定 DOM 脚本或绕过安全机制。
+通过 cli onboarding / status 自行读取 URL、Tunnel ID、配置和验证消息，不让我转抄本机已有值。已有安全本机凭据通过 stdin 配置；缺失密钥让我直接填入应用，不发到聊天。只在确需本人登录、身份确认、授权、验证码、管理员权限，或当前工具无法可靠操作时暂停，说明具体阻塞并只给最少动作；完成后继续。
+自动从 ChatGPT 调用 connector_verify，并核对本轮验证码、工具结果和本机 challengeVerifiedAt；然后通过同一连接执行无害 Codex 任务（不调用工具、不读取或修改文件，只回复 CLC_ONBOARDING_OK），读取持久化回执、原生 threadId / turnId 和完成输出。未知状态按原 requestId 回读，不重复派单。分别报告本机就绪、ChatGPT 入站、任务完成的真实证据，不能把打开页面或 Tunnel ready 当成接入成功。
 ```
 
 之后遇到连接问题，也可以复制上面的消息，直接让 Codex 按同一指南排查。使用有本机命令执行能力的 Codex；ChatGPT 账号/工作区权限、Tunnel 身份和必要的用户授权仍需具备。

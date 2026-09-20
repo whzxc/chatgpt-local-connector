@@ -17,8 +17,8 @@
 
 1. 选择 Cloudflare，或选择 ngrok 并通过「获取令牌」取得自己的 Authtoken。
 2. 点击「保存并连接」。应用自动准备官方组件，使用独立的随机 loopback 端口和临时配置运行隧道，不改动已有 cloudflared/ngrok 配置。
-3. 复制页面显示的「ChatGPT 接入地址」，点击「前往 ChatGPT 添加连接」，在 ChatGPT 添加自定义 MCP。认证选择 No authentication。
-4. 从接入引导复制验证消息并发起工具调用，确认公网链路。地址变化后，在 ChatGPT 使用新地址重新创建连接并移除旧连接；旧地址对应的验证记录不会用于新地址。
+3. 从首页进入「接入引导」，点击「复制地址并打开 Plugins」，在 ChatGPT 添加自定义 MCP。认证选择 No authentication。也可提供已登录网页，让 Codex 读取 `cli onboarding` 并代填。
+4. 点击「已有连接，开始验证」，粘贴并发送自动复制的消息；CLC 收到匹配验证码后自动确认。地址变化后，在 ChatGPT 使用新地址重新创建连接并移除旧连接；旧地址对应的验证记录不会用于新地址。
 
 Cloudflare 临时体验使用 [Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)，仅用于试用，不提供独立 SSE 流支持；当前原生 MCP 使用 JSON POST，不依赖 SSE。cloudflared 需要连通 Cloudflare 的出站 7844 端口，不能假设普通 HTTP 代理能代理其数据通道。长期使用固定地址可选择 Cloudflare 固定域名、ngrok 或自定义域名。ngrok 的账号、域名和额度由用户在 [ngrok](https://ngrok.com/download) 管理，应用不会创建付费资源。
 
@@ -56,9 +56,9 @@ API Key 默认以敏感信息形式展示，设置页可通过显示密钥按钮
 已安装并登录 Codex Desktop 的用户，仍需完成以下两项外部配置；它们不会由 Codex 登录自动创建。
 
 1. **取得 Tunnel 凭据与权限。** 在 [Platform Tunnel 设置](https://platform.openai.com/settings/organization/tunnels)创建通道，或向管理员取得 Tunnel ID 和 runtime API Key。创建或编辑需 Tunnels Read + Manage；运行客户端及在 ChatGPT 选用通道需 Read + Use。通道必须关联目标 ChatGPT 工作区，只有 Platform 组织关联不足以让它出现在该工作区。
-2. **在 ChatGPT 添加连接。** 保持本机连接开启，在 ChatGPT「设置 → 安全与登录」开启开发者模式，再进入 Plugins → ＋，填写名称和描述，选择 Tunnel 并选取通道或填入 ID，创建连接并确认工具列表。开发者模式是独立的账号/工作区权限，没有入口时联系工作区管理员。已有连接无须重复添加。
+2. **在 ChatGPT 添加连接。** 保持本机连接开启，在 ChatGPT「设置 → 安全与登录」开启开发者模式，再进入 Plugins → Add（或 ＋）→ Create MCP App，填写名称和描述，选择 Tunnel 并选取通道或填入 ID，创建连接并确认工具列表。开发者模式是独立的账号/工作区权限，没有入口时联系工作区管理员。已有连接无须重复添加。
 
-随后新建对话，从工具菜单选用 Local Connector。可复制应用提供的 `connector_verify` 验证消息，或完成一次普通只读工具调用。点击「已添加」、本机状态查询及 Tunnel ready 都不会代替真实远程调用证据。验证记录只证明曾连通；确认任务执行可用还需读取真实任务终态。
+随后新建对话，从工具菜单选用 Local Connector。点击引导中的「已有连接，开始验证」，在网页发送已复制的 `connector_verify` 消息。普通只读工具调用会留下历史入站记录，但不会标记验证码验收成功。点击「已添加」、本机状态查询及 Tunnel ready 都不会代替真实远程调用证据。验证记录只证明曾连通；确认任务执行可用还需读取真实任务终态。
 
 应用负责安装官方 Tunnel Client、保存凭据和启停连接，不代办身份申请或网页端授权。用户无须配置公网域名或入站端口；本机需要能下载官方客户端并通过出站 HTTPS 访问 OpenAI。权限与操作依据 [官方 Tunnel 指南](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)和[插件接入指南](https://developers.openai.com/plugins/deploy/connect-chatgpt)。
 
@@ -73,6 +73,14 @@ ChatGPT → 官方 Tunnel → 本机 Tunnel Client → 原生 stdio 适配 → R
 每台机器使用自己的目录、Codex 登录态和原生项目列表。一个实例服务一台机器；不提供设备选择或路由。多台设备可分别使用独立的官方 Tunnel 或 HTTPS MCP 地址，在 ChatGPT 创建名称可区分的连接，并在对话中选用对应设备。不要让多台机器同时用同一 Tunnel 身份运行后端；切换设备时停止旧设备，再启动目标设备，并通过项目查询确认请求来源。
 
 官方模式使用 Tunnel ID；HTTPS 模式使用公网 MCP URL。两者都不能使用内部管理端口或开发预览地址。
+
+## 最少人工路径
+
+优先把首页 prompt 发给本机 Codex，并提供已登录的 ChatGPT 网页。Codex 从 CLI 读取接入资料，按实际可见界面配置、发送验证及无害任务；只把登录、本人授权、安全挑战、缺失权限或无法可靠自动化的当前操作交回用户。具体约束见 [Codex 配置指南](codex-setup.md#自动化边界)。
+
+手动路径：配置并开启本机连接 → 接入引导「复制地址/ID 并打开 Plugins」→ 首次在网页开启 Developer Mode 并创建连接 →「已有连接，开始验证」→ 在新对话选中连接、发送已复制消息。收到匹配验证码后自动显示验证完成；复验会生成新验证码。无需自报“已添加”。
+
+没有公开的一键安装/预填接口可供本应用使用。CLC 无法读取网页安装状态，官方 Plugins 入口也可能因账号权限不显示创建按钮。App 打开页面不代表代办安装，历史入站不代表当前传输可用，验证码验证不代表 Codex 任务已完成。
 
 ## 页面中的状态
 

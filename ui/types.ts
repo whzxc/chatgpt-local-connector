@@ -1,5 +1,5 @@
 export interface CoreSnapshot {
-  chatgpt?: { code: string; verifiedAt: string | null };
+  chatgpt?: { code: string; verifiedAt: string | null; challengeVerifiedAt?: string | null };
   desktop?: { supported: boolean; state: string; message: string };
   eventStorageError?: string | null;
   version: string;

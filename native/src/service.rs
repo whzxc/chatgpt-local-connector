@@ -247,7 +247,7 @@ impl Service {
         config.as_object_mut().unwrap().remove("apiKey");
         let mcp_url = self.mcp_url.lock().await.clone();
         let v = self.verification.lock().await;
-        let chat = json!({"code":v["code"],"verifiedAt":v["verifiedAt"]});
+        let chat = json!({"code":v["code"],"verifiedAt":v["verifiedAt"],"challengeVerifiedAt":v["challengeVerifiedAt"]});
         let logs = self.logs.lock().await.clone();
         if ready
             && !self
@@ -574,7 +574,7 @@ impl Service {
             ("GET", "status") => self.status().await,
             ("POST", "verification/reset") => {
                 let mut v = self.verification.lock().await;
-                let next = json!({"binding":v["binding"],"code":id(),"verifiedAt":null});
+                let next = json!({"binding":v["binding"],"endpoint":v["endpoint"],"code":id(),"verifiedAt":null});
                 save(&root().join("web/chatgpt.json"), &next)?;
                 *v = next;
                 Ok(json!({"code":v["code"],"verifiedAt":null}))
@@ -722,15 +722,20 @@ impl Service {
             return Err("连接已关闭".into());
         }
         let result = if name == "connector_verify" {
-            let v = self.verification.lock().await;
+            let mut v = self.verification.lock().await;
             if args["code"] != v["code"] {
                 return Err("验证码不匹配".into());
             }
+            let mut next = v.clone();
+            next["challengeVerifiedAt"] = json!(now());
+            next["verifiedAt"] = next["challengeVerifiedAt"].clone();
+            save(&root().join("web/chatgpt.json"), &next)?;
+            *v = next;
             Ok(json!({"code":args["code"],"received":true}))
         } else {
             self.control.tool(name, args).await
         };
-        if result.is_ok() {
+        if result.is_ok() && name != "connector_verify" {
             let mut v = self.verification.lock().await;
             if v["verifiedAt"].is_null() {
                 v["verifiedAt"] = json!(now());

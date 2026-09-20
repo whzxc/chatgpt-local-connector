@@ -5,11 +5,36 @@ const GUIDE: &str = include_str!("../../docs/codex-setup.md");
 
 fn verification(status: &Value) -> Value {
     let chat = &status["core"]["chatgpt"];
-    json!({"code":chat["code"],"verifiedAt":chat["verifiedAt"],
+    json!({"code":chat["code"],"verifiedAt":chat["verifiedAt"],"challengeVerifiedAt":chat["challengeVerifiedAt"],
         "connectionRunning":status["connection"]["running"],
         "prompt":format!("请使用 Local Connector 插件调用 connector_verify，code 为 {}。只验证连接，不创建任务。", string(chat,"code")),
         "executionVerified":false,
-        "note":"verifiedAt 是该配置的历史入站记录；新验收先执行 verify --fresh，再从 ChatGPT 调用。任务执行需另读真实任务终态。"})
+        "note":"verifiedAt 是历史入站记录，challengeVerifiedAt 仅由匹配验证码的 connector_verify 更新。新验收先执行 verify --fresh，再从 ChatGPT 调用并核对结果。任务执行需另读真实任务终态。"})
+}
+
+fn onboarding(status: &Value) -> Value {
+    let https = status["config"]["connectionMode"] == "https";
+    let ready = status["tunnel"]["state"] == "ready";
+    let value = if https {
+        &status["connection"]["mcpUrl"]
+    } else {
+        &status["config"]["tunnelId"]
+    };
+    json!({
+        "stage": if status["config"]["configured"] != true { "configure" }
+            else if !ready { "connect" }
+            else if status["core"]["chatgpt"]["challengeVerifiedAt"].is_string() { "inbound_verified" }
+            else { "chatgpt_setup_or_verify" },
+        "chatgptUrl":"https://chatgpt.com/plugins",
+        "connection":{"method":if https {"https"} else {"tunnel"},"value":value,
+            "authentication":if https {json!("No authentication")} else {Value::Null},
+            "name":"Local Connector","description":"连接这台电脑的项目与 Codex 任务"},
+        "verification":verification(status),
+        "executionPrompt":"请通过 Local Connector 创建一个无害 Codex 任务：不调用工具，不读取或修改文件，只回复 CLC_ONBOARDING_OK。使用唯一 UUID requestId；读取持久化回执、threadId、turnId 和任务终态，确认输出。未知状态用原 requestId 回读，不重复创建任务。",
+        "browserSetup":"使用用户提供的已登录网页，按当前可见界面开启 Developer Mode、复用或创建连接、刷新工具并在新对话验证。身份确认、授权、验证码及安全机制阻断交给用户。",
+        "installationState":"unknown",
+        "note":"没有公开的 ChatGPT 创建连接 API 或预填协议可供本应用使用；打开页面不代表已安装。入站证据不识别调用方身份，需结合 ChatGPT 工具结果确认。任务执行必须单独验收。"
+    })
 }
 
 async fn doctor() -> crate::Result<Value> {
@@ -28,32 +53,35 @@ async fn doctor() -> crate::Result<Value> {
         "Desktop 任务接入支持 macOS 和 Windows。",
     );
     add(
-        "OFFICIAL_TUNNEL",
-        config["connectionMode"] == "tunnel",
-        "默认推荐官方 Tunnel；已有 HTTPS 配置时先确认是否切换，不自动覆盖。",
+        "CONNECTION_CONFIGURED",
+        config["configured"] == true,
+        "补齐当前连接方式的配置；保留已有 HTTPS 或 Tunnel 选择。",
     );
-    add(
-        "TUNNEL_ID",
-        !string(config, "tunnelId").is_empty(),
-        "打开 Platform Tunnel 设置取得 Tunnel ID，并确认工作区关联与使用权限。",
-    );
-    add(
-        "RUNTIME_KEY",
-        config["hasApiKey"] == true,
-        "请用户在 Local Connector 设置中填写 runtime API Key，不要贴到聊天。",
-    );
+    if config["connectionMode"] != "https" {
+        add(
+            "TUNNEL_ID",
+            !string(config, "tunnelId").is_empty(),
+            "打开 Platform Tunnel 设置取得 Tunnel ID，确认工作区关联与使用权限。",
+        );
+        add(
+            "RUNTIME_KEY",
+            config["hasApiKey"] == true,
+            "从安全本机来源配置 runtime API Key；没有来源时请用户直接填入应用。",
+        );
+    }
     add(
         "CODEX_LOGIN",
         login["state"] == "authenticated",
         "在 Codex Desktop 完成登录。",
     );
+    let desktop = status["autoOpenCodex"] != false;
     add(
-        "CODEX_DESKTOP",
-        status["core"]["desktop"]["state"] == "ready",
-        "打开 Codex Desktop；结合 status 的 desktop.message 排查实际 IPC 状态。",
+        "CODEX_EXECUTOR",
+        status["core"][if desktop { "desktop" } else { "appServer" }]["state"] == "ready",
+        "检查所选 Codex 执行方状态；Desktop 模式打开 Desktop，后台模式检查 appServer。",
     );
     add(
-        "TUNNEL_READY",
+        "TRANSPORT_READY",
         status["tunnel"]["state"] == "ready",
         "配置齐全后执行 connect；失败时读取 logs，按具体网络或凭据错误处理。",
     );
@@ -67,7 +95,7 @@ async fn doctor() -> crate::Result<Value> {
         json!({"version":status["version"],"checks":checks,"next":next,
         "stage":if next.is_some(){"action_required"}else{"inbound_previously_verified"},
         "login":login,"tunnel":status["tunnel"],"desktop":status["core"]["desktop"],
-        "verification":verification(&status)}),
+        "verification":verification(&status),"onboarding":onboarding(&status)}),
     )
 }
 
@@ -93,12 +121,15 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
     match args.as_slice() {
         [] | ["help"] | ["--help"] => Ok(json!({"version":env!("CARGO_PKG_VERSION"),
             "usage":"<应用可执行文件> cli <command> [--json]",
-            "commands":["help","guide","status","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh"],
+            "commands":["help","guide","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh"],
             "configureInput":{"tunnelId":"可选；省略保留原值","apiKey":"可选；空字符串保留原值"},
             "networkInput":{"proxyMode":"system | direct | custom","proxyUrl":"自定义 HTTP/HTTPS 地址，其余为空"},
             "note":"所有命令输出 JSON。guide 可离线读取；其余命令需要已打开的同版本应用。凭据仅从 stdin 输入，禁止放入命令参数或聊天。"})),
         ["guide"] => Ok(json!({"markdown":GUIDE})),
         ["doctor"] => doctor().await,
+        ["onboarding"] => Ok(onboarding(
+            &forward_request("status", "GET", json!({})).await?,
+        )),
         ["status"] => forward_request("status", "GET", json!({})).await,
         ["logs"] => Ok(forward_request("status", "GET", json!({})).await?["logs"].clone()),
         ["configure", "--stdin"] => forward_request("config/tunnel", "PATCH", stdin_json()?).await,

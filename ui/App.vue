@@ -102,7 +102,7 @@ async function reconnect() {
     </header>
     <main ref="workspace" class="workspace" :class="{'records-workspace':page==='logs'}">
       <div v-if="feedback.text && feedback.error" class="status-banner warning" role="alert"><TriangleAlert aria-hidden="true"/><span>{{feedback.text}}</span><button class="ghost banner-dismiss" aria-label="关闭提示" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
-      <template v-if="page==='guide'"><ChatGuide @done="navigate('overview')"/></template>
+      <template v-if="page==='guide'"><ChatGuide @done="navigate('overview')" @settings="navigate('settings')"/></template>
       <template v-else-if="page==='overview'">
           <div v-if="status?.connection?.updateAvailable" class="status-banner" role="status"><Info aria-hidden="true"/><span>连接组件有更新</span><button class="text-button" :disabled="!!busy" @click="reconnect"><RefreshCw aria-hidden="true"/> 更新连接</button></div>
           <div v-if="needsReconnect && !progressing && !needsConfiguration" class="status-banner warning" role="status"><TriangleAlert aria-hidden="true"/><span>{{connectionIssue}}</span><button class="text-button" :disabled="!!busy" @click="reconnect"><RefreshCw aria-hidden="true"/> 重新连接</button></div>
@@ -114,7 +114,7 @@ async function reconnect() {
             </div>
             <div class="connection-art"><PlayfulMascot/><span class="art-orbit" aria-hidden="true"></span><span class="art-orbit second" aria-hidden="true"></span></div>
             <section class="connection-path" aria-label="连接状态">
-              <div class="path-node" :class="{ready:verified}"><a class="path-shortcut" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" aria-label="打开 ChatGPT 网页" title="打开 ChatGPT 网页" @click="isDesktop && ($event.preventDefault(), run('chatgpt-open', () => openUrl('https://chatgpt.com/')))"><img class="product-logo" :src="chatgptLogo" alt=""/><strong>ChatGPT</strong></a><button v-if="!verified && !needsConfiguration && status" class="text-button" @click="navigate('guide')">接入引导 <ArrowRight aria-hidden="true"/></button></div>
+              <div class="path-node" :class="{ready:verified}"><a class="path-shortcut" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" aria-label="打开 ChatGPT 网页" title="打开 ChatGPT 网页" @click="isDesktop && ($event.preventDefault(), run('chatgpt-open', () => openUrl('https://chatgpt.com/')))"><img class="product-logo" :src="chatgptLogo" alt=""/><strong>ChatGPT</strong></a><button v-if="status" class="text-button" @click="navigate('guide')">{{verified ? '接入与复验' : '接入引导'}} <ArrowRight aria-hidden="true"/></button></div>
               <span class="path-link" :class="{ready:links[0].ready,pending:links[0].pending,failed:links[0].failed}" role="img" :aria-label="links[0].label" :title="links[0].label"><component :is="linkIcon(links[0])" aria-hidden="true"/></span>
               <div class="path-node" :class="{ready:state==='ready'}"><img class="product-logo connector-logo" :src="logo" alt=""/><strong>Connector</strong></div>
               <span class="path-link" :class="{ready:links[1].ready,pending:links[1].pending,failed:links[1].failed}" role="img" :aria-label="links[1].label" :title="links[1].label"><component :is="linkIcon(links[1])" aria-hidden="true"/></span>
