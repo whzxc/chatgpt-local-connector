@@ -14,9 +14,6 @@ async fn request(
     method: &str,
     body: Value,
 ) -> Result<Value, String> {
-    if cfg!(debug_assertions) && method != "GET" {
-        return Err("开发预览只读取状态；连接操作请使用正式应用。".into());
-    }
     if method != "GET"
         && app
             .state::<updates::UpdateState>()
@@ -25,11 +22,14 @@ async fn request(
     {
         return Err("正在安装更新，请等待应用重启。".into());
     }
-    let service = app.state::<Arc<Service>>().inner().clone();
     if cfg!(debug_assertions) {
-        return connector_core::transport::preview_request(&service, route).await;
+        return connector_core::transport::forward_request(route, method, body).await;
     }
-    service.request(route, method, body).await
+    app.state::<Arc<Service>>()
+        .inner()
+        .clone()
+        .request(route, method, body)
+        .await
 }
 #[tauri::command]
 async fn service_request(
@@ -63,9 +63,7 @@ fn main() {
         }
         return;
     }
-    let service = Service::new().expect("无法读取连接配置");
     tauri::Builder::default()
-        .manage(service)
         .manage(updates::UpdateState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_main_window(app);
@@ -90,13 +88,9 @@ fn main() {
             updates::cancel_update
         ])
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.set_title("Local Connector Dev")?;
-                }
-            }
             if !cfg!(debug_assertions) {
-                let service = app.state::<Arc<Service>>().inner().clone();
+                let service = Service::new().map_err(std::io::Error::other)?;
+                app.manage(service.clone());
                 tauri::async_runtime::block_on(connector_core::transport::listen(service.clone()))
                     .map_err(std::io::Error::other)?;
                 if updates::take_resume()
@@ -139,8 +133,9 @@ fn main() {
         .expect("Local Connector 启动失败")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                let service = app.state::<Arc<Service>>().inner().clone();
-                tauri::async_runtime::block_on(service.stop()).ok();
+                if let Some(service) = app.try_state::<Arc<Service>>() {
+                    tauri::async_runtime::block_on(service.stop()).ok();
+                }
                 let metadata = connector_core::root().join("web/native.json");
                 if connector_core::load(&metadata).is_ok_and(|v| v["pid"] == std::process::id()) {
                     let _ = std::fs::remove_file(metadata);

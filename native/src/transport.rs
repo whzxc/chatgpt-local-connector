@@ -6,12 +6,6 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 pub async fn listen(service: Arc<Service>) -> Result<tokio::task::JoinHandle<()>> {
-    listen_mode(service, false).await
-}
-pub async fn listen_mode(
-    service: Arc<Service>,
-    preview: bool,
-) -> Result<tokio::task::JoinHandle<()>> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| e.to_string())?;
@@ -19,12 +13,10 @@ pub async fn listen_mode(
     service
         .port
         .store(port, std::sync::atomic::Ordering::SeqCst);
-    if !preview {
-        save(
-            &root().join("web/native.json"),
-            &json!({"port":port,"pid":std::process::id(),"token":service.token,"instance":service.control.session,"runtime":"rust"}),
-        )?;
-    }
+    save(
+        &root().join("web/native.json"),
+        &json!({"port":port,"pid":std::process::id(),"token":service.token,"instance":service.control.session,"runtime":"rust"}),
+    )?;
     Ok(tokio::spawn(async move {
         loop {
             let Ok((stream, peer)) = listener.accept().await else {
@@ -35,12 +27,12 @@ pub async fn listen_mode(
             }
             let s = service.clone();
             tokio::spawn(async move {
-                let _ = handle(stream, s, preview).await;
+                let _ = handle(stream, s).await;
             });
         }
     }))
 }
-async fn handle(stream: TcpStream, s: Arc<Service>, preview: bool) -> Result<()> {
+async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let request = tokio::time::timeout(Duration::from_secs(5), async {
         let mut head = String::new();
@@ -116,9 +108,6 @@ async fn handle(stream: TcpStream, s: Arc<Service>, preview: bool) -> Result<()>
             return Ok(());
         }
     };
-    if preview && (method != "GET" || !path.starts_with("/api/")) {
-        return reply(&mut stream, 403, json!({"error":"开发预览只读"})).await;
-    }
     if method == "GET" && path == "/api/events" {
         stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").await.map_err(|e|e.to_string())?;
         loop {
@@ -244,26 +233,49 @@ pub async fn stdio() -> Result<()> {
     Ok(())
 }
 
-pub async fn preview_request(service: &Arc<Service>, route: &str) -> Result<Value> {
-    if let Ok(info) = load(&root().join("web/native.json")) {
-        if let Some(port) = info["port"].as_u64().filter(|p| *p > 0 && *p <= 65535) {
-            let client = reqwest::Client::new();
-            if let Ok(response) = client
-                .get(format!("http://127.0.0.1:{port}/api/{route}"))
-                .bearer_auth(string(&info, "token"))
-                .timeout(Duration::from_secs(10))
-                .send()
-                .await
-            {
-                let success = response.status().is_success();
-                let value: Value = response.json().await.map_err(|e| e.to_string())?;
-                return if success {
-                    Ok(value)
-                } else {
-                    Err(string(&value, "error").into())
-                };
-            }
-        }
+pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<Value> {
+    let unavailable = "无法连接后台，请先打开 Local Connector 桌面应用。";
+    let info = load(&root().join("web/native.json")).map_err(|_| unavailable)?;
+    let port = info["port"]
+        .as_u64()
+        .filter(|p| *p > 0 && *p <= 65535)
+        .ok_or(unavailable)?;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let health: Value = client
+        .get(format!("http://127.0.0.1:{port}/healthz"))
+        .bearer_auth(string(&info, "token"))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .map_err(|_| unavailable)?
+        .error_for_status()
+        .map_err(|_| unavailable)?
+        .json()
+        .await
+        .map_err(|_| unavailable)?;
+    if health["instance"] != info["instance"] {
+        return Err(unavailable.into());
     }
-    service.request(route, "GET", json!({})).await
+    let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
+    let mut request = client
+        .request(
+            method.clone(),
+            format!("http://127.0.0.1:{port}/api/{route}"),
+        )
+        .bearer_auth(string(&info, "token"))
+        .timeout(Duration::from_secs(120));
+    if method != reqwest::Method::GET {
+        request = request.json(&body);
+    }
+    let response = request.send().await.map_err(|e| e.to_string())?;
+    let success = response.status().is_success();
+    let value: Value = response.json().await.map_err(|e| e.to_string())?;
+    if success {
+        Ok(value)
+    } else {
+        Err(string(&value, "error").into())
+    }
 }

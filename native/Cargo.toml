@@ -21,3 +21,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 jsonschema = { version = "0.33", default-features = false }
 libc = "0.2"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"

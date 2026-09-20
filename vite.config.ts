@@ -4,11 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { request as httpRequest } from 'node:http';
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
 import path from 'node:path';
 
-const root = fileURLToPath(new URL('.', import.meta.url));
 const stateRoot = process.env.CLC_STATE_DIR || path.join(process.platform === 'win32' ? process.env.LOCALAPPDATA || path.join(homedir(), 'AppData/Local') : path.join(homedir(), '.local/state'), 'chatgpt-local-connector');
 type Endpoint = { port: number; token: string };
 export default defineConfig({
@@ -16,18 +13,6 @@ export default defineConfig({
   plugins: [vue(), {
     name: 'connector-native-preview',
     configureServer(server) {
-      let child: ReturnType<typeof spawn> | undefined;
-      let preview: Promise<Endpoint> | undefined;
-      function localPreview() {
-        return preview ??= new Promise<Endpoint>((resolve, reject) => {
-          child = spawn('cargo', ['run', '--quiet', '--manifest-path', 'native/Cargo.toml', '--bin', 'preview'], { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] });
-          child.on('error', reject);
-          child.on('exit', () => { reject(new Error('原生预览进程已退出')); preview = undefined; });
-          createInterface({ input: child.stdout! }).once('line', line => {
-            try { resolve(JSON.parse(line)); } catch { reject(new Error('无效的原生预览响应')); }
-          });
-        });
-      }
       function ownerIdentity() {
         try { return readFileSync(path.join(stateRoot, 'web/native.json'), 'utf8'); }
         catch { return ''; }
@@ -39,30 +24,36 @@ export default defineConfig({
             const response = await fetch(`http://127.0.0.1:${info.port}/healthz`, { headers: { Authorization: `Bearer ${info.token}` }, signal: AbortSignal.timeout(500) });
             if (response.ok && (await response.json()).instance === info.instance) return info;
           }
-        } catch { /* No running native app: use a read-only native preview. */ }
-        return localPreview();
+        } catch { /* The installed app is the only backend owner. */ }
+        throw new Error('无法连接后台，请先打开 Local Connector 桌面应用。');
       }
-      const nativeRoot = path.join(root, 'native');
-      server.watcher.add([path.join(nativeRoot, 'src'), path.join(nativeRoot, 'Cargo.toml')]);
-      server.watcher.on('change', file => {
-        if (file.startsWith(path.join(nativeRoot, 'src') + path.sep) || file === path.join(nativeRoot, 'Cargo.toml')) {
-          child?.kill('SIGINT'); child = undefined; preview = undefined;
-        }
-      });
-      server.httpServer?.once('close', () => child?.kill('SIGINT'));
       server.middlewares.use((request, response, next) => {
         if (!request.url?.startsWith('/api/')) return next();
         response.setHeader('Cache-Control', 'no-store');
-        if (request.method !== 'GET' || request.headers.host !== '127.0.0.1:5187'
+        if (request.headers.host !== '127.0.0.1:5187'
           || (request.headers.origin && request.headers.origin !== 'http://127.0.0.1:5187')
           || request.headers['sec-fetch-site'] === 'cross-site'
-          || (request.url === '/api/config/credentials' && request.headers['x-clc-request'] !== '1')) {
+          || ((request.method !== 'GET' || request.url === '/api/config/credentials') && request.headers['x-clc-request'] !== '1')) {
           response.writeHead(403, { 'Content-Type': 'application/json' });
-          response.end(JSON.stringify({ error: '开发预览只读，仅允许本机页面访问。' })); return;
+          response.end(JSON.stringify({ error: '仅允许本机页面访问。' })); return;
         }
-        void endpoint().then(info => {
+        void endpoint().then(async info => {
           if (response.destroyed) return;
-          const upstream = httpRequest({ hostname: '127.0.0.1', port: info.port, path: request.url, headers: { Authorization: `Bearer ${info.token}` } }, incoming => {
+          // Buffer a bounded JSON body so the native server receives Content-Length,
+          // never chunked transfer encoding. Do not retry mutating requests.
+          const chunks: Buffer[] = [];
+          let size = 0;
+          for await (const chunk of request) {
+            size += chunk.length;
+            if (size > 16 * 1024 * 1024) {
+              response.writeHead(413); response.end(); return;
+            }
+            chunks.push(Buffer.from(chunk));
+          }
+          if (response.destroyed) return;
+          const body = Buffer.concat(chunks);
+          const upstream = httpRequest({ hostname: '127.0.0.1', port: info.port, path: request.url, method: request.method,
+            headers: { Authorization: `Bearer ${info.token}`, 'Content-Type': 'application/json', 'Content-Length': body.length } }, incoming => {
             response.writeHead(incoming.statusCode || 502, incoming.headers); incoming.pipe(response);
           });
           upstream.on('error', error => { if (!response.headersSent) response.writeHead(503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: error.message })); });
@@ -72,7 +63,7 @@ export default defineConfig({
           const watchOwner = request.url === '/api/events' ? setInterval(() => {
             if (ownerIdentity() !== owner) { upstream.destroy(); response.end(); }
           }, 1000) : undefined;
-          response.on('close', () => { clearInterval(watchOwner); upstream.destroy(); }); upstream.end();
+          response.on('close', () => { clearInterval(watchOwner); upstream.destroy(); }); upstream.end(body);
         }).catch(error => { response.writeHead(503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ error: error.message })); });
       });
     },

@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue';
-import { isDesktop, isDevelopment, openUrl } from '../platform';
+import { isDesktop, openUrl } from '../platform';
 const releaseUrl = 'https://github.com/whzxc/chatgpt-local-connector/releases/latest';
 type Update = { available: boolean; version?: string; notes?: string; date?: string };
 const update = ref<Update>();
@@ -11,7 +11,7 @@ const error = ref('');
 const message = ref('');
 const autoCheck = ref(localStorage.getItem('update-auto-check') !== 'off');
 const skipped = ref(localStorage.getItem('update-skipped-version') || '');
-const supported = isDesktop && !isDevelopment;
+const supported = isDesktop;
 const active = computed(() => phase.value !== 'idle');
 const available = computed(() => update.value?.available && update.value.version !== skipped.value);
 const progress = computed(() => total.value ? Math.min(100, Math.round(downloaded.value / total.value * 100)) : undefined);

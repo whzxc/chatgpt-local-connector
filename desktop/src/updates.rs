@@ -37,7 +37,7 @@ pub fn take_resume() -> Option<bool> {
 }
 fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
     if cfg!(debug_assertions) {
-        return Err("开发预览不检查或安装更新。".into());
+        return Err("当前应用不支持自动更新，请从下载页获取安装包。".into());
     }
     app.updater_builder()
         .timeout(std::time::Duration::from_secs(120))

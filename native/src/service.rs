@@ -16,6 +16,7 @@ pub struct Service {
     verification: Mutex<Value>,
     logs: Mutex<Vec<String>>,
     tunnel: Mutex<Option<Child>>,
+    https: Mutex<Option<tokio::task::JoinHandle<()>>>,
     run_dir: Mutex<Option<PathBuf>>,
     started: Mutex<Option<Instant>>,
     failure: Mutex<String>,
@@ -29,13 +30,16 @@ impl Service {
         init_crypto();
         private_dir(&root())?;
         let file = root().join("web/settings.json");
-        let settings = if file.exists() {
+        let mut settings = if file.exists() {
             load(&file)?
         } else {
             json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false})
         };
+        for (key, value) in json!({"connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787,"httpsApiKey":"","httpsRequireAuth":false}).as_object().unwrap() {
+            settings.as_object_mut().ok_or("配置格式错误")?.entry(key.clone()).or_insert(value.clone());
+        }
         validate_config(&settings)?;
-        let binding = hash(json!([settings["tunnelId"], settings["apiKey"]]).to_string());
+        let binding = binding(&settings);
         let mut verification = load(&root().join("web/chatgpt.json")).unwrap_or(Value::Null);
         if verification["binding"] != binding {
             verification = json!({"binding":binding,"code":id(),"verifiedAt":null});
@@ -61,6 +65,7 @@ impl Service {
             stopping: std::sync::atomic::AtomicBool::new(false),
             ready_logged: std::sync::atomic::AtomicBool::new(false),
             tunnel: Mutex::new(None),
+            https: Mutex::new(None),
             run_dir: Mutex::new(None),
             started: Mutex::new(None),
             failure: Mutex::new(String::new()),
@@ -80,7 +85,7 @@ impl Service {
     pub async fn log(&self, level: &str, msg: &str) {
         let settings = self.settings.lock().await;
         let mut msg = msg.replace(&self.token, "[REDACTED]");
-        for key in ["apiKey", "tunnelId"] {
+        for key in ["apiKey", "tunnelId", "httpsApiKey"] {
             let value = string(&settings, key);
             if !value.is_empty() {
                 msg = msg.replace(value, "[REDACTED]");
@@ -107,10 +112,19 @@ impl Service {
                 .store(false, std::sync::atomic::Ordering::SeqCst);
             *self.failure.lock().await = "连接进程已退出，请重新连接".into();
         }
-        let running = child.is_some();
+        let tunnel_running = child.is_some();
         drop(child);
-        let mut ready = false;
-        if running {
+        let mut https = self.https.lock().await;
+        if https.as_ref().is_some_and(|task| task.is_finished()) {
+            https.take();
+            self.connected.store(false, std::sync::atomic::Ordering::SeqCst);
+            *self.failure.lock().await = "MCP 监听已退出，请重新连接".into();
+        }
+        let https_running = https.is_some();
+        drop(https);
+        let running = tunnel_running || https_running;
+        let mut ready = https_running;
+        if tunnel_running {
             if let Some(dir) = self.run_dir.lock().await.as_ref() {
                 if let Ok(url) = std::fs::read_to_string(dir.join("health.url")) {
                     if let Ok(url) = reqwest::Url::parse(url.trim()) {
@@ -158,6 +172,9 @@ impl Service {
             }
         };
         let mut config = self.settings.lock().await.clone();
+        config["configured"] = json!(configured(&config));
+        config["hasHttpsApiKey"] = json!(!string(&config, "httpsApiKey").is_empty());
+        config.as_object_mut().unwrap().remove("httpsApiKey");
         config["hasApiKey"] = json!(!string(&config, "apiKey").is_empty());
         config.as_object_mut().unwrap().remove("apiKey");
         let v = self.verification.lock().await;
@@ -184,6 +201,10 @@ impl Service {
         let was_connected = self
             .connected
             .swap(false, std::sync::atomic::Ordering::SeqCst);
+        if let Some(task) = self.https.lock().await.take() {
+            task.abort();
+            let _ = task.await;
+        }
         let mut guard = self.tunnel.lock().await;
         if let Some(child) = guard.as_mut() {
             #[cfg(unix)]
@@ -256,11 +277,28 @@ impl Service {
             self.control.utility().await?;
         }
         let settings = self.settings.lock().await.clone();
-        if string(&settings, "tunnelId").is_empty() || string(&settings, "apiKey").is_empty() {
+        if !configured(&settings) {
             return Err("请先填写连接信息".into());
         }
-        let binary =
-            executable(string(&settings, "tunnelBinary")).ok_or("请先安装 Tunnel Client")?;
+        if settings["connectionMode"] == "https" {
+            let task = crate::https::listen(self.clone(), &settings).await?;
+            *self.https.lock().await = Some(task);
+            self.stopping.store(false, std::sync::atomic::Ordering::SeqCst);
+            self.connected.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.log("INFO", "MCP 本机监听已开启，公网 HTTPS 连通性需在 ChatGPT 验证").await;
+            return Ok(());
+        }
+        let binary = match executable(string(&settings, "tunnelBinary")) {
+            Some(binary) => binary,
+            None => {
+                self.log("INFO", "正在准备连接组件，首次使用需要下载").await;
+                let binary = install_tunnel().await.map_err(|e| format!("准备连接组件失败，请检查网络后重试：{e}"))?;
+                let mut config = self.settings.lock().await;
+                config["tunnelBinary"] = json!(binary);
+                save(&root().join("web/settings.json"), &config)?;
+                binary
+            }
+        };
         let dir = root().join("runs").join(id());
         private_dir(&dir)?;
         let key = dir.join("api-key");
@@ -423,8 +461,10 @@ impl Service {
             ("GET", "status") => self.status().await,
             ("GET", "core") => Ok(self.status().await?["core"].clone()),
             ("GET", "config/credentials") => {
-                Ok(json!({"apiKey":self.settings.lock().await["apiKey"]}))
+                let settings = self.settings.lock().await;
+                Ok(json!({"apiKey":settings["apiKey"],"httpsApiKey":settings["httpsApiKey"]}))
             }
+            ("POST", "config/key") => Ok(json!({"key":id() + &id()})),
             ("GET", "service") => Ok(
                 json!({"supported":cfg!(target_os="macos")||cfg!(windows),"enabled":autostart_enabled().await}),
             ),
@@ -445,8 +485,12 @@ impl Service {
                 if string(&body, "apiKey").is_empty() {
                     body["apiKey"] = self.settings.lock().await["apiKey"].clone();
                 }
+                if string(&body, "httpsApiKey").is_empty() {
+                    body["httpsApiKey"] = self.settings.lock().await["httpsApiKey"].clone();
+                }
+                if !configured(&body) { return Err("请补齐所选连接方式的信息".into()); }
                 save(&root().join("web/settings.json"), &body)?;
-                let binding = hash(json!([body["tunnelId"], body["apiKey"]]).to_string());
+                let binding = binding(&body);
                 *self.settings.lock().await = body;
                 let mut v = self.verification.lock().await;
                 if v["binding"] != binding {
@@ -557,12 +601,25 @@ impl Service {
         )
     }
 }
+fn configured(s: &Value) -> bool {
+    if s["connectionMode"] == "https" {
+        !string(s, "httpsUrl").is_empty() && (s["httpsRequireAuth"] == false || !string(s, "httpsApiKey").is_empty())
+    } else { !string(s, "tunnelId").is_empty() && !string(s, "apiKey").is_empty() }
+}
+fn binding(s: &Value) -> String {
+    if s["connectionMode"] == "https" { hash(json!(["https",s["httpsRequireAuth"],s["httpsUrl"],s["httpsApiKey"],s["httpsHost"],s["httpsPort"]]).to_string()) }
+    else { hash(json!([s["tunnelId"],s["apiKey"]]).to_string()) }
+}
 fn validate_config(s: &Value) -> Result<()> {
     let o = s.as_object().ok_or("配置格式错误")?;
-    if o.len() != 5 || !s["autoStart"].is_boolean() {
+    if o.len() != 11 || !s["autoStart"].is_boolean() || !s["httpsRequireAuth"].is_boolean() {
         return Err("配置字段错误".into());
     }
     for (k, max) in [
+        ("connectionMode", 16),
+        ("httpsUrl", 2048),
+        ("httpsHost", 128),
+        ("httpsApiKey", 4096),
         ("tunnelId", 160),
         ("apiKey", 4096),
         ("tunnelBinary", 2048),
@@ -572,6 +629,16 @@ fn validate_config(s: &Value) -> Result<()> {
         if v.len() > max || v.contains('\0') {
             return Err("配置内容无效".into());
         }
+    }
+    if !["tunnel", "https"].contains(&string(s, "connectionMode")) { return Err("连接方式无效".into()); }
+    string(s, "httpsHost").parse::<std::net::IpAddr>().map_err(|_| "监听地址必须是 IP 地址")?;
+    if !s["httpsPort"].as_u64().is_some_and(|p| (1..=65535).contains(&p)) { return Err("监听端口无效".into()); }
+    let key = string(s, "httpsApiKey");
+    if !key.is_empty() && (key.len() < 32 || !key.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')) { return Err("访问密钥至少 32 位，仅支持字母、数字、下划线和短横线".into()); }
+    let url = string(s, "httpsUrl");
+    if !url.is_empty() {
+        let u = reqwest::Url::parse(url).map_err(|_| "HTTPS URL 无效")?;
+        if u.scheme() != "https" || u.host_str().is_none() || u.path() != "/mcp" || u.query().is_some() || u.fragment().is_some() || !u.username().is_empty() || u.password().is_some() { return Err("请填写以 https:// 开头、以 /mcp 结尾且不含凭据或查询参数的地址".into()); }
     }
     let id = string(s, "tunnelId");
     if !id.is_empty()

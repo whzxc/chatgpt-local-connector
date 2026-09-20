@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-// Development owns the window only. It never prepares, installs or replaces a service.
+// Development owns the window only; operations are forwarded to the running build.
 const root = new URL('../', import.meta.url);
 if (process.argv.includes('--release')) throw new Error('desktop:dev 仅运行开发模式；发行构建请用 desktop:build。');
 const env = { ...process.env };

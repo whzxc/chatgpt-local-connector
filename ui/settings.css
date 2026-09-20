@@ -1,0 +1,48 @@
+/* Settings surfaces and connection controls. */
+.settings-preferences {
+  --ink: light-dark(#292c2a, #e5e7e5);
+  --muted: light-dark(#717672, #a1a6a2);
+  --line: light-dark(#e3e5e1, #3d423e);
+  --surface: light-dark(#fff, #272c28);
+  --soft: light-dark(#f0f2ee, #353c36);
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding-bottom: 8px;
+  color: var(--ink);
+}
+
+.settings-preferences .settings-connection-form { padding: 0 16px 16px; }
+.settings-preferences .connection-fields { border-top: 1px solid var(--line); padding-top: 14px; gap: 16px; }
+.settings-preferences .connection-mode-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-preferences .mode-switch { border: 0; border-radius: 8px; }
+.settings-preferences .mode-switch button { border-radius: 6px; }
+.settings-preferences .connection-help { font-size: 12px; line-height: 1.6; }
+.settings-preferences input[readonly] { color: var(--muted); background: var(--soft); }
+.settings-preferences .settings-switch {
+  appearance: none;
+  width: 36px;
+  height: 22px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 20px;
+  background: light-dark(#c5cbc5, #626b64);
+  cursor: pointer;
+}
+.settings-preferences .settings-switch::after { content: ''; display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+.settings-preferences .settings-switch:checked { background: var(--green); }
+.settings-preferences .settings-switch:checked::after { transform: translateX(14px); }
+.settings-preferences .settings-switch:disabled { opacity: .45; cursor: default; }
+.settings-preferences .settings-theme { display: flex; padding: 3px; gap: 2px; background: var(--soft); border-radius: 8px; }
+.settings-preferences .settings-theme button { gap: 5px; padding: 0 10px; height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
+.settings-preferences .settings-theme button.active { background: var(--surface); border-color: var(--line); box-shadow: 0 1px 3px #00000008; color: var(--green); }
+.settings-preferences .settings-theme svg { width: 14px; height: 14px; }
+.settings-preferences .settings-version { text-align: center; color: var(--muted); font-size: 11px; line-height: 20px; }
+@media (max-width: 480px) {
+  .settings-preferences .connection-mode-row { flex-wrap: wrap; }
+  .settings-preferences .mode-switch { max-width: 100%; }
+}

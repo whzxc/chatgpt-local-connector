@@ -1,12 +1,25 @@
-# 通过 Secure MCP Tunnel 接入
+# 接入 ChatGPT：官方 Tunnel 与自备 HTTPS MCP
 
-返回[项目首页](../README.md)。普通使用者在原生应用完成本机配置、客户端安装和连接启停，无须手工创建 Tunnel profile。
+返回[项目首页](../README.md)。普通使用者在原生应用的设置页完成本机配置和连接启停，缺失的连接组件由应用自动准备，无须手工创建 Tunnel profile。
 
-## 需要你提供的信息
+## 自备 HTTPS MCP
+
+在设置页选择「自备 HTTPS MCP」。填写公网 HTTPS URL（路径固定为 `/mcp`）、本机监听 IP 和端口，默认无需认证，也可选择访问密钥。无需官方 Tunnel ID 或 Tunnel Client；仍需当前 ChatGPT 账号提供自定义 MCP 和 API key 认证入口。
+
+1. 同机代理使用默认 `127.0.0.1:8787`；代理在另一台设备时，填写 Connector 的局域网 IP，并允许代理访问该端口。
+2. 自行配置公网域名、有效 TLS 证书和反向代理，将公网 `/mcp` 转发至 `http://监听IP:端口/mcp`。保留 `Authorization` 请求头，`Host` 使用公网域名或实际监听 IP:端口，支持 JSON POST 与长请求，代理超时建议至少 180 秒。
+3. 保存并开启连接，在 ChatGPT 添加公网 MCP URL，与应用保持一致：访问密钥模式选择 API key，以 `Authorization: Bearer <访问密钥>` 发送凭据；无需认证模式选择 No authentication。无需认证时任何能访问该地址的客户端都能调用工具，可由自备代理限制访问。此模式不提供 OAuth。
+4. 从接入引导复制验证消息并发起工具调用，确认公网链路。本机监听 ready 只代表端口已开启。
+
+原生 HTTP 入口仅提供 `/mcp`，与桌面管理 API、内部随机凭据隔离。使用无会话 Streamable HTTP，POST 返回 JSON，通知返回 202；不提供独立 SSE GET 流。HTTPS 由用户的代理终止，项目不提供托管中继、证书或公网入口。
+
+关闭连接后才能更改连接方式、监听参数、认证方式或访问密钥。密钥留空保存保留原值；生成新密钥后必须保存，再更新 ChatGPT。改变接入身份或地址会清除此前的连接验证记录。关闭连接或退出应用停止监听。
+
+## 官方 Tunnel：需要你提供的信息
 
 按 [Secure MCP Tunnel 官方指南](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)取得自己的 Tunnel ID、runtime API Key，并确认目标 ChatGPT workspace 的关联及访问权限。管理页面负责保存本机配置和运行官方 Tunnel Client；不提供 Tunnel 服务端，也不代办身份申请。
 
-API Key 默认以敏感信息形式展示，设置页可通过眼睛按钮按需回读；留空保存会保留已有密钥。不要将密钥写进命令参数、源码、截图或聊天。原生应用通过本机 IPC 管理连接；HTTP 适配使用独立的本机随机凭据，Runtime API Key 只用于 Tunnel 连接。
+API Key 默认以敏感信息形式展示，设置页可通过显示密钥按钮按需回读；留空保存会保留已有密钥。不要将密钥写进命令参数、源码、截图或聊天。原生应用通过本机 IPC 管理连接；HTTP 适配使用独立的本机随机凭据，Runtime API Key 只用于 Tunnel 连接。
 
 ## 首次接入步骤
 
@@ -29,7 +42,7 @@ ChatGPT → 官方 Tunnel → 本机 Tunnel Client → 原生 stdio 适配 → R
 
 每台机器使用自己的目录、Codex 登录态和原生项目列表。一个实例服务一台机器；不提供设备选择或路由。不要让多台机器同时用同一 Tunnel 身份运行后端；切换设备时停止旧设备，再启动目标设备，并通过项目查询确认请求来源。
 
-ChatGPT 使用 Tunnel ID 接入，不要将本机 HTTP 适配端口或开发预览地址填作 MCP 服务端点。
+官方模式使用 Tunnel ID；HTTPS 模式使用公网 MCP URL。两者都不能使用内部管理端口或开发预览地址。
 
 ## 页面中的状态
 
@@ -41,6 +54,6 @@ ChatGPT 使用 Tunnel ID 接入，不要将本机 HTTP 适配端口或开发预�
 
 点击「关闭连接」会停止 Tunnel、stdio 适配及 Connector 的辅助进程。Desktop 自己执行的任务继续运行，未确认的外部请求保留回执。需要撤回远程接入时，在 ChatGPT 中移除对应连接。
 
-无法发现工具时，先检查应用中的 Tunnel 状态和记录；本机程序未找到时安装程序或指定其完整路径。Codex 未登录时点击账号卡片中的「登录 Codex」，在打开的 Desktop 完成登录后返回检查状态。无法调用某个原生方法时查询 `codex_schema`，核对当前二进制是否提供该方法。
+无法发现工具时，先检查应用中的 Tunnel 状态和记录；本机程序未找到时安装程序或指定其完整路径。使用前应在 Codex Desktop 中完成登录；连接异常时检查 Desktop 是否可用。无法调用某个原生方法时查询 `codex_schema`，核对当前二进制是否提供该方法。
 
 写调用超时后使用原 `requestId` 回读；超时不等于取消，不换 ID 自动重试写入。连接日志会脱敏，原始任务输出不保证脱敏；分享前自行检查。

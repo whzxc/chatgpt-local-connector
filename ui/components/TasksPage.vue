@@ -4,7 +4,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useClipboard, useIntervalFn, usePreferredReducedMotion, useResizeObserver } from '@vueuse/core';
 import { api, useConnector } from '../composables/useConnector';
 import type { TaskRecord, TaskRuntime } from '../composables/useTasks';
-import { isDevelopment } from '../platform';
 const props = defineProps<{ records: TaskRecord[]; error: string }>();
 const emit = defineEmits<{ refresh: [] }>();
 const { busy, run } = useConnector();
@@ -179,11 +178,11 @@ onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
           <pre v-if="r.task.prompt" class="task-prompt">{{r.task.prompt}}</pre>
           <div v-if="decisions[r.approval.decision]" class="task-entry-meta"><span v-if="decisions[r.approval.decision]">{{decisions[r.approval.decision]}} · {{r.approval.source==='local'?'本机':'云端'}}</span></div>
           <p v-if="r.error?.message" class="status-banner warning">{{r.error.message}}</p>
-          <div v-if="r.state==='awaiting-approval'" class="task-entry-actions"><button class="primary" :disabled="!!busy || isDevelopment" @click="decide(r,'approve')">批准并提交</button><button :disabled="!!busy || isDevelopment" @click="decide(r,'reject')">拒绝</button></div>
+          <div v-if="r.state==='awaiting-approval'" class="task-entry-actions"><button class="primary" :disabled="!!busy" @click="decide(r,'approve')">批准并提交</button><button :disabled="!!busy" @click="decide(r,'reject')">拒绝</button></div>
         </section>
           </div>
           <p v-if="actionError" class="status-banner warning" role="alert">{{actionError}}</p>
-          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask || isDevelopment" @click="openTask(selected.id)">{{openingTask ? '正在打开…' : '在 Codex 中打开 ↗'}}</button></footer>
+          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask" @click="openTask(selected.id)">{{openingTask ? '正在打开…' : '在 Codex 中打开 ↗'}}</button></footer>
         </div>
       </dialog>
     </Teleport>

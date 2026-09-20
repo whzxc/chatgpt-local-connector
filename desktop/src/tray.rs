@@ -49,7 +49,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     let home = MenuItem::with_id(app, "overview", "打开首页", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let records = MenuItem::with_id(app, "logs", "记录…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出应用并关闭连接", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
     let separator1 = PredefinedMenuItem::separator(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
     let separator3 = PredefinedMenuItem::separator(app)?;
@@ -206,10 +206,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                             "开启连接"
                         });
                         let _ = connection.set_checked(active);
-                        let configured = value["config"]["hasApiKey"].as_bool().unwrap_or(false)
-                            && value["config"]["tunnelId"]
-                                .as_str()
-                                .is_some_and(|s| !s.is_empty());
+                        let configured = value["config"]["configured"].as_bool().unwrap_or(false);
                         let _ = connection.set_enabled(
                             !cfg!(debug_assertions)
                                 && configured

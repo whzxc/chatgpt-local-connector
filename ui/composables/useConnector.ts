@@ -12,6 +12,13 @@ import {
 import { useIntervalFn } from "@vueuse/core";
 
 export interface Config {
+  connectionMode: "tunnel" | "https";
+  httpsRequireAuth: boolean;
+  httpsUrl: string;
+  httpsHost: string;
+  httpsPort: number;
+  hasHttpsApiKey: boolean;
+  configured: boolean;
   tunnelId: string;
   tunnelBinary: string;
   codexBinary: string;

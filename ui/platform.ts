@@ -1,5 +1,4 @@
 export const isDesktop = "__TAURI_INTERNALS__" in window;
-export const isDevelopment = import.meta.env.DEV;
 export async function desktopRequest<T>(
   path: string,
   method: string,
