@@ -1,5 +1,17 @@
 # 版本说明
 
+## 0.5.0
+
+Windows Codex Desktop 任务接入。
+
+- Windows x64 支持 Microsoft Store 版 Codex Desktop，可创建、读取、续接和中断任务，并在 Desktop 中打开。
+- 新增 Windows 命名管道通信及服务端用户、进程归属校验，自动准备 Desktop 捆绑的 CLI 与辅助程序。
+- 修复 Desktop 任务的默认模型继承与协作模式设置，避免创建或续接时模型为空，以及显式模型被旧设置覆盖。
+- 修复应用安装更新后的重启阻塞，恢复更新前的连接状态。
+- 同步安装、配置、HTTPS MCP、桌面生命周期和开发文档，补充多设备独立连接与临时地址变化后的操作说明。
+
+支持 Apple Silicon Mac 与 Windows x64。两端均可使用官方 OpenAI Tunnel 或 HTTPS MCP；HTTPS MCP 支持 Cloudflare 临时体验、固定域名、ngrok 和自定义反向代理。
+
 ## 0.4.3
 
 全局更新提醒与本机配置体验优化。

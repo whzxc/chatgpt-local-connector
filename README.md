@@ -2,7 +2,7 @@
 
 **在 ChatGPT 里聊想法，让本机的 Codex 接着干。**
 
-Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通过OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+Local Connector 是 ChatGPT 和 Codex Desktop 之间的小小联络员。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
 
 ![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
 

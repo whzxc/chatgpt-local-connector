@@ -50,7 +50,7 @@ codex_call 提供原生 RPC 入口，任务写操作受 Desktop 所有权和支�
 | command | exec → command/exec；write、terminate、resize → command/exec/同名方法 |
 | process | spawn、writeStdin、kill、resizePty → process/同名方法 |
 | mcp | list → mcpServerStatus/list；resource/read、tool/call、oauth/login、event/stream/start、event/stream/stop → mcpServer/同名方法 |
-| codex_thread | Schema 保留原生 action 定义，当前执行返回 `DESKTOP_METHOD_UNSUPPORTED` |
+| codex_thread | Schema 保留原生 action 定义；Desktop 任务的扩展操作返回 `DESKTOP_METHOD_UNSUPPORTED`，后台任务转发至其 App Server |
 | codex_account | read、usage/read、rateLimits/read、workspaceMessages/read → account/同名方法 |
 | file_search | 无 action → fuzzyFileSearch |
 
@@ -109,7 +109,7 @@ thread/turn 中的原生参数优先于便利字段；任务 ID 与 input 由顶
 限定写入根、恢复必须声明 mode，也不注入额外 developerInstructions。
 model、effort、serviceTier、provider、permissions、sandboxPolicy、approvalPolicy、
 collaborationMode、outputSchema、runtimeWorkspaceRoots、附件和其他原生参数由上游解释与校验。
-模型目录仅用于发现，不由 MCP 额外阻止未列出的模型或档位。
+模型目录仅用于发现，不由 MCP 额外阻止未列出的模型或档位。Desktop 新任务继承原生创建结果的模型；续接时继承 owner 快照的模型与协作模式。未显式提供 collaborationMode 时，显式 model/effort 同步到继承的协作模式设置，避免旧设置覆盖本次请求。无法确定模型时返回明确错误。
 
 便利字段 mode 支持 read-only、workspace-write、danger-full-access。
 显式使用前两种 mode 而省略 networkAccess 时，此便利预设关闭网络；完全省略 mode 时不覆盖

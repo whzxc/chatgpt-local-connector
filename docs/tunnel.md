@@ -18,7 +18,7 @@
 1. 选择 Cloudflare，或选择 ngrok 并通过「获取令牌」取得自己的 Authtoken。
 2. 点击「保存并连接」。应用自动准备官方组件，使用独立的随机 loopback 端口和临时配置运行隧道，不改动已有 cloudflared/ngrok 配置。
 3. 复制页面显示的「ChatGPT 接入地址」，点击「前往 ChatGPT 添加连接」，在 ChatGPT 添加自定义 MCP。认证选择 No authentication。
-4. 从接入引导复制验证消息并发起工具调用，确认公网链路。地址变化后，更新 ChatGPT 中的连接；旧地址对应的验证记录不会用于新地址。
+4. 从接入引导复制验证消息并发起工具调用，确认公网链路。地址变化后，在 ChatGPT 使用新地址重新创建连接并移除旧连接；旧地址对应的验证记录不会用于新地址。
 
 Cloudflare 临时体验使用 [Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)，仅用于试用，不提供独立 SSE 流支持；当前原生 MCP 使用 JSON POST，不依赖 SSE。cloudflared 需要连通 Cloudflare 的出站 7844 端口，不能假设普通 HTTP 代理能代理其数据通道。长期使用固定地址可选择 Cloudflare 固定域名、ngrok 或自定义域名。ngrok 的账号、域名和额度由用户在 [ngrok](https://ngrok.com/download) 管理，应用不会创建付费资源。
 
@@ -39,7 +39,7 @@ Cloudflare 临时体验使用 [Quick Tunnels](https://developers.cloudflare.com/
 
 将公网 `/mcp` 转发至代理目标。`Host` 使用公网域名或实际监听 IP:端口，支持 JSON POST 与长请求，代理超时建议至少 180 秒。保存并从首页开启连接后，在 ChatGPT 添加对应 MCP URL，认证选择 No authentication。
 
-三种方式均无需认证，任何能访问公网地址的客户端都能调用工具；自备反向代理可自行限制访问。当前原生入口不提供访问密钥或 OAuth 认证。
+以上 HTTPS 接入方式均无需认证，任何能访问公网地址的客户端都能调用工具；自备反向代理可自行限制访问。当前原生入口不提供访问密钥或 OAuth 认证。
 
 原生 HTTP 入口仅提供 `/mcp`，与桌面管理 API、内部随机凭据隔离。使用无会话 Streamable HTTP，POST 返回 JSON，通知返回 202；不提供独立 SSE GET 流。HTTPS 由所选服务商或用户的代理终止。
 
@@ -70,7 +70,7 @@ ChatGPT → 官方 Tunnel → 本机 Tunnel Client → 原生 stdio 适配 → R
                          原生应用负责本机配置与启停
 ```
 
-每台机器使用自己的目录、Codex 登录态和原生项目列表。一个实例服务一台机器；不提供设备选择或路由。不要让多台机器同时用同一 Tunnel 身份运行后端；切换设备时停止旧设备，再启动目标设备，并通过项目查询确认请求来源。
+每台机器使用自己的目录、Codex 登录态和原生项目列表。一个实例服务一台机器；不提供设备选择或路由。多台设备可分别使用独立的官方 Tunnel 或 HTTPS MCP 地址，在 ChatGPT 创建名称可区分的连接，并在对话中选用对应设备。不要让多台机器同时用同一 Tunnel 身份运行后端；切换设备时停止旧设备，再启动目标设备，并通过项目查询确认请求来源。
 
 官方模式使用 Tunnel ID；HTTPS 模式使用公网 MCP URL。两者都不能使用内部管理端口或开发预览地址。
 

@@ -6,7 +6,7 @@
 
 必须使用能够在目标电脑执行命令的本机 Codex。云端任务不能直接配置用户电脑。先检查现有安装和运行状态，不重复安装，不覆盖已有可用配置。Desktop 任务接入支持 Apple Silicon macOS 和 Windows x64；Windows 需要安装 Microsoft Store 版 Codex Desktop。
 
-未安装时，从 https://github.com/whzxc/chatgpt-local-connector/releases/latest 获取对应安装包和 SHA256SUMS.txt，核对同一版本的哈希后安装到 Applications。也可使用安装指南中的 Homebrew Cask。无需 Node、npm、Rust 或克隆源码。系统拦截按安装指南处理，不关闭系统整体安全机制。不要让用户从 DMG 内长期运行应用。
+未安装时，从 https://github.com/whzxc/chatgpt-local-connector/releases/latest 获取对应安装包和 SHA256SUMS.txt，核对同一版本的哈希；macOS 安装到 Applications，也可使用安装指南中的 Homebrew Cask；Windows 运行 x64 EXE 或 MSI 安装器。无需 Node、npm、Rust 或克隆源码。系统拦截按安装指南处理，不关闭系统整体安全机制。不要让用户从 DMG 内长期运行应用。
 
 在 macOS 打开 Local Connector。默认安装位置的 CLI：
 
