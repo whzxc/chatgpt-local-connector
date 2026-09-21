@@ -4,18 +4,41 @@
 
 **在 ChatGPT 里聊想法，让本机的 coding agent 接着干。**
 
-Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，支持 Codex Native、Pi，以及 Gemini、Claude adapter、Cursor、Grok 等内置 ACP Agent。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+CLC 并不是从“给 ChatGPT 再加一堆工具”开始的。它来自一个困扰我很久的实际工作问题，而且每一阶段，都是上一个问题解决之后自然长出来的。
 
 ![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.zh-CN.png)
 
-- **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，讨论有据可依。
-- **聊到哪，做到哪**：在对话里创建、续接或中断 Codex 任务，也能查看任务进展和结果。
-- **一次等到关键进展**：创建或续接后用 `agent_wait`（Codex 原生入口为 `codex_wait`）等待完成、失败或需要交互，单次最长五分钟；超时不终止任务。
-- **连接有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，连接状态一眼可见。
+## 为什么会有 Local Connector
+
+### 第一阶段：让 Chat 看到“现在真实是什么”
+
+我很长时间都在 ChatGPT 的 Chat 模式里讨论工作，但一个问题反复出现：Chat 可以延续对话，却看不到电脑上刚刚发生的变化。项目可能已经改了，架构决策可能调整了，Codex 也可能刚完成一轮工作，但 Chat 仍会拿几天前甚至更旧的上下文继续推理。每次都手工复制文件、diff 和最新状态，久而久之本身就成了新的负担。
+
+所以第一版 CLC 很简单：通过 MCP 把本机项目事实源接给 ChatGPT，让它在需要时直接读取当前文件、代码、文档、项目结构和 Git 状态。目标不是让 Chat “记住更多”，而是让它随时能自己确认“现在真实是什么”。
+
+### 第二阶段：把 Chat 里的讨论直接变成 Codex 的任务
+
+当 Chat 已经能看到设备上的实时状态，下一步就很自然：既然能读文件，为什么不能执行命令、查看我最近在 Codex 里做了什么，甚至直接替我创建和续接任务？
+
+于是 CLC 继续把 MCP 接到了 Codex App Server。现在 ChatGPT 可以读取本机 Codex 的工作记录，创建、续接或中断任务，并持续回读进度和结果。最终形成了我真正想要的工作流：先在 Chat 里基于实时项目事实把方案聊清楚，再把结论变成明确的 Codex 任务交给本机执行，之后仍然在同一个对话里持续跟进。只要设备在线，我不必坐在电脑前，也能通过 ChatGPT 查看和推进任务。
+
+### 第三阶段：从控制一个 Agent，扩展成 Agent 控制层
+
+当 ChatGPT 已经可以协调 Codex 后，只支持一个 Agent 就显得没有必要了。了解到 ACP 之后，我把这套控制模型继续扩展到其他本地 Agent，希望一步覆盖主流 ACP 生态。现在 Pi、OpenCode，以及 Gemini、Claude adapter、Cursor、Grok、Copilot、Kimi、Qwen、Kiro、Devin、Cline、Junie、Hermes 等 Agent，都可以接入同一套工作流。
+
+这也是 CLC 的演进方向：从“让 ChatGPT 能读我的本机项目”，变成“让 ChatGPT 能协调发生在这台机器上的工作”。Chat 负责讨论、推理和基于事实做决策，本地 Agent 负责执行，CLC 负责把两边连接起来，并让整个过程始终可见、可跟进。
+
+## 现在它解决什么
+
+- **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，始终基于当前事实讨论。
+- **把讨论直接变成任务**：在同一个对话里创建、续接或中断 Codex 和其他 Agent 的任务。
+- **不中断上下文地跟进执行**：通过 `agent_wait`（Codex 原生入口为 `codex_wait`）等待完成、失败或需要交互，单次最长五分钟；超时不会终止任务。
+- **用一套控制层协调多个 Agent**：Codex 保持原生能力并作为默认 Agent，Pi、OpenCode、内置 ACP Agent 和 Custom ACP 共用 `agent_*` 工作流。
+- **连接本身有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，并显示当前连接状态。
 
 CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使用各自所需的运行环境。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
 
-Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；设置中的 Agents 区域显示全部内置项、安装状态和版本，并支持启用已安装的 Agent；native/adapter 类型与能力见 Agents 文档。内置 ACP 还包括 Copilot、Kimi、Qwen、Kiro、Devin、Cline、Junie、Hermes 和 OpenCode。公共任务使用 `agent_*` 工具，差异与使用方法见[本地 Agents](docs/agents.md)。
+Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；设置中的 Agents 区域会显示内置项、安装状态和版本，并支持启用已安装的 Agent。native/adapter 类型与能力见[本地 Agents](docs/agents.md)，公共任务操作统一使用 `agent_*` 工具。
 
 ## 安装
 

@@ -4,18 +4,41 @@
 
 **Discuss an idea in ChatGPT. Let a coding agent on your computer do the work.**
 
-Local Connector connects ChatGPT to local coding agents: Codex Native, Pi, and built-in ACP Agents including Gemini, the Claude adapter, Cursor, and Grok. Through OpenAI Secure MCP Tunnel or HTTPS MCP, ChatGPT can inspect projects, read code, check Git status, hand tasks to Codex, and follow their progress.
+CLC did not start as an attempt to give ChatGPT a bigger tool list. It grew out of a workflow problem I kept running into, and each stage solved the next problem that became obvious.
 
 ![Local Connector home screen showing ChatGPT, Connector, and Codex connected](docs/images/local-connector.png)
 
-- **Less copying and pasting:** let ChatGPT read local projects, files, and Git status to ground the discussion.
-- **Keep work in the conversation:** create, continue, or interrupt Codex tasks and inspect progress and results.
-- **Wait for meaningful progress:** after creating or continuing a task, use `agent_wait` (`codex_wait` for native Codex) to wait for completion, failure, or required interaction, for up to five minutes per call. A timeout does not stop the task.
-- **Managed connections:** the app downloads, verifies, configures, starts, and stops the Tunnel Client and displays its connection status.
+## Why I built Local Connector
+
+### Stage 1 — Let Chat see what is true now
+
+I use ChatGPT's Chat mode to think through a lot of work. The recurring problem was continuity: Chat could remember the conversation, but it could not see what had just changed on my computer. A project might already have moved on, an architecture decision might have changed, or Codex might have finished another round of work, while Chat was still reasoning from stale context. Manually pasting files, diffs, and status updates every time became its own burden.
+
+The first version of CLC was therefore simple: expose local project facts to ChatGPT through MCP. Chat can read the current files, code, documentation, project structure, and Git state when it needs them. The goal was not to make Chat “remember more”; it was to let it check the source of truth directly.
+
+### Stage 2 — Turn the discussion into Codex work
+
+Once Chat could see the machine, the next question was obvious: if it can read project files, why stop there? Could it also run commands, understand what I had recently been doing in Codex, and create or continue tasks for me?
+
+CLC then connected MCP to the Codex App Server. ChatGPT can inspect local Codex work, create and continue tasks, interrupt them when needed, and follow their progress and results. That produced the workflow I actually wanted: discuss the problem in Chat using live project facts, turn the conclusion into a concrete Codex task, and keep following the task from the same conversation. As long as the machine is online, I can check and steer that work through ChatGPT even when I am away from the computer.
+
+### Stage 3 — Expand from one agent to an agent control layer
+
+Once ChatGPT could coordinate Codex, limiting the design to one agent no longer made much sense. After learning about ACP, I extended the same control model to other local agents and tried to cover the mainstream ACP ecosystem in one step. CLC now supports Pi and OpenCode alongside a broad set of built-in ACP agents, including Gemini, the Claude adapter, Cursor, Grok, Copilot, Kimi, Qwen, Kiro, Devin, Cline, Junie, and Hermes.
+
+That is the direction of CLC: from “let ChatGPT read my local project” to “let ChatGPT coordinate the work happening on my machine.” Chat is where I discuss, reason, and turn project facts into decisions; local agents do the execution; CLC connects the two and keeps the whole loop observable.
+
+## What this means in practice
+
+- **Less copying and pasting:** let ChatGPT read local projects, files, and Git status to ground the discussion in current facts.
+- **Turn decisions into work:** create, continue, or interrupt Codex and other Agent tasks directly from the conversation.
+- **Follow the work without losing context:** use `agent_wait` (`codex_wait` for native Codex) to wait for completion, failure, or required interaction, for up to five minutes per call. A timeout does not stop the task.
+- **Use one control layer for multiple Agents:** Codex stays native and remains the default, while Pi, OpenCode, built-in ACP Agents, and Custom ACP share the `agent_*` workflow.
+- **Keep the connection managed:** the app downloads, verifies, configures, starts, and stops the Tunnel Client and shows the current connection state.
 
 CLC itself requires no Node, npm, Rust, or Cargo installation. External Agents still need their own runtimes. Desktop task integration supports **Apple Silicon Mac** and **Windows x64**.
 
-Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. Settings → Agents lists built-in Agents, detected installation status and versions, and lets you enable installed Agents. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Other built-in ACP Agents include Copilot, Kimi, Qwen, Kiro, Devin, Cline, Junie, Hermes, and OpenCode. Shared task operations use the `agent_*` tools.
+Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. Settings → Agents lists built-in Agents, detected installation status and versions, and lets you enable installed Agents. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Shared task operations use the `agent_*` tools.
 
 ## Installation
 
