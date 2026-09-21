@@ -1,5 +1,17 @@
 # 版本说明
 
+## 0.6.1
+
+扩展内置 ACP Agent 支持并完善跨 Agent 等待体验。
+
+- 新增 Claude Code、Gemini CLI、GitHub Copilot CLI、Cursor、Cline、Kiro、Junie、Qwen Code、Kimi CLI、Grok CLI、Hermes Agent 与 Devin CLI 等内置 ACP Agent 定义，自动识别已安装命令并展示品牌图标。
+- 新增统一 `agent_wait` 工具，可等待 Codex、Pi、OpenCode 与 ACP Agent 的任务终态、权限请求和用户输入，支持同时等待多个任务且不影响后台执行。
+- 完善 Agent 进程生命周期与任务恢复，复用持久化会话并在连接关闭时终止受管子进程。
+- 优化设置页 Agent 管理、ChatGPT 接入引导与复制交互，明确连接验证、工具刷新和实际任务验收步骤。
+- 调整发布流程，正式发布复用已通过验签的双平台演练产物，并校验源码、Cask 与发布标签一致。
+
+支持 Apple Silicon Mac 与 Windows x64。新增 ACP Agent 仍依赖对应 CLI 已安装且提供 ACP 模式；具体启动参数与环境变量可在本机 manifest 中覆盖。
+
 ## 0.6.0
 
 多 Agent 支持与任务等待能力。
