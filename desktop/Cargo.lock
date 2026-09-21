@@ -539,6 +539,7 @@ dependencies = [
  "hyper-util",
  "jsonschema",
  "libc",
+ "regex",
  "reqwest",
  "rustls",
  "serde",

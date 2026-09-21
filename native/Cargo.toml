@@ -19,6 +19,7 @@ base64 = "0.22"
 dirs = "6"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 jsonschema = { version = "0.33", default-features = false }
+regex = "1"
 libc = "0.2"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 

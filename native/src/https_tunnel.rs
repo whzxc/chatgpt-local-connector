@@ -128,11 +128,24 @@ fn matching_urls(value: &Value, upstream: &str) -> Vec<String> {
     let mut previous: Vec<String> = Vec::new();
     for rule in value["config"]["ingress"].as_array().into_iter().flatten() {
         let host = string(rule, "hostname");
+        let path = string(rule, "path");
+        let path_matches = if path.is_empty() {
+            Some(true)
+        } else {
+            regex::Regex::new(path)
+                .ok()
+                .map(|path| path.is_match("/mcp"))
+        };
+        // Only rules matching /mcp can shadow this endpoint. Unknown expressions
+        // remain potential blockers, but cannot establish a discovered route.
+        if path_matches == Some(false) {
+            continue;
+        }
         let shadowed = previous
             .iter()
             .any(|h| h.is_empty() || h.contains('*') || h == host);
         previous.push(host.to_owned());
-        if shadowed || host.is_empty() || host.contains('*') || !string(rule, "path").is_empty() {
+        if shadowed || host.is_empty() || host.contains('*') || path_matches != Some(true) {
             continue;
         }
         let Ok(origin) = reqwest::Url::parse(string(rule, "service")) else {
