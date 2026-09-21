@@ -114,3 +114,5 @@ Stopping an ingress stops only its Tunnel, stdio adapter and listener. AgentHost
 If tools cannot be discovered, check Tunnel status and Records. If a local binary is missing, install it or specify its full path. Sign in to Codex Desktop before use and check that Desktop is available when connections fail. For an unavailable native method, query `codex_schema` and check whether the current binary provides it.
 
 After a write timeout, read back using the original `requestId`. A timeout is not cancellation; do not automatically retry a write with a new ID. Connection logs are redacted; raw task output is not guaranteed to be. Review it before sharing.
+
+Curated control sources are ChatGPT, Claude, Microsoft Copilot, Notion, Slack, Cursor, GitHub Copilot and Raycast, plus Custom. Repeated sources are allowed and default names receive an available numeric suffix. See the [support matrix](control-sources.md) for authentication limits.

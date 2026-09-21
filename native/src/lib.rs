@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 pub mod agents;
 pub mod cli;
 pub mod control;
+pub mod control_sources;
 pub mod desktop;
 pub mod https;
 pub mod https_tunnel;

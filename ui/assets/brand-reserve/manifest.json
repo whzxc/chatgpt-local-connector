@@ -1,5 +1,5 @@
 {
-  "description": "控制源、内置 Agents 与 CLC 的备用品牌资源；未接入运行时 UI。",
+  "description": "控制源与 Agent 品牌资产；运行时按各自语义映射复用。",
   "lobeIconsVersion": "1.95.1",
   "files": [
     {
@@ -421,6 +421,30 @@
       "license": "Upstream brand asset; trademark rights reserved",
       "note": "上游网站原始资源；favicon 不等同于原生桌面应用图标。",
       "sha256": "f438d1c5e4e68c68523dfea9323f42607a038443beb44c3ea6edac2ba80619e1"
+    },
+    {
+      "file": "control-sources/github-copilot/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/githubcopilot.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "Control Source logo",
+      "sha256": "bbc7fddc13448236e5edea8c399d2072dc40aa5da5bca07f7a2f412405c500a3"
+    },
+    {
+      "file": "control-sources/raycast/mono.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/b86d5c9a0bdd4f3f5c30898a63654dd32f39fd76/icons/raycast.svg",
+      "license": "CC0-1.0; brand trademarks reserved",
+      "note": "Control Source logo",
+      "sha256": "0daad0147951c8835e424ee2099e314a33d1c6c7f9b19eaa501504f6c89a06a4"
     }
-  ]
+  ],
+  "controlSourceUsage": {
+    "chatgpt": "control-sources/chatgpt/app.png",
+    "claude": "agents/claude/color.svg",
+    "microsoft-copilot": "agents/copilot/color.svg",
+    "notion": "control-sources/notion/mono.svg",
+    "slack": "control-sources/slack/color.svg",
+    "cursor": "agents/cursor/mono.svg",
+    "github-copilot": "control-sources/github-copilot/mono.svg",
+    "raycast": "control-sources/raycast/mono.svg"
+  }
 }

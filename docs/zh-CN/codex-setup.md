@@ -4,10 +4,11 @@
 
 在目标电脑使用应用自带 CLI，先读 `cli help`、`cli status`、`cli ingress list`。ChatGPT 默认推荐 OpenAI Secure Tunnel；保留已有入口，新增入口不覆盖默认连接。完整配置任务包含真实控制源入站与无害任务终态验证。
 
-macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop cli help`；Windows 使用安装目录中的 `local-connector-desktop.exe cli help`。无需 Node/npm。help、guide 离线可用，其余命令需要同版本应用正在运行。成功输出 `{schemaVersion:1,ok:true,result:...}`，失败输出 `{schemaVersion:1,ok:false,error:{code,message}}`；退出码分别为 0、1。诊断成功不等于每个入口已经 ready。
+macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop cli help`；Windows 使用安装目录中的 `local-connector-desktop.exe cli help`。无需 Node/npm。help、guide、ingress presets 离线可用，其余命令需要同版本应用正在运行。成功输出 `{schemaVersion:1,ok:true,result:...}`，失败输出 `{schemaVersion:1,ok:false,error:{code,message}}`；退出码分别为 0、1。诊断成功不等于每个入口已经 ready。
 
 ## CLI 配置与生命周期
 
+- `ingress presets`：离线查看 8 个精选控制源、推荐 transport/auth 与支持边界。
 - `ingress list`：每入口脱敏配置、URL、运行状态、日志和验证。
 - `ingress add --stdin`：JSON 新建入口。
 - `ingress update <id> --stdin`：局部更新，config 按字段合并；先停止目标入口。
@@ -22,23 +23,23 @@ macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-conne
 - `configure --stdin`、`connect`、`disconnect`：默认入口的简化操作，不影响其他入口。
 - `verify` 读取全部入口；`verify --fresh` 明确重置全部入口。
 
-新增必填 controlSource、transport、auth、config。name 默认 controlSource，enabled 默认 true，toolPolicy 默认 all；id 可省略自动生成，不能修改。id 只允许 ASCII 字母、数字、连字符、下划线。controlSource 是标签，不是已认证用户。
+新增必填 controlSource、transport、auth、config。name 默认预设名称或未知标签，重名自动追加数字，enabled 默认 true，toolPolicy 默认 all；id 可省略自动生成，不能修改。id 只允许 ASCII 字母、数字、连字符、下划线。controlSource 是标签，不是已认证用户。
 
 transport 为 `openai-tunnel` 时 auth 为 `openai`；HTTPS 支持 `none` 或 `bearer`。bearerToken 至少 32 个可打印 ASCII 字符，每入口独立，通过 stdin 输入。toolPolicy 为 `"all"` 或 `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait"]}`；tools/list 和 tools/call 同时执行限制。允许任务工具即允许访问共享任务，不按来源隔离；也不细分单个工具中的原生方法权限。
 
-完整字段与 provider 选项见 `cli help` 和[英文配置示例](../codex-setup.md#chatgpt-notion-and-slack-examples)。凭据只能来自授权的安全本机来源并经 stdin 传递，不放在命令参数、shell 字面量、聊天、日志或截图中。轮换前先准备受保护的本机输出文件，例如设置 `umask 077` 并重定向 stdout，不让模型读取密钥输出。使用客户端支持的安全凭据输入完成交付。不要拿管理 API token、OpenAI key 或 provider token 代替 ingress bearer。
+完整字段与 provider 选项见 `cli help` 和[英文配置示例](../codex-setup.md#configuration-examples)。凭据只能来自授权的安全本机来源并经 stdin 传递，不放在命令参数、shell 字面量、聊天、日志或截图中。轮换前先准备受保护的本机输出文件，例如设置 `umask 077` 并重定向 stdout，不让模型读取密钥输出。使用客户端支持的安全凭据输入完成交付。不要拿管理 API token、OpenAI key 或 provider token 代替 ingress bearer。
 
-## 三类入口
+## 配置示例
 
 ChatGPT：`controlSource=chatgpt`、`transport=openai-tunnel`、`auth=openai`；config 中填写官方 tunnelId 和 apiKey。保留官方身份申请、工作区关联及客户端接入流程。
 
 Notion：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=ngrok` 入口。提供 ngrokAuthtoken 和独立 bearerToken；长期使用配置预留的 httpsUrl，以 `/mcp` 结尾。ngrok 自动使用独立 loopback 端口。
 
-Slack：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=cloudflare`、`cloudflareMode=named` 入口。配置 cloudflareToken、httpsUrl、httpsPort；例如 httpsPort=8788，对应 Cloudflare 服务端路由 `http://127.0.0.1:8788`。每个 Fixed 入口使用不同端口和 Tunnel 身份，不将不同认证上下文用同一身份做负载均衡。
+Cursor：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=cloudflare`、`cloudflareMode=named` 入口。配置 cloudflareToken、httpsUrl、httpsPort；例如 httpsPort=8788，对应 Cloudflare 服务端路由 `http://127.0.0.1:8788`。每个 Fixed 入口使用不同端口和 Tunnel 身份，不将不同认证上下文用同一身份做负载均衡。
 
 Cloudflare token 模式路由保存在服务端，CLC 不用 token 改写路由。Quick 模式自动分配临时地址，仅用于试用；长期入口优先固定地址加认证。Custom Domain 使用 httpsHost/httpsPort 接收自管 TLS 反向代理请求。不要公开桌面管理端口。
 
-Notion/Slack 标签不等于创建产品 API、Slack bot 或客户端集成。先核对实际 MCP 客户端是否支持静态 bearer；要求 OAuth/DCR 的客户端不能直接使用本轮实现。不能把本机探针成功报告为 Notion/Slack 官方产品接入成功。
+先查看[控制源矩阵](control-sources.md)。Slackbot 不支持静态 Bearer，目前仅无认证与 CLC 相交；不要自动降级。Claude 组织静态请求头 Beta 与 Copilot Studio API-key Header 是有条件路径，不代表已实现 OAuth。CLI help、ingress presets（离线）、list 和 onboarding 均提供 preset metadata。不能把本机探针成功报告为官方客户端已接入。
 
 ## 完整执行流程
 

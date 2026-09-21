@@ -424,5 +424,8 @@
   "validClientId": "Use letters, numbers, hyphens or underscores",
   "validProxyUrl": "Enter a valid HTTP or HTTPS proxy URL",
   "credentialReadFailed": "Could not load the saved API key. Leave it blank to keep the stored key.",
-  "choosePresetSource": "Choose this built-in client from the source picker."
+  "choosePresetSource": "Choose this built-in client from the source picker.",
+  "officialSetup": "Official setup",
+  "presetAuthMismatch": "This client flow does not support static Bearer authentication. Ask Codex to check the supported auth path before connecting.",
+  "close": "Close"
 }

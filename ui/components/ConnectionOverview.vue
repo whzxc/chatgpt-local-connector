@@ -8,14 +8,14 @@ import { api, useConnector, type Ingress } from '../composables/useConnector';
 import { useAgents, icons, name, type Agent } from '../composables/useAgents';
 import PlayfulMascot from './PlayfulMascot.vue';
 import SourceIcon from './SourceIcon.vue';
+import { controlSource } from '../controlSources';
 const IngressDialog = defineAsyncComponent(() => import('./IngressDialog.vue'));
 const emit = defineEmits<{ settings: [] }>();
 const { status, busy, loading, connectionError, run, refresh } = useConnector();
 const inventory = useAgents();
 const activeTip = ref('');
 const nodeTip = ref('');
-const platformUrls: Record<string,string> = { chatgpt:'https://chatgpt.com/', notion:'https://www.notion.so/', slack:'https://app.slack.com/' };
-function openPlatform(platform: string) { const url=platformUrls[platform]; if(url) void run('open-platform',()=>openUrl(url)); }
+function openPlatform(platform: string) { const url=controlSource(platform)?.homeUrl; if(url) void run('open-platform',()=>openUrl(url)); }
 const agents = computed(() => inventory.agents.value.filter(a => a.installed && a.available !== false).sort((a,b) => Number(b.agent==='codex')-Number(a.agent==='codex') || name(a).localeCompare(name(b))));
 const sources = computed(() => [...(status.value?.ingresses || [])].sort((a,b) => Number(b.controlSource==='chatgpt')-Number(a.controlSource==='chatgpt') || a.name.localeCompare(b.name)));
 const running = computed(() => sources.value.some(i => i.running));
@@ -31,7 +31,7 @@ function agentState(a: Agent) {
 async function openAgent(agent: Agent) { await run('open-agent',()=>api('agents/open','POST',{agent:agent.agent})); }
 async function toggle() {
   if (!running.value && (!sources.value.length || sources.value.every(i => !i.config.configured))) { edit(sources.value[0],true); return; }
-  await run('ingress-all',async()=> { const result=await api<{id:string;ok:boolean;error?:string}[]>(`ingress/${running.value?'stop-all':'start-all'}`,'POST'); await refresh(); const errors=Array.isArray(result) ? result.filter(r=>!r.ok) : []; if(errors.length) throw new Error(errors.map(r=>`${sources.value.find(i=>i.id===r.id)?.name || r.id}: ${r.error}`).join('\n')); });
+  await run('ingress-all',async()=> { const result=await api<{results:{id:string;ok:boolean;error?:string}[]}>(`ingress/${running.value?'stop-all':'start-all'}`,'POST'); await refresh(); const errors=result.results.filter(r=>!r.ok); if(errors.length) throw new Error(errors.map(r=>`${sources.value.find(i=>i.id===r.id)?.name || r.id}: ${r.error}`).join('\n')); });
 }
 let timer: ReturnType<typeof setInterval>;
 onMounted(()=>{ void inventory.refresh(); timer=setInterval(()=>void inventory.refresh(),15000); });
@@ -63,7 +63,7 @@ const unfold = (index: number, count: number) => ({ '--unfold-y': `${((count-1)/
     <div class="connection-graph" :style="{height:`${height}px`}">
       <div class="graph-nodes sources">
         <NTooltip v-if="!sources.length" :show="nodeTip==='default-source'" placement="top"><template #trigger><button class="graph-node" aria-label="ChatGPT" @mouseenter="nodeTip='default-source'" @mouseleave="nodeTip=''" @focus="nodeTip='default-source'" @blur="nodeTip=''" @keydown.esc="nodeTip=''" @click="openPlatform('chatgpt')"><SourceIcon platform="chatgpt"/></button></template>ChatGPT</NTooltip>
-        <NTooltip v-for="source in sources" :key="source.id" :show="nodeTip==='source:'+source.id" placement="top"><template #trigger><button class="graph-node" :aria-label="source.name" :aria-disabled="!platformUrls[source.controlSource]" @mouseenter="nodeTip='source:'+source.id" @mouseleave="nodeTip=''" @focus="nodeTip='source:'+source.id" @blur="nodeTip=''" @keydown.esc="nodeTip=''" @click="openPlatform(source.controlSource)"><SourceIcon :platform="source.controlSource"/></button></template>{{source.name}}</NTooltip>
+        <NTooltip v-for="source in sources" :key="source.id" :show="nodeTip==='source:'+source.id" placement="top"><template #trigger><button class="graph-node" :aria-label="source.name" :aria-disabled="!controlSource(source.controlSource)?.homeUrl" @mouseenter="nodeTip='source:'+source.id" @mouseleave="nodeTip=''" @focus="nodeTip='source:'+source.id" @blur="nodeTip=''" @keydown.esc="nodeTip=''" @click="openPlatform(source.controlSource)"><SourceIcon :platform="source.controlSource"/></button></template>{{source.name}}</NTooltip>
         <NTooltip :show="nodeTip==='add-source'" placement="top"><template #trigger><button class="graph-node add-source" :aria-label="t('addControlSource')" @mouseenter="nodeTip='add-source'" @mouseleave="nodeTip=''" @focus="nodeTip='add-source'" @blur="nodeTip=''" @keydown.esc="nodeTip=''" @click="edit()"><span class="source-icon"><Plus/></span></button></template>{{t('addControlSource')}}</NTooltip>
       </div>
       <div class="graph-wires left"><svg :viewBox="`0 0 200 ${height}`" preserveAspectRatio="none" aria-hidden="true"><path v-for="(source,index) in sources" :key="source.id" :d="path(index,Math.max(1,sources.length)+1)" :class="{live:source.running,failed:['error','degraded'].includes(source.state)}"/><path v-if="!sources.length" :d="path(0,2)"/><path :d="path(Math.max(1,sources.length),Math.max(1,sources.length)+1)" class="placeholder"/></svg><NTooltip v-for="(source,index) in sources" :key="source.id" :show="activeTip===source.id && stateIcon(sourceState(source))!==CircleCheck" placement="top"><template #trigger><button  type="button" class="wire-status" :class="{live:source.running,failed:['error','degraded'].includes(source.state)}" :style="marker(index,Math.max(1,sources.length)+1)" :aria-label="`${source.name}: ${sourceState(source)} · ${t('editConnectionDetails')}`" aria-haspopup="dialog" @click="edit(source)" @mouseenter="activeTip=source.id" @mouseleave="activeTip=''" @focus="activeTip=source.id" @blur="activeTip=''" @keydown.esc="activeTip=''"><component :is="stateIcon(sourceState(source))" :class="{spinning:stateIcon(sourceState(source))===LoaderCircle}" aria-hidden="true"/></button></template><div>{{sourceState(source)}}<div class="status-hint">{{t('editConnectionDetails')}}</div></div></NTooltip></div>

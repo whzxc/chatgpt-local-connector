@@ -1,0 +1,289 @@
+[
+  {
+    "id": "chatgpt",
+    "displayName": "ChatGPT",
+    "shortName": "ChatGPT",
+    "icon": "chatgpt",
+    "curated": true,
+    "recommendedTransport": "openai-tunnel",
+    "recommendedAuth": "openai",
+    "httpsAuth": "none",
+    "supportedAuth": [
+      "openai",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "supported",
+    "clientAuth": [
+      "oauth",
+      "none",
+      "mixed",
+      "openai-tunnel"
+    ],
+    "customHeaders": "No general static-header configuration documented for ChatGPT HTTPS apps.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Prefer Secure Tunnel. HTTPS supports no-auth; CLC does not implement OAuth. Tunnel access and ChatGPT developer-mode permissions are separate.",
+      "zh-CN": "优先 Secure Tunnel；HTTPS 可用无认证，CLC 尚无 OAuth。Tunnel 与 ChatGPT 开发者模式权限分别管理。"
+    },
+    "badge": {
+      "en": "",
+      "zh-CN": ""
+    },
+    "homeUrl": "https://chatgpt.com/",
+    "docs": [
+      "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
+      "https://developers.openai.com/api/docs/guides/developer-mode"
+    ]
+  },
+  {
+    "id": "claude",
+    "displayName": "Claude",
+    "shortName": "Claude",
+    "icon": "claude",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "oauth",
+    "httpsAuth": "bearer",
+    "supportedAuth": [
+      "bearer",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "conditional",
+    "clientAuth": [
+      "oauth",
+      "static-headers-beta",
+      "none"
+    ],
+    "customHeaders": "Organization administrators can configure Authorization or x-api-key in static_headers beta.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Organization static-header beta can use Authorization: Bearer <token>. CLC has no OAuth; personal OAuth setup is unavailable. No-auth is an explicit opt-in.",
+      "zh-CN": "组织静态请求头 Beta 可用 Authorization: Bearer；CLC 尚无 OAuth，个人 OAuth 接入不可用。无认证需主动选择。"
+    },
+    "badge": {
+      "en": "Organization headers beta",
+      "zh-CN": "组织请求头 Beta；尚无 OAuth"
+    },
+    "homeUrl": "https://claude.ai/",
+    "docs": [
+      "https://claude.com/docs/connectors/building",
+      "https://claude.com/docs/connectors/building/authentication"
+    ]
+  },
+  {
+    "id": "microsoft-copilot",
+    "displayName": "Microsoft Copilot",
+    "shortName": "Microsoft Copilot",
+    "icon": "microsoft-copilot",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "bearer",
+    "httpsAuth": "bearer",
+    "supportedAuth": [
+      "bearer",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "conditional",
+    "clientAuth": [
+      "api-key-header",
+      "api-key-query",
+      "oauth",
+      "none"
+    ],
+    "customHeaders": "Copilot Studio API-key Header accepts a configured header name.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Copilot Studio: API key → Header → Authorization, credential value Bearer <token>; confirm actual header forwarding. OAuth and other key headers are not implemented. Teams / Microsoft 365 Copilot are publishing channels.",
+      "zh-CN": "Copilot Studio 选择 API key → Header → Authorization，凭据填 Bearer <token>，需验证实际转发。尚无 OAuth 或其他密钥头。可发布到 Teams / Microsoft 365 Copilot。"
+    },
+    "badge": {
+      "en": "API-key Header setup required",
+      "zh-CN": "需配置 API-key Header"
+    },
+    "homeUrl": "https://copilotstudio.microsoft.com/",
+    "docs": [
+      "https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent",
+      "https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-create-new-server",
+      "https://learn.microsoft.com/en-us/microsoft-copilot-studio/publication-fundamentals-publish-channels"
+    ]
+  },
+  {
+    "id": "notion",
+    "displayName": "Notion",
+    "shortName": "Notion",
+    "icon": "notion",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "bearer",
+    "httpsAuth": "bearer",
+    "supportedAuth": [
+      "bearer",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "supported",
+    "clientAuth": [
+      "oauth",
+      "headers"
+    ],
+    "customHeaders": "Header-based API keys / bearer tokens.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Custom Agents support header authentication. Use Authorization: Bearer <token>; workspace permission and plan availability apply.",
+      "zh-CN": "Custom Agents 支持请求头认证；使用 Authorization: Bearer，需有工作区权限及相应套餐。"
+    },
+    "badge": {
+      "en": "",
+      "zh-CN": ""
+    },
+    "homeUrl": "https://www.notion.so/",
+    "docs": [
+      "https://www.notion.com/help/mcp-connections-for-custom-agents"
+    ]
+  },
+  {
+    "id": "slack",
+    "displayName": "Slack",
+    "shortName": "Slack",
+    "icon": "slack",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "oauth",
+    "httpsAuth": "",
+    "supportedAuth": [
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "auth-limited",
+    "clientAuth": [
+      "none",
+      "slack-identity",
+      "oauth-dcr",
+      "oauth-manual"
+    ],
+    "customHeaders": "Custom headers in Slack documentation apply to identity requests, not arbitrary MCP request headers.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Slackbot supports no-auth, signed Slack identity and OAuth. CLC only intersects at no-auth. Bearer is not compatible; configure with CLI/Codex and explicitly choose no-auth only for intentionally public tools.",
+      "zh-CN": "Slackbot 支持无认证、Slack 签名身份和 OAuth；CLC 目前仅无认证有交集，Bearer 不兼容。请用 CLI/Codex 配置，仅对允许公开的工具主动选择无认证。"
+    },
+    "badge": {
+      "en": "No-auth only",
+      "zh-CN": "目前仅支持无认证"
+    },
+    "homeUrl": "https://app.slack.com/",
+    "docs": [
+      "https://docs.slack.dev/ai/slackbot-mcp-client/"
+    ]
+  },
+  {
+    "id": "cursor",
+    "displayName": "Cursor",
+    "shortName": "Cursor",
+    "icon": "cursor",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "bearer",
+    "httpsAuth": "bearer",
+    "supportedAuth": [
+      "bearer",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "supported",
+    "clientAuth": [
+      "oauth",
+      "headers",
+      "none"
+    ],
+    "customHeaders": "Remote server headers, including Authorization.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Configure a remote MCP URL and Authorization: Bearer <token>. Use a client version that forwards configured headers; verify the actual request.",
+      "zh-CN": "配置远程 MCP URL 与 Authorization: Bearer；客户端版本须支持转发配置的请求头，并验证实际请求。"
+    },
+    "badge": {
+      "en": "",
+      "zh-CN": ""
+    },
+    "homeUrl": "https://cursor.com/",
+    "docs": [
+      "https://cursor.com/docs/context/mcp",
+      "https://prod.cursor.com/help/customization/mcp"
+    ]
+  },
+  {
+    "id": "github-copilot",
+    "displayName": "GitHub Copilot",
+    "shortName": "GitHub Copilot",
+    "icon": "github-copilot",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "bearer",
+    "httpsAuth": "bearer",
+    "supportedAuth": [
+      "bearer",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "supported",
+    "clientAuth": [
+      "oauth",
+      "headers",
+      "none"
+    ],
+    "customHeaders": "Remote headers supported; configuration differs by host.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "Available in supported VS Code, JetBrains and CLI surfaces; use each host’s HTTP MCP configuration and Authorization: Bearer <token>. Host capabilities and organization policy differ.",
+      "zh-CN": "可承载在支持的 VS Code、JetBrains、CLI；按宿主配置 HTTP MCP 与 Authorization: Bearer。宿主能力及组织策略不同。"
+    },
+    "badge": {
+      "en": "",
+      "zh-CN": ""
+    },
+    "homeUrl": "https://github.com/copilot",
+    "docs": [
+      "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp",
+      "https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers"
+    ]
+  },
+  {
+    "id": "raycast",
+    "displayName": "Raycast",
+    "shortName": "Raycast",
+    "icon": "raycast",
+    "curated": true,
+    "recommendedTransport": "https",
+    "recommendedAuth": "bearer",
+    "httpsAuth": "bearer",
+    "supportedAuth": [
+      "bearer",
+      "none"
+    ],
+    "remoteMcp": "supported",
+    "status": "supported",
+    "clientAuth": [
+      "oauth",
+      "headers",
+      "none"
+    ],
+    "customHeaders": "HTTP Headers are sent on every request.",
+    "capability": "Remote MCP over Streamable HTTP",
+    "caveat": {
+      "en": "AI Chat, Quick AI and AI Commands use HTTP MCP. Set Authorization: Bearer <token> in HTTP Headers; Raycast AI plan availability applies.",
+      "zh-CN": "AI Chat、Quick AI、AI Commands 使用 HTTP MCP；HTTP Headers 填 Authorization: Bearer，需相应 Raycast AI 套餐。"
+    },
+    "badge": {
+      "en": "",
+      "zh-CN": ""
+    },
+    "homeUrl": "https://www.raycast.com/",
+    "docs": [
+      "https://manual.raycast.com/ai/model-context-protocol"
+    ]
+  }
+]

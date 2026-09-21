@@ -116,3 +116,5 @@ HTTPS 接入的公网反向代理及本机 MCP 入站监听不受这个出站代
 无法发现工具时，先检查应用中的 Tunnel 状态和记录；本机程序未找到时安装程序或指定其完整路径。使用前应在 Codex Desktop 中完成登录；连接异常时检查 Desktop 是否可用。无法调用某个原生方法时查询 `codex_schema`，核对当前二进制是否提供该方法。
 
 写调用超时后使用原 `requestId` 回读；超时不等于取消，不换 ID 自动重试写入。连接日志会脱敏，原始任务输出不保证脱敏；分享前自行检查。
+
+控制源固定为 ChatGPT、Claude、Microsoft Copilot、Notion、Slack、Cursor、GitHub Copilot、Raycast，另保留 Custom。同类型可反复添加，默认名称自动追加数字。认证兼容边界见[支持矩阵](control-sources.md)。

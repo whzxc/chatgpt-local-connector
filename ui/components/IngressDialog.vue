@@ -4,7 +4,9 @@ import { NForm, NFormItem, NInput, NButton, NAlert, type FormInst } from 'naive-
 import FormDialog from './FormDialog.vue';
 import SourceIcon from './SourceIcon.vue';
 import { required, validMcpUrl } from '../formRules';
-import { t } from '../i18n';
+import { t, locale } from '../i18n';
+import { controlSource, curatedSources, nextSourceName } from '../controlSources';
+import { openUrl } from '../platform';
 import SingleChoice from './SingleChoice.vue';
 import { displayMessage } from '../messages';
 import { api, useConnector, type Ingress } from '../composables/useConnector';
@@ -17,18 +19,18 @@ const props = defineProps<{ ingress?: Ingress; defaultChatGPT?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const { refresh, status } = useConnector();
 const formRef = ref<FormInst>();
-const presetNames: Record<string,string> = {chatgpt:'ChatGPT',notion:'Notion',slack:'Slack'};
+const presetNames = Object.fromEntries(curatedSources.map(p => [p.id, p.displayName]));
 const entry = ref(props.ingress);
 const draft = ref<Ingress>();
 const acquiring = ref(false);
 const liveEntry = computed(() => draft.value || status.value?.ingresses.find(i=>i.id===entry.value?.id) || entry.value);
 const urlReady = computed(() => validMcpUrl(form.httpsUrl));
 const providerReady = computed(() => form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='quick' || !!(form.httpsProvider==='ngrok' ? form.ngrokAuthtoken.trim() || entry.value?.config.hasNgrokAuthtoken : form.cloudflareToken.trim() || entry.value?.config.hasCloudflareToken));
-const canSave = computed(() => !!name.value.trim() && name.value.length<=128
-  && (selected.value!=='custom' || /^[a-zA-Z0-9_-]+$/.test(source.value) && !presetNames[source.value.toLowerCase()])
+const canSave = computed(() => !!name.value.trim() && new TextEncoder().encode(name.value).length<=120
+  && (selected.value!=='custom' || /^[a-zA-Z0-9_-]+$/.test(source.value))
   && (form.connectionMode==='tunnel'
     ? /^tunnel_[a-zA-Z0-9_-]+$/.test(form.tunnelId) && !!(form.apiKey.trim() || entry.value?.config.hasApiKey)
-    : providerReady.value && urlReady.value && (auth.value==='none' || !!token.value || entry.value?.auth==='bearer')));
+    : providerReady.value && urlReady.value && (auth.value==='none' || auth.value==='bearer' && (!!token.value || entry.value?.auth==='bearer'))));
 function configPayload() {
   const config:Record<string,unknown>={...form};
   delete config.connectionMode;
@@ -68,12 +70,15 @@ async function pollUrl() {
   } catch(e) { if(!disposed) error.value=String(e); }
   finally {polling=false;}
 }
-const selected = ref(props.ingress ? (['chatgpt','notion','slack'].includes(props.ingress.controlSource) ? props.ingress.controlSource : 'custom') : props.defaultChatGPT ? 'chatgpt' : '');
+const selected = ref(props.ingress ? (controlSource(props.ingress.controlSource)?.curated ? props.ingress.controlSource : 'custom') : props.defaultChatGPT ? 'chatgpt' : '');
 const source = ref(props.ingress?.controlSource || '');
-const name = ref(props.ingress?.name || presetNames[selected.value] || 'ChatGPT');
+const name = ref(props.ingress?.name || nextSourceName(selected.value || 'chatgpt', status.value?.ingresses.map(i=>i.name) || []));
+const preset = computed(() => controlSource(selected.value));
+const localized = (value: {en:string; 'zh-CN':string}) => value[locale.value === 'zh-CN' ? 'zh-CN' : 'en'];
 const form = reactive(connectionForm(props.ingress?.config));
 if(props.ingress?.url) form.httpsUrl=props.ingress.url;
-if (selected.value && selected.value!=='chatgpt') form.connectionMode='https';
+if (props.ingress) form.connectionMode=props.ingress.transport==='openai-tunnel' ? 'tunnel' : 'https';
+else if (preset.value) form.connectionMode=preset.value.recommendedTransport==='openai-tunnel' ? 'tunnel' : 'https';
 const auth = ref(props.ingress?.auth === 'bearer' ? 'bearer' : 'none');
 const token = ref(''), working = ref(false), error = ref('');
 const readingKey = ref(false), deliveredToken = ref('');
@@ -94,7 +99,7 @@ watch([()=>form.connectionMode,()=>form.httpsProvider,()=>form.cloudflareMode,()
 onUnmounted(() => { disposed=true; clearInterval(pollTimer); void discardDraft(); form.apiKey=''; token.value=''; deliveredToken.value=''; });
 onMounted(async () => {
   pollTimer=setInterval(()=>{if(draft.value || acquiring.value) void pollUrl();},2000);
-  if (!entry.value?.config.hasApiKey || selected.value!=='chatgpt') return;
+  if (!entry.value?.config.hasApiKey || form.connectionMode!=='tunnel') return;
   readingKey.value=true;
   try {
     const credentials = await api<{apiKey:string}>(`ingress/${entry.value.id}/credentials`, 'POST');
@@ -105,10 +110,10 @@ onMounted(async () => {
 const model = computed(() => ({...form, name:name.value, source:source.value, token:token.value}));
 function choose(value: string) {
   selected.value = value; source.value = value === 'custom' ? '' : value;
-  name.value = ({ chatgpt:'ChatGPT', notion:'Notion', slack:'Slack', custom:'' })[value] || '';
-  form.connectionMode = value === 'chatgpt' ? 'tunnel' : 'https';
-  form.cloudflareMode = value === 'chatgpt' ? 'quick' : 'named';
-  auth.value = value === 'chatgpt' ? 'none' : 'bearer';
+  name.value = value==='custom' ? '' : nextSourceName(value, status.value?.ingresses.map(i=>i.name) || []);
+  form.connectionMode = preset.value?.recommendedTransport==='openai-tunnel' ? 'tunnel' : 'https';
+  form.cloudflareMode = form.connectionMode==='tunnel' ? 'quick' : 'named';
+  auth.value = preset.value?.httpsAuth ?? 'bearer';
 }
 async function action(fn: () => Promise<void>) {
   working.value = true; error.value = '';
@@ -143,11 +148,13 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
 <template>
   <FormDialog :show="true" :title="(entry ? t('editControlSource') : t('addControlSource')) + (selected ? ' · ' + (presetNames[selected] || t('customControlSource')) : '')" :busy="working" @close="emit('close')">
     <div v-if="deliveredToken" class="token-field"><NInput :value="deliveredToken" readonly type="password" show-password-on="click" :input-props="{'aria-label':'Bearer token'}"/><NButton @click="copyToken(deliveredToken)">{{tokenCopied ? t('copied') : t('copy')}}</NButton><p class="token-help">{{t('savedBearerHelp')}}</p><NAlert v-if="error" type="error">{{displayMessage(error)}}</NAlert></div>
-    <div v-else-if="!selected" class="source-choices"><NButton v-for="option in ['chatgpt','notion','slack','custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option)"><SourceIcon :platform="option" :add="option==='custom'"/></NButton></div>
+    <div v-else-if="!selected" class="source-choices"><NButton v-for="option in [...curatedSources.map(p=>p.id),'custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option)"><span class="source-choice"><SourceIcon :platform="option" :add="option==='custom'"/><span>{{presetNames[option] || t('customControlSource')}}</span><small v-if="controlSource(option)?.badge.en">{{localized(controlSource(option)!.badge)}}</small></span></NButton></div>
     <NForm v-else ref="formRef" :model="model" :disabled="working || readingKey" label-placement="top" @submit.prevent="save()">
+      <NAlert v-if="preset" :type="preset.status==='supported' ? 'info' : 'warning'" class="preset-help">{{localized(preset.caveat)}} <NButton text type="primary" @click="openUrl(preset.docs[0]!)">{{t('officialSetup')}}</NButton></NAlert>
+      <NAlert v-if="form.connectionMode==='https' && auth==='bearer' && preset && !preset.supportedAuth.includes('bearer')" type="warning">{{t('presetAuthMismatch')}}</NAlert>
       <NFormItem :label="t('sourceName')" path="name" :rule="required()"><NInput v-model:value="name" :input-props="{'aria-label':t('sourceName')}"/></NFormItem>
-      <NFormItem v-if="selected==='custom'" :label="t('controlSourceId')" path="source" :rule="[{...required()}, {pattern:/^[a-zA-Z0-9_-]+$/,message:t('validClientId'),trigger:'input'}, {validator:() => !presetNames[source.trim().toLowerCase()],message:t('choosePresetSource'),trigger:'input'}]"><NInput :input-props="{'aria-label':t('controlSourceId')}" v-model:value="source" placeholder="my-client"/></NFormItem>
-      <ConnectionFields :form="form" :config="entry?.config" :disabled="working || readingKey" :allow-tunnel="selected==='chatgpt'">
+      <NFormItem v-if="selected==='custom'" :label="t('controlSourceId')" path="source" :rule="[{...required()}, {pattern:/^[a-zA-Z0-9_-]+$/,message:t('validClientId'),trigger:'input'}]"><NInput :input-props="{'aria-label':t('controlSourceId')}" v-model:value="source" placeholder="my-client"/></NFormItem>
+      <ConnectionFields :form="form" :config="entry?.config" :disabled="working || readingKey" :allow-tunnel="preset?.recommendedTransport==='openai-tunnel' || selected==='custom'">
         <template #mcp-url>
           <NFormItem label="MCP URL" path="httpsUrl" :validation-status="form.httpsUrl && !urlReady ? 'error' : undefined" :feedback="form.httpsUrl && !urlReady ? t('validHttpsUrl') : undefined">
             <NInput v-if="form.httpsProvider==='custom'" v-model:value="form.httpsUrl" :input-props="{'aria-label':'MCP URL'}" placeholder="https://connector.example.com/mcp"/>
@@ -183,4 +190,4 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
     </template>
   </FormDialog>
 </template>
-<style scoped>.url-field{width:100%;display:grid;gap:10px}.token-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}.token-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.token-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px;line-height:1.5}.source-choices{display:flex;justify-content:space-evenly;gap:16px;padding:20px 0}.source-choices .n-button{width:72px;height:72px;padding:14px}</style>
+<style scoped>.url-field{width:100%;display:grid;gap:10px}.token-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}.token-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.token-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px;line-height:1.5}.source-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px 0}.source-choices .n-button{height:116px;white-space:normal}.source-choice{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}.source-choice small{font-size:10px;color:var(--muted);max-width:150px;line-height:1.3}.preset-help{margin-bottom:16px}</style>

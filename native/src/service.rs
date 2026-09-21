@@ -558,10 +558,19 @@ impl Service {
             if entry.get("id").is_none() {
                 entry["id"] = json!(id());
             }
-            for (k, v) in
-                json!({"enabled":true,"toolPolicy":"all","config":{},"name":entry["controlSource"]})
-                    .as_object()
-                    .unwrap()
+            if entry.get("name").is_none() {
+                let mut names = Vec::new();
+                for ingress in self.entries().await {
+                    names.push(string(&*ingress.meta.lock().await, "name").to_owned());
+                }
+                entry["name"] = json!(crate::control_sources::default_name(
+                    string(&entry, "controlSource"),
+                    &names,
+                ));
+            }
+            for (k, v) in json!({"enabled":true,"toolPolicy":"all","config":{}})
+                .as_object()
+                .unwrap()
             {
                 entry
                     .as_object_mut()

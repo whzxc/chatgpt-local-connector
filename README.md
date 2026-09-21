@@ -99,3 +99,5 @@ Documentation:
 Local data defaults to `~/.local/state/chatgpt-local-connector` on macOS or `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Override it with `CLC_STATE_DIR`. Keys, receipts, and logs are stored locally; removing the app does not remove Codex history.
 
 Licensed under [MIT](LICENSE). Source and desktop installers are distributed through GitHub. No public npm package is published.
+
+Curated control sources are ChatGPT, Claude, Microsoft Copilot, Notion, Slack, Cursor, GitHub Copilot and Raycast, plus Custom. Repeated sources are allowed and default names receive an available numeric suffix. See the [support matrix](docs/control-sources.md) for authentication limits.

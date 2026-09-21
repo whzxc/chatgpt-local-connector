@@ -2,7 +2,7 @@
 
 **English** | [简体中文](zh-CN/codex-setup.md)
 
-Use the CLI on the target computer. Start by reading `<app executable> cli help`, `cli status` and `cli ingress list`. Help and guide work offline; other commands require the matching running app. Do not overwrite another ingress or install over a running version without authorization. OpenAI Secure Tunnel remains the default ChatGPT onboarding path.
+Use the CLI on the target computer. Start by reading `<app executable> cli help`, `cli status` and `cli ingress list`. Help, guide and ingress presets work offline; other commands require the matching running app. Do not overwrite another ingress or install over a running version without authorization. OpenAI Secure Tunnel remains the default ChatGPT onboarding path.
 
 On macOS the usual executable is `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop`; on Windows use the installed `local-connector-desktop.exe`. Do not require Node/npm on users' machines. Every CLI response is JSON: `{schemaVersion:1,ok:true,result:...}` or `{schemaVersion:1,ok:false,error:{code,message}}`, with exit status 0 or 1. Read operation results and per-ingress state, not just the exit code of a diagnostic command.
 
@@ -10,7 +10,8 @@ On macOS the usual executable is `/Applications/Local Connector.app/Contents/Mac
 
 | Command after `cli` | Purpose |
 | --- | --- |
-| `ingress list` | Redacted configuration, URL, runtime status, logs, verification for every ingress |
+| `ingress presets` | Offline curated source registry, recommended transport/auth, limitations and official docs |
+| `ingress list` | Redacted configuration, runtime state, verification and preset metadata for every ingress |
 | `ingress add --stdin` | Create an entry from JSON; omitted id is generated |
 | `ingress update <id> --stdin` | Partial update; config fields merge; stop the target first |
 | `ingress remove <id>` | Stop and remove one entry, preserving tasks and other entries |
@@ -25,11 +26,11 @@ On macOS the usual executable is `/Applications/Local Connector.app/Contents/Mac
 | `configure --stdin`, `connect`, `disconnect` | Primary ingress onboarding shortcuts; do not operate on all entries |
 | `verify`, `verify --fresh` | Read all challenges, or explicitly reset all challenges |
 
-Add requires controlSource, transport, auth and config. Name defaults to controlSource, enabled to true, toolPolicy to all. `id` is immutable and contains ASCII letters, digits, hyphen or underscore. ControlSource is a descriptive client label, not an authenticated user identity. HTTPS requires auth none or bearer; OpenAI Tunnel requires auth openai. Bearer requires a unique 32+ printable ASCII secret supplied through stdin. `toolPolicy` is `"all"` or `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait"]}`. Both tool discovery and invocation enforce it. Include connector_verify to use challenge verification. This policy does not isolate tasks or filter native methods within a tool.
+Add requires controlSource, transport, auth and config. Name defaults to the preset display name (or unknown source label), with an available numeric suffix, enabled to true, toolPolicy to all. `id` is immutable and contains ASCII letters, digits, hyphen or underscore. ControlSource is a descriptive client label, not an authenticated user identity. HTTPS requires auth none or bearer; OpenAI Tunnel requires auth openai. Bearer requires a unique 32+ printable ASCII secret supplied through stdin. `toolPolicy` is `"all"` or `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait"]}`. Both tool discovery and invocation enforce it. Include connector_verify to use challenge verification. This policy does not isolate tasks or filter native methods within a tool.
 
 Configuration keys and limits are discoverable in help. No secret is accepted as a command argument. Pipe JSON from an authorized secure local source, or redirect a protected file. Do not put secrets in shell literals, chat, screenshots or logs. For rotation, arrange a private destination first (for example `umask 077` and stdout redirection to a local file); do not capture stdout into a conversation. Deliver the secret to the supported client credential field using authorized local interaction. Never substitute the desktop management token or provider credential for the ingress bearer token.
 
-## ChatGPT, Notion and Slack examples
+## Configuration examples
 
 The following are configuration shapes, not real credentials. Replace secret fields through secure stdin input. Each represents a separate entry sharing the same Core and task IDs.
 
@@ -47,17 +48,17 @@ Notion-labelled MCP access via a fixed ngrok endpoint:
 {"id":"notion","controlSource":"notion","transport":"https","auth":"bearer","bearerToken":"FROM_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"ngrok","httpsUrl":"https://your-reserved-domain.ngrok.app/mcp","ngrokAuthtoken":"FROM_SECURE_LOCAL_SOURCE"}}
 ```
 
-Slack-labelled MCP access via Cloudflare Fixed:
+Cursor MCP access via Cloudflare Fixed:
 
 ```json
-{"id":"slack","controlSource":"slack","transport":"https","auth":"bearer","bearerToken":"FROM_ANOTHER_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"cloudflare","cloudflareMode":"named","httpsUrl":"https://connector.example.com/mcp","httpsPort":8788,"cloudflareToken":"FROM_SECURE_LOCAL_SOURCE"}}
+{"id":"cursor","controlSource":"cursor","transport":"https","auth":"bearer","bearerToken":"FROM_ANOTHER_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"cloudflare","cloudflareMode":"named","httpsUrl":"https://connector.example.com/mcp","httpsPort":8788,"cloudflareToken":"FROM_SECURE_LOCAL_SOURCE"}}
 ```
 
 Set that Cloudflare tunnel's service route to `http://127.0.0.1:8788`. Each Fixed ingress needs its own route/port and Tunnel identity; do not reuse an identity to load-balance incompatible authentication contexts. Cloudflare stores remote-managed routing on its server; CLC does not change it with a Tunnel token. See [official routing setup](https://developers.cloudflare.com/tunnel/get-started/).
 
-For Quick Tunnel use cloudflareMode quick, without a fixed URL or provider token. Use it for temporary trials. Prefer fixed addresses plus authentication for long-lived Notion/Slack-labelled access. For Custom Domain use httpsProvider custom, httpsUrl, httpsHost and httpsPort, and configure the TLS reverse proxy separately. The listener is HTTP behind TLS termination; never expose the desktop management listener.
+For Quick Tunnel use cloudflareMode quick, without a fixed URL or provider token. Use it for temporary trials. Prefer fixed addresses plus authentication for long-lived clients supporting static bearer. For Custom Domain use httpsProvider custom, httpsUrl, httpsHost and httpsPort, and configure the TLS reverse proxy separately. The listener is HTTP behind TLS termination; never expose the desktop management listener.
 
-These labels configure CLC ingress, not Notion APIs, a Slack bot, or a client-side integration. Confirm the actual MCP client's authentication support. A client requiring OAuth/DCR cannot use this bearer-only implementation directly. Do not present a local listener as proof of official Notion/Slack connectivity.
+See the [control source matrix](control-sources.md) before choosing auth. Slackbot does not accept this static Bearer setup; only no-auth intersects with CLC today. Claude organization request-header beta and Copilot Studio API-key Header are conditional paths, not OAuth support. Never silently downgrade authentication. `ingress presets` exposes these boundaries offline; do not mistake a local probe for official client acceptance.
 
 ## Complete an authorized setup
 

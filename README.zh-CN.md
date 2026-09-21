@@ -97,3 +97,5 @@ npm run dev:ui
 本机数据默认位于 macOS 的 `~/.local/state/chatgpt-local-connector` 或 Windows 的 `%LOCALAPPDATA%/chatgpt-local-connector`，可通过 `CLC_STATE_DIR` 指定。密钥、回执和日志只保存在本机；卸载应用不会删除 Codex 历史。
 
 采用 [MIT 许可证](LICENSE)。源码与桌面安装包使用 GitHub 分发，不发布公共 npm 包。
+
+控制源固定为 ChatGPT、Claude、Microsoft Copilot、Notion、Slack、Cursor、GitHub Copilot、Raycast，另保留 Custom。同类型可反复添加，默认名称自动追加数字。认证兼容边界见[支持矩阵](docs/zh-CN/control-sources.md)。
