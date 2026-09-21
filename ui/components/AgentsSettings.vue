@@ -1,7 +1,19 @@
+<script lang="ts">
+import { ref } from 'vue';
+
+type Agent = { agent: string; installed?: boolean; enabled?: boolean; version?: string | null; displayName?: string; };
+// Keep the last successful snapshot across settings page mounts.
+const agents = ref<Agent[]>([]);
+const loaded = ref(false);
+const loading = ref(false);
+const saving = ref('');
+const error = ref('');
+</script>
+
 <script setup lang="ts">
 import { displayMessage } from '../messages';
 import { t } from '../i18n';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted } from 'vue';
 import { api } from '../composables/useConnector';
 import { Bot } from '@lucide/vue';
 import codexIcon from '../assets/agents/openai.svg?raw';
@@ -20,14 +32,8 @@ import clineIcon from '../assets/agents/cline.svg?raw';
 import junieIcon from '../assets/agents/junie.svg?raw';
 import hermesIcon from '../assets/agents/hermes.svg?raw';
 import SettingsGroup from './SettingsGroup.vue';
-type Agent = { agent: string; installed?: boolean; enabled?: boolean; version?: string | null; displayName?: string; };
-const agents = ref<Agent[]>([]);
-const loaded = ref(false);
 const expanded = ref(false);
 const initialAgent: Agent = { agent: 'codex', displayName: 'Codex' };
-const error = ref('');
-const loading = ref(false);
-const saving = ref('');
 const sorted = computed(() => [...agents.value]
   .sort((a, b) => Number(b.agent === 'codex') - Number(a.agent === 'codex') || Number(!!b.installed) - Number(!!a.installed) || name(a).localeCompare(name(b))));
 const collapsed = computed(() => sorted.value.filter(agent => agent.installed).slice(0, 3));
@@ -36,6 +42,7 @@ const canExpand = computed(() => loaded.value && sorted.value.length > collapsed
 const icons: Record<string, string> = { codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: geminiIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon };
 const name = (agent: Agent) => agent.displayName || ({ codex: 'Codex', pi: 'Pi', opencode: 'OpenCode' }[agent.agent] || agent.agent);
 async function refresh() {
+  if (loading.value || saving.value) return;
   loading.value = true;
   try { agents.value = (await api<{ agents: Agent[] }>('agents')).agents; loaded.value = true; error.value = ''; }
   catch (e) { error.value = e instanceof Error ? e.message : String(e); }
