@@ -35,7 +35,7 @@ const rows = computed(() => (status.value?.logs || []).flatMap((line, index) => 
   const labels: Record<string, string> = { error: t('error'), reason: t('reason'), status: t('status'), method: t('method'), duration: t('duration') };
   const detail = Object.keys(labels).flatMap(key => entry[key] === undefined ? [] : [`${labels[key]}: ${typeof entry[key] === 'object' ? JSON.stringify(entry[key]) : String(entry[key])}`]).join(' · ');
   return [{ index, time, timestamp: validDate ? date.toLocaleString(locale.value) : t('noTimestampInTheOriginalRecord'), kind, message, detail }];
-}));
+}).reverse());
 const visibleRows = computed(() => rows.value.filter(row => (filter.value === 'all' || row.kind === filter.value) && `${row.message} ${row.detail}`.toLowerCase().includes(query.value.toLowerCase())));
 </script>
 <template>
