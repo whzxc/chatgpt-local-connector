@@ -4,12 +4,12 @@
 
 ## 能力清单
 
-当前入口包含 41 个 MCP 工具。原生方法及参数 Schema 从本机 Codex 二进制动态发现；
+当前入口包含 42 个 MCP 工具。原生方法及参数 Schema 从本机 Codex 二进制动态发现；
 工具数量不保证不同 Codex 版本拥有相同的原生能力，各项功能取决于当前原生服务提供的能力。
 
 | 工具 | 用途 |
 | --- | --- |
-| agents / agent_capabilities / agent_tasks / agent_create / agent_read / agent_send / agent_interrupt / agent_events / agent_pending / agent_respond / agent_request | 多 Agent 公共任务与幂等入口，详见[本地 Agents](agents.md) |
+| agents / agent_capabilities / agent_tasks / agent_create / agent_read / agent_wait / agent_send / agent_interrupt / agent_events / agent_pending / agent_respond / agent_request | 多 Agent 公共任务与幂等入口，详见[本地 Agents](agents.md) |
 | connector_verify | 回传引导中的验证码，确认连接调用到达本机，不执行任务 |
 | projects / overview / tree / search / read / git | 实时 Codex 本机项目、目录文件事实和只读 Git 查询 |
 | fs | 主机绝对路径的文件读写、目录、元数据、复制、删除和监听 |
@@ -209,6 +209,8 @@ codex_request {"requestId":"<原请求 UUID>","action":"reject"}
 运行状态通过原生任务快照刷新并保存最后一次基本信息，不解析会话 JSONL；关闭页面、应用重启或无法刷新时，仍保留任务记录和最后一次状态及时间。卡片只显示 Codex 原生运行状态，不将 Connector 回执状态映射为任务状态；原生 idle 显示“空闲”，不代表用户工作目标已完成。任务正文保存在权限受限的本机状态目录，不写入连接日志或系统通知。
 
 ## 任务等待
+
+多 Agent 使用 `agent_wait(agent, taskId, turnId?, timeoutMs?, until?, expectedHash?)`，Codex 参数 taskId 对应 threadId，直接复用下面的原生等待链路。Pi/ACP 状态和权限差异见[本地 Agents 等待语义](agents.md#等待语义)。
 
 创建或发送任务后，先从原请求回执取得 threadId / turnId，再优先调用 `codex_wait`。不要重复创建任务，也无需用 `codex_read` 配合 sleep 高频轮询。`codex_read`、`codex_events`、`codex_request` 的用途和参数保持不变。
 

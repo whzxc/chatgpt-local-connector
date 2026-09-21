@@ -3,15 +3,23 @@ use crate::*;
 use std::collections::HashMap;
 mod driver;
 mod process;
+mod wait;
+
+struct Operation {
+    task: String,
+    previous_turn: Value,
+    job: tokio::task::JoinHandle<()>,
+}
 use driver::{AgentDriver, Manifest};
 use process::Process;
 
 pub struct AgentHost {
     drivers: HashMap<String, AgentDriver>,
     processes: Mutex<HashMap<String, Arc<Process>>>,
-    operations: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
+    operations: Mutex<HashMap<String, Operation>>,
     session: String,
     lifecycle: Mutex<()>,
+    wake: Arc<tokio::sync::Notify>,
 }
 fn task_path(task: &str) -> Result<PathBuf> {
     uuid::Uuid::parse_str(task).map_err(|_| "INVALID_TASK_ID")?;
@@ -63,6 +71,7 @@ impl AgentHost {
             operations: Default::default(),
             session: id(),
             lifecycle: Mutex::new(()),
+            wake: Default::default(),
         }))
     }
     pub async fn inventory(&self) -> Value {
@@ -123,15 +132,17 @@ impl AgentHost {
         if state["status"] == "unknown" {
             return Err("TASK_UNCONFIRMED_RECONCILE_BEFORE_RESUME".into());
         }
-        let p = self.drivers[agent].start(state, true).await?;
+        let p = self.drivers[agent]
+            .start(state, true, self.wake.clone())
+            .await?;
         self.processes.lock().await.insert(task.into(), p.clone());
         Ok(p)
     }
     pub async fn close(&self) {
         let _lock = self.lifecycle.lock().await;
         for (request, job) in self.operations.lock().await.drain() {
-            job.abort();
-            let _ = job.await;
+            job.job.abort();
+            let _ = job.job.await;
             if let Ok(path) = receipt_path(&request) {
                 if let Ok(mut r) = load(&path) {
                     if r["state"] == "pending" {
@@ -148,6 +159,7 @@ impl AgentHost {
             .drain()
             .map(|(_, p)| p)
             .collect::<Vec<_>>();
+        self.wake.notify_waiters();
         for p in processes {
             p.close().await;
         }
@@ -177,6 +189,9 @@ impl AgentHost {
         if matches!(driver, AgentDriver::CodexNative) {
             return native_tool(native, name, args).await;
         }
+        if name == "agent_wait" {
+            return wait::agent_wait(self, native, &args).await;
+        }
         if name == "agent_request" {
             let request = string(&args, "requestId");
             let path = receipt_path(request)?;
@@ -200,6 +215,10 @@ impl AgentHost {
                 });
                 r["approval"] = json!(action);
                 r["backendSession"] = json!(self.session);
+                if action != "reject" && r["operation"] != "agent_create" {
+                    r["previousTurnId"] =
+                        self.task(agent, string(&r, "taskId")).await?["turnId"].clone();
+                }
                 save(&path, &r)?;
                 if action != "reject" {
                     let job = self.launch(driver.clone(), r.clone(), path);
@@ -297,7 +316,12 @@ impl AgentHost {
         let needs_approval = matches!(name, "agent_create" | "agent_send" | "agent_interrupt")
             && native.approval_mode()?
             && !matches!(string(&args, "approval"), "approved" | "bypass");
-        let receipt = json!({"requestId":request,"agent":agent,"taskId":task,"operation":name,"arguments":args,"digest":digest,"state":if needs_approval{"awaiting-approval"}else{"pending"},"backendSession":self.session,"createdAt":now(),"nextAction":"agent_request"});
+        let previous_turn = if name == "agent_create" {
+            Value::Null
+        } else {
+            self.task(agent, &task).await?["turnId"].clone()
+        };
+        let receipt = json!({"requestId":request,"agent":agent,"taskId":task,"previousTurnId":previous_turn,"operation":name,"arguments":args,"digest":digest,"state":if needs_approval{"awaiting-approval"}else{"pending"},"backendSession":self.session,"createdAt":now(),"nextAction":"agent_request"});
         private_dir(path.parent().ok_or("INVALID_RECEIPT_PATH")?)?;
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -319,14 +343,11 @@ impl AgentHost {
         }
         Ok(receipt)
     }
-    fn launch(
-        self: &Arc<Self>,
-        driver: AgentDriver,
-        mut r: Value,
-        path: PathBuf,
-    ) -> tokio::task::JoinHandle<()> {
+    fn launch(self: &Arc<Self>, driver: AgentDriver, mut r: Value, path: PathBuf) -> Operation {
         let host = self.clone();
-        tokio::spawn(async move {
+        let task = string(&r, "taskId").to_owned();
+        let previous_turn = r["previousTurnId"].clone();
+        let job = tokio::spawn(async move {
             let result = host
                 .perform(
                     &driver,
@@ -355,7 +376,13 @@ impl AgentHost {
             // Failure leaves the original pending receipt; replay is always prohibited.
             let _ = save(&path, &r);
             host.operations.lock().await.remove(string(&r, "requestId"));
-        })
+            host.wake.notify_waiters();
+        });
+        Operation {
+            task,
+            previous_turn,
+            job,
+        }
     }
     async fn perform(
         &self,
@@ -369,7 +396,7 @@ impl AgentHost {
             let _guard = self.lifecycle.lock().await;
             let t = json!({"taskId":task,"agent":agent,"runtimeSource":driver.protocol(),"sessionId":null,"threadId":null,"cwd":args["cwd"],"title":args["title"],"status":"starting","createdAt":now(),"updatedAt":now(),"metadata":{},"output":""});
             save_task(&t)?;
-            let p = match driver.start(t, false).await {
+            let p = match driver.start(t, false, self.wake.clone()).await {
                 Ok(p) => p,
                 Err(e) => {
                     let mut t = load(&task_path(task)?)?;
@@ -438,6 +465,19 @@ async fn native_tool(native: &Arc<control::Control>, name: &str, mut a: Value) -
     };
     value["taskId"] = thread.clone();
     value["sessionId"] = thread;
+    if suffix == "wait" {
+        if let Some(interactions) = value["interaction"].as_array_mut() {
+            for interaction in interactions {
+                interaction["interactionId"] = interaction["responseId"].clone();
+            }
+        }
+        if value["interaction"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
+        {
+            value["interactionAction"] = json!("Use agent_respond with agent=codex, taskId, interactionId, backendSession, requestId and native result/error");
+        }
+    }
     if suffix == "read" {
         value["status"] = json!(match string(&result, "runtimeStatus") {
             "active" => "running",

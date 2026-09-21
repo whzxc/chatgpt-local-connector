@@ -120,7 +120,7 @@ async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
         }
     }
     let result = if path == "/mcp" && method == "POST" {
-        if body["method"] == "tools/call" && body["params"]["name"] == "codex_wait" {
+        if body["method"] == "tools/call" && is_wait(&body) {
             let mut disconnected = [0u8; 1];
             tokio::select! {
                 result = mcp(&s, body) => result,
@@ -151,6 +151,12 @@ async fn reply(s: &mut TcpStream, code: u16, v: Value) -> Result<()> {
         .await
         .map_err(|e| e.to_string())
 }
+fn is_wait(request: &Value) -> bool {
+    matches!(
+        string(&request["params"], "name"),
+        "codex_wait" | "agent_wait"
+    )
+}
 pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
     if request["jsonrpc"] != "2.0" {
         return Err("invalid jsonrpc".into());
@@ -168,7 +174,7 @@ pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
         }
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools":catalog()["tools"]})),
-        "tools/call" if request["params"]["name"] == "codex_wait" => {
+        "tools/call" if is_wait(&request) => {
             let key = id.as_ref().ok_or("wait requires a request id")?.to_string();
             let (guard, mut cancel) = s.wait_calls.register(key)?;
             let args = request["params"]
@@ -177,9 +183,13 @@ pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
                 .unwrap_or(json!({}));
             let started = std::time::Instant::now();
             let response = tokio::select! {
-                result = s.call("codex_wait", args.clone()) => result,
+                result = s.call(string(&request["params"], "name"), args.clone()) => result,
                 _ = cancel.changed() => {
-                    let value = json!({"state":"unconfirmed","reason":"wait-cancelled","threadId":args["threadId"],"turnId":args["turnId"],"runtimeStatus":"unknown","recordedStatus":null,"finalResponse":null,"interaction":[],"changed":false,"conditionMet":false,"observedAt":null,"returnedAt":now(),"elapsedMs":started.elapsed().as_millis() as u64});
+                    let mut value = json!({"state":"unconfirmed","reason":"wait-cancelled","threadId":args["threadId"],"turnId":args["turnId"],"runtimeStatus":"unknown","recordedStatus":null,"finalResponse":null,"interaction":[],"changed":false,"conditionMet":false,"observedAt":null,"returnedAt":now(),"elapsedMs":started.elapsed().as_millis() as u64});
+                    if request["params"]["name"] == "agent_wait" {
+                        value["agent"] = args["agent"].clone();
+                        value["taskId"] = args["taskId"].clone();
+                    }
                     Ok(json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":{"result":value},"isError":false}))
                 }
             };
@@ -240,13 +250,11 @@ pub async fn stdio() -> Result<()> {
             let response = client
                 .post(format!("http://127.0.0.1:{port}/mcp"))
                 .bearer_auth(token)
-                .timeout(Duration::from_secs(
-                    if request["params"]["name"] == "codex_wait" {
-                        330
-                    } else {
-                        120
-                    },
-                ))
+                .timeout(Duration::from_secs(if is_wait(&request) {
+                    330
+                } else {
+                    120
+                }))
                 .json(&request)
                 .send()
                 .await;

@@ -6,6 +6,18 @@ use tokio::{
 };
 type Replies = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value>>>>>;
 
+// Dropping a read-only wait must release its RPC waiter, never cancel the agent.
+struct ReplyGuard(Replies, String);
+impl Drop for ReplyGuard {
+    fn drop(&mut self) {
+        let replies = self.0.clone();
+        let key = self.1.clone();
+        tokio::spawn(async move {
+            replies.lock().await.remove(&key);
+        });
+    }
+}
+
 /// One owned stdio process per task. ACP and Pi share framing, not protocol semantics.
 pub struct Process {
     input: Mutex<tokio::process::ChildStdin>,
@@ -24,6 +36,7 @@ impl Process {
         cwd: &Path,
         pi: bool,
         mut state: Value,
+        wake: Arc<tokio::sync::Notify>,
     ) -> Result<Arc<Self>> {
         state["processSession"] = json!(id());
         let mut cmd = launch_command(binary, args)?;
@@ -48,6 +61,7 @@ impl Process {
             alive: true.into(),
             capabilities: Mutex::new(Value::Null),
         });
+        process.events.lock().await.wake = wake;
         let weak = Arc::downgrade(&process);
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
@@ -159,7 +173,11 @@ impl Process {
                 }
                 s["processState"] = json!("exited");
                 let _ = super::save_task(&s);
-                p.events.lock().await.pending.clear();
+                {
+                    let mut events = p.events.lock().await;
+                    events.pending.clear();
+                    events.wake.notify_waiters();
+                }
                 if let Ok(Some(status)) = p.child.lock().await.try_wait() {
                     s["exitCode"] = json!(status.code());
                     let _ = super::save_task(&s);
@@ -167,6 +185,20 @@ impl Process {
             }
         });
         Ok(process)
+    }
+    pub async fn check_alive(&self) -> Result<()> {
+        if !self.alive.load(std::sync::atomic::Ordering::SeqCst)
+            || self
+                .child
+                .lock()
+                .await
+                .try_wait()
+                .map_err(|e| e.to_string())?
+                .is_some()
+        {
+            return Err("process-exit-unconfirmed".into());
+        }
+        Ok(())
     }
     pub async fn write(&self, value: Value) -> Result<()> {
         let mut input = self.input.lock().await;
@@ -183,6 +215,7 @@ impl Process {
         let key = json!(id());
         let (tx, rx) = oneshot::channel();
         self.replies.lock().await.insert(key.to_string(), tx);
+        let _cleanup = ReplyGuard(self.replies.clone(), key.to_string());
         let request = if self.pi {
             let mut p = params;
             p["id"] = key.clone();
@@ -222,6 +255,7 @@ impl Process {
             let _ = output("taskkill.exe", &["/PID", &pid.to_string(), "/T", "/F"]).await;
         }
         self.alive.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.events.lock().await.wake.notify_waiters();
     }
 }
 

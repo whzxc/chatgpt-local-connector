@@ -11,6 +11,10 @@ use tokio::{
 pub(crate) trait WaitSource {
     fn observe(&mut self) -> impl Future<Output = Result<Value>> + Send;
     fn alive(&self) -> bool;
+    fn classify(&mut self, observation: &Value, selected: &mut Option<String>) -> Value;
+    fn deadline_is_timeout(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) async fn wait(
@@ -54,6 +58,9 @@ pub(crate) async fn wait(
         let observed = match observation {
             Ok(Ok(v)) => v,
             Ok(Err(e)) => return finish(last, "unconfirmed", &e, started, baseline.as_deref()),
+            Err(_) if source.deadline_is_timeout() && Instant::now() >= deadline => {
+                return finish(last, "timeout", "deadline", started, baseline.as_deref());
+            }
             Err(_) => {
                 return finish(
                     last,
@@ -73,7 +80,7 @@ pub(crate) async fn wait(
                 baseline.as_deref(),
             );
         }
-        last = classify(&observed, &mut selected);
+        last = source.classify(&observed, &mut selected);
         let current_hash = snapshot_hash(&last);
         baseline.get_or_insert(current_hash);
         let state = string(&last, "state").to_owned();
@@ -206,6 +213,9 @@ struct CodexSource {
     events: SharedEvents,
 }
 impl WaitSource for CodexSource {
+    fn classify(&mut self, observation: &Value, selected: &mut Option<String>) -> Value {
+        classify(observation, selected)
+    }
     fn alive(&self) -> bool {
         match &self.owner {
             CodexOwner::Background(r) => r.alive(),
@@ -282,8 +292,12 @@ pub async fn codex_wait(control: &Arc<Control>, args: &Value) -> Result<Value> {
             None,
         ),
     };
+    condition(&mut result, args);
+    Ok(result)
+}
+pub(crate) fn condition(result: &mut Value, args: &Value) {
     let terminal = matches!(
-        string(&result, "state"),
+        string(result, "state"),
         "completed" | "failed" | "cancelled"
     );
     let interaction = result["state"] == "interaction-required";
@@ -292,5 +306,4 @@ pub async fn codex_wait(control: &Arc<Control>, args: &Value) -> Result<Value> {
         "interaction-required" => interaction,
         _ => terminal || interaction,
     });
-    Ok(result)
 }

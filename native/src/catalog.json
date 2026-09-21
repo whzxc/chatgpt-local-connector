@@ -1,5 +1,5 @@
 {
-  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。 创建或发送任务后优先调用 codex_wait 等待终态或交互，不要高频 codex_read + sleep 轮询。 通用 agent_* 支持 Codex Native、Pi RPC 和 OpenCode ACP。先 agents 发现；agent_create/send 使用 UUID requestId，agent_request 回读回执，agent_read 确认执行结果。Pi/ACP 的运行进程由 CLC 管理，关闭连接会终止进程。",
+  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。 创建或发送任务后优先调用 codex_wait 等待终态或交互，不要高频 codex_read + sleep 轮询。 通用 agent_* 支持 Codex Native、Pi RPC 和 OpenCode ACP。先 agents 发现；agent_create/send 使用 UUID requestId，agent_request 回读回执，取得 taskId 后优先 agent_wait 等待终态或交互，避免高频 agent_read / agent_events 轮询。Pi/ACP 的运行进程由 CLC 管理，关闭连接会终止进程。",
   "tools": [
     {
       "name": "connector_verify",
@@ -1981,7 +1981,7 @@
     },
     {
       "name": "agent_create",
-      "description": "创建持久任务并可发送文本。写入返回回执，用 agent_request 回读，未知状态禁止换 requestId 重试。",
+      "description": "创建持久任务并可发送文本。写入返回回执，用 agent_request 回读，未知状态禁止换 requestId 重试。 确认原请求派发并取得 taskId 后优先用 agent_wait 等待终态或交互，不要高频 agent_read / agent_events 轮询。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2087,8 +2087,77 @@
       }
     },
     {
+      "name": "agent_wait",
+      "description": "agent_create / agent_send 后取得 taskId 并确认派发后优先调用 agent_wait，避免高频 agent_read / agent_events 轮询。只读等待 1–300000ms（默认 60000），复用 codex_wait 等待核心；固定当前轮次，事件唤醒并周期复核。终态和交互均立即返回，until 用于 conditionMet；timeout/取消等待不终止或重建任务，unconfirmed 不表示失败。Pi 用 RPC get_state，ACP 用存活进程的协议事件和 prompt 最终响应；无活动进程不自动恢复。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "turnId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300000,
+            "default": 60000
+          },
+          "until": {
+            "type": "string",
+            "enum": [
+              "terminal",
+              "interaction-required",
+              "terminal-or-interaction"
+            ],
+            "default": "terminal-or-interaction",
+            "description": "期望的等待目标；另一类终态/交互仍作为安全退出条件返回。"
+          },
+          "expectedHash": {
+            "type": "string",
+            "description": "上次 snapshotHash；用于 changed 比较，不屏蔽已存在的终态或交互。"
+          },
+          "agent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "codex / pi / opencode 或本机 ACP manifest ID"
+          },
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "CLC taskId；Codex 使用原生 threadId"
+          }
+        },
+        "required": [
+          "agent",
+          "taskId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
       "name": "agent_send",
-      "description": "继续任务；停止的已确认会话按协商能力恢复。",
+      "description": "继续任务；停止的已确认会话按协商能力恢复。 确认原请求派发并取得 taskId 后优先用 agent_wait 等待终态或交互，不要高频 agent_read / agent_events 轮询。",
       "inputSchema": {
         "type": "object",
         "properties": {

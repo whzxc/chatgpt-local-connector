@@ -20,6 +20,7 @@ CLC 自身不依赖 Node 运行时；Pi 等外部 CLI 仍需其自身的运行�
 | `agent_capabilities` | 公共能力；提供 `taskId` 读取该进程实际协商结果 |
 | `agent_tasks` | 列出任务；Pi/ACP 限于 CLC 创建的任务，使用 offset/limit 分页；Codex 使用原生任务列表和 cursor 分页 |
 | `agent_create` | `agent`、绝对 `cwd`、UUID `requestId`，可选文本 `prompt`；Codex 创建并执行，需要 prompt |
+| `agent_wait` | `agent`、`taskId` 必填；可选 turnId、timeoutMs、until、expectedHash；优先用于等待最终结果或交互 |
 | `agent_read` | `agent`、`taskId`，读取状态、最近输出和协议元数据 |
 | `agent_send` | `agent`、`taskId`、`prompt`、新 `requestId`；必要时恢复已确认停止的会话 |
 | `agent_interrupt` | 请求取消；Codex 还需要原生 `turnId` |
@@ -28,13 +29,13 @@ CLC 自身不依赖 Node 运行时；Pi 等外部 CLI 仍需其自身的运行�
 | `agent_respond` | 用 `interactionId` 响应；ACP 提供 `optionId` 或 `cancelled`；Pi 提供 `value`、`confirmed` 或 `cancelled`；Codex 使用原生 result/error、backendSession |
 | `agent_request` | 回读幂等回执；可 approve/bypass/reject 待确认操作 |
 
-先创建会话，再回读写入回执与任务：
+先用 `agent_create` 创建会话并取得 taskId；处理回执中的审批或不确定状态后，用 `agent_wait` 等待：
 
 ```json
 {"agent":"opencode","cwd":"/absolute/project","requestId":"新生成的 UUID","prompt":"不要使用工具或修改文件，只回复 OK"}
 ```
 
-写操作先保存回执再提交。每个新操作生成新 UUID，同一操作重试必须保持 requestId 和全部参数不变。`agent_request.state=completed` 表示该写操作已结束，不等于任务成功：Pi 的 prompt 回执在接受输入后返回，而 ACP prompt 的响应在本轮结束后返回。两者均需 `agent_read` 确认最终状态与输出。启用任务审批时，create/send/interrupt 先进入 `awaiting-approval`，可通过 `agent_request` 决定；`approval=approved/bypass` 沿用现有确认语义。Pi/ACP 的确认目前通过 MCP 操作，现有桌面任务页仍展示 Codex 任务。
+写操作先保存回执再提交。每个新操作生成新 UUID，同一操作重试必须保持 requestId 和全部参数不变。`agent_request.state=completed` 表示该写操作已结束，不等于任务成功：Pi 的 prompt 回执在接受输入后返回，而 ACP prompt 的响应在本轮结束后返回。两者均优先使用 `agent_wait` 确认最终状态与输出，不需要高频轮询 `agent_read` / `agent_events`。ACP prompt 回执在等待期间仍可为 pending；无需等回执 completed 才调用 agent_wait。启用任务审批时，create/send/interrupt 先进入 `awaiting-approval`，可通过 `agent_request` 决定；`approval=approved/bypass` 沿用现有确认语义。Pi/ACP 的确认目前通过 MCP 操作，现有桌面任务页仍展示 Codex 任务。
 
 `taskId` 是 CLC UUID（Codex 直接使用 threadId），`agent` 区分驱动，`runtimeSource` 保留执行来源，`sessionId` 是上游会话 ID。Pi/ACP 的 `turnId` 是 CLC 单次 prompt 标识，不伪装成上游轮次 ID。协议原始数据位于 metadata、lastMessage 和事件中。Codex 结果保留 native 字段与原始状态；Codex events/pending 沿用原生全局事件流与收件箱，未按 taskId 过滤。
 
@@ -43,6 +44,24 @@ Pi/ACP 状态包含 starting、idle、running、waiting-permission、cancelling�
 超时、进程异常退出或写入结果不明会留下 `unconfirmed` 回执或 `unknown` 任务，不自动重放。存在未确认操作时不能通过新 prompt 自动恢复。停止后的已完成会话可由 agent_send 恢复：Pi 使用原 session 文件，ACP 使用协商后的 session/load。未发送 prompt 的 Pi 空会话可能尚未持久化，不能保证跨进程恢复。
 
 事件有有界内存窗口，完整 JSONL 存在 CLC 私有 outputs 目录，可通过 `control_output` 读取。ACP 最近文本输出超过 256 KiB 时仅保留末尾并标记 outputTruncated；完整输出在事件归档中。进程停止后的任务快照仍可读，实时 events/pending 需要存活进程。关闭连接或退出 CLC 会关闭其拥有的 Pi/ACP 子进程；Desktop 拥有的 Codex 任务继续沿用原生命周期。
+
+
+## 等待语义
+
+```json
+{"agent":"opencode","taskId":"创建回执中的 taskId","timeoutMs":60000,"until":"terminal-or-interaction"}
+```
+
+`timeoutMs` 为 1–300000，默认 60000；`until` 为 `terminal`、`interaction-required`、`terminal-or-interaction`（默认）。`turnId` 可固定轮次，否则固定首次观察到的当前/最近轮次；Pi/ACP 不保存历史轮次等待视图，轮次被替换返回 unconfirmed。`expectedHash` 可传上次的 snapshotHash，只影响 changed，不屏蔽已存在的终态或交互。
+
+- `completed` / `failed` / `cancelled`：原生轮次已确认终止，finalResponse 返回最终输出。Codex 保留原生消息对象，Pi/ACP 返回文本，并保留 outputTruncated、stopReason、error。
+- `interaction-required`：即使 until=terminal 也立即退出等待；interaction 带 interactionId、backendSession 及原始选项，可用 agent_pending 回读、agent_respond 回答。Codex Desktop 仅暴露等待标志而没有回调 ID 时，按 interactionAction 在 Desktop 处理。
+- `timeout`：只结束本次等待，继续用同一 taskId/sessionId 等待；不取消、重建或发送 prompt。
+- `unconfirmed`：进程退出、连接/所有权不明、状态不一致、原生读取失败、等待被取消或没有可等待轮次。runtimeStatus 为 unknown 时不代表任务失败；先检查原回执/任务，不换 requestId 重放。
+
+终态和交互始终是退出条件，`conditionMet` 单独说明是否满足 until。`snapshotHash` / `changed` 比较状态、输出和交互；elapsedMs / observedAt / returnedAt 区分观察与返回时间。等待通过事件唤醒，流式事件最多每 250ms 合并复核一次，并每 2 秒兜底读取。Pi 复核官方 get_state，以 agent_settled 为完成依据；ACP 没有标准 session/status 方法，使用 CLC 拥有的存活进程、session/update 和 session/prompt 最终响应，不伪造远端状态查询。
+
+多个等待独立运行；MCP notifications/cancelled 或调用连接断开只释放对应等待。等待不恢复已停止的进程；旧快照可用 agent_read 查看。Custom ACP manifest 自动复用 ACP 等待路径，无需修改 Host。普通 Chat 回复结束后不会在后台继续等待或主动推送。
 
 ## ACP 能力协商与扩展
 

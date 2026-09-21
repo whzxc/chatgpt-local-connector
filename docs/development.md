@@ -16,7 +16,7 @@ Vite 保持在 `http://127.0.0.1:5187`。Vue/CSS 修改热更新，不打包、�
 ## 代码结构
 
 - `ui/`：Vue 页面、状态类型与交互。
-- `native/`：Rust 连接核心。负责 Desktop IPC、辅助 Codex RPC、AgentHost 与 Pi/ACP 子进程、41 个 MCP 工具、回执、事件、配置和 Tunnel 生命周期。
+- `native/`：Rust 连接核心。负责 Desktop IPC、辅助 Codex RPC、AgentHost 与 Pi/ACP 子进程、42 个 MCP 工具、回执、事件、配置和 Tunnel 生命周期。
 - `desktop/`：Tauri 主程序、托盘、窗口、系统集成与更新。直接调用同进程的 Rust 核心。
 - `tooling/`：开发和构建脚本；不进入应用运行资源。
 - `tests/`：契约测试，以隔离的模拟上游检查 Rust 核心；测试专用 feature 不用于发行构建。

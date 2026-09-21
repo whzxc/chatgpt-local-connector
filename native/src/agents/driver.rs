@@ -29,7 +29,12 @@ impl AgentDriver {
             Self::Acp(m) => discover(&m.command),
         }
     }
-    pub async fn start(&self, task: Value, resume: bool) -> Result<Arc<Process>> {
+    pub async fn start(
+        &self,
+        task: Value,
+        resume: bool,
+        wake: Arc<tokio::sync::Notify>,
+    ) -> Result<Arc<Process>> {
         let binary = self.binary().ok_or("AGENT_NOT_INSTALLED")?;
         let cwd = PathBuf::from(string(&task, "cwd"));
         let args = match self {
@@ -55,7 +60,7 @@ impl AgentDriver {
             Self::Acp(m) => m.args.clone(),
             Self::CodexNative => return Err("USE_NATIVE_CONTROL".into()),
         };
-        let p = Process::start(&binary, &args, &cwd, matches!(self, Self::Pi), task).await?;
+        let p = Process::start(&binary, &args, &cwd, matches!(self, Self::Pi), task, wake).await?;
         let init=async {
             if p.pi {
                 let state=p.call("get_state",json!({}),15000).await?;
@@ -75,6 +80,7 @@ impl AgentDriver {
                 t["metadata"]=result;
             }
             let mut t=p.state.lock().await;t["status"]=json!("idle");t["processState"]=json!("running");save_task(&t)?;
+            p.events.lock().await.wake.notify_waiters();
             Ok(())
         }.await;
         if let Err(e) = init {
@@ -100,6 +106,7 @@ impl AgentDriver {
             t["stopReason"] = Value::Null;
             t["outputTruncated"] = json!(false);
             save_task(&t)?;
+            p.events.lock().await.wake.notify_waiters();
         }
         let sid = p.state.lock().await["sessionId"].clone();
         let result = if p.pi {
@@ -134,6 +141,7 @@ impl AgentDriver {
         }
         t["updatedAt"] = json!(now());
         save_task(&t)?;
+        p.events.lock().await.wake.notify_waiters();
         result.map(|_| t.clone())
     }
     pub async fn interrupt(&self, p: &Arc<Process>) -> Result<Value> {
@@ -164,6 +172,7 @@ impl AgentDriver {
             t["status"] = json!(if p.pi { "cancelled" } else { "cancelling" });
         }
         save_task(&t)?;
+        p.events.lock().await.wake.notify_waiters();
         Ok(t.clone())
     }
     pub async fn respond(&self, p: &Arc<Process>, a: &Value) -> Result<Value> {
@@ -221,6 +230,7 @@ impl AgentDriver {
             t["status"] = json!("running");
         }
         save_task(&t)?;
+        p.events.lock().await.wake.notify_waiters();
         Ok(json!({"responded":true}))
     }
 }
