@@ -84,3 +84,5 @@ html,body,#app{height:100%;overflow:hidden}.app-scene{height:100dvh;min-height:0
 
 .path-shortcut{display:flex;flex-direction:column;align-items:center;gap:7px;height:auto;padding:0;border:0;border-radius:10px;background:transparent;color:inherit;text-decoration:none;line-height:normal}
 .path-shortcut:hover{background:transparent}.path-shortcut:hover strong{color:var(--green)}.path-shortcut:hover .product-logo{filter:brightness(1.04)}
+
+.path-link-action{position:relative;border:0;background:transparent;border-radius:8px;padding:7px 0;min-width:0;box-shadow:none;cursor:pointer}.path-link-action:hover{background:color-mix(in srgb,var(--green) 8%,transparent)}.path-link-action:focus-visible{outline:2px solid var(--green);outline-offset:4px}.path-link-caption{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:10px;line-height:16px;white-space:nowrap;color:var(--muted)}.path-link-action.failed .path-link-caption{color:#c34b45}

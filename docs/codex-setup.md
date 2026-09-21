@@ -56,7 +56,7 @@
 
 ## 自动化边界
 
-CLC 的桌面引导按「本机连接 → 添加 ChatGPT 连接 → 验证」推进，复制与打开合并，运行中自动读取入站结果，支持重新验证。CLI 提供结构化接入资料，Codex 无需让用户转抄 URL、ID 或验证消息。应用本身不读取浏览器登录态，也不控制 ChatGPT 网页。
+CLC 的桌面引导在一页展示「开启开发者模式 → Create MCP App → 发送验证消息」。名称、描述、HTTPS 地址和验证消息支持分别复制；Tunnel 直接选择当前通道，Authentication 选择 No Authentication。运行中自动读取入站结果，支持重新验证。CLI 提供结构化接入资料，Codex 无需让用户转抄 URL、ID 或验证消息。应用本身不读取浏览器登录态，也不控制 ChatGPT 网页。
 
 官方公开流程仍要求在 ChatGPT UI 开启 Developer Mode、创建连接、刷新工具和在对话选用连接。官方文档提供 Plugins 页面入口，但未提供可供 CLC 使用的创建/安装 API、参数预填协议或 Developer Mode 开关 deep link；Responses API 的 MCP 调用不会给 ChatGPT 账号安装插件。不要使用私有接口、Cookie/令牌提取或固定 DOM 自动化脚本。
 

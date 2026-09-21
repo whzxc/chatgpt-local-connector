@@ -1,6 +1,6 @@
 //! Common task host. Codex's native Control remains the owner of all native semantics.
 use crate::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 mod driver;
 mod process;
 mod wait;
@@ -15,6 +15,7 @@ use process::Process;
 
 pub struct AgentHost {
     drivers: HashMap<String, AgentDriver>,
+    disabled: Mutex<HashSet<String>>,
     processes: Mutex<HashMap<String, Arc<Process>>>,
     operations: Mutex<HashMap<String, Operation>>,
     session: String,
@@ -65,7 +66,14 @@ impl AgentHost {
                 drivers.insert(m.id.clone(), AgentDriver::Acp(m));
             }
         }
+        let preferences = root().join("agents/disabled.json");
+        let disabled: HashSet<String> = if preferences.exists() {
+            serde_json::from_value(load(&preferences)?).map_err(|e| e.to_string())?
+        } else {
+            HashSet::new()
+        };
         Ok(Arc::new(Self {
+            disabled: Mutex::new(disabled),
             drivers,
             processes: Default::default(),
             operations: Default::default(),
@@ -73,6 +81,34 @@ impl AgentHost {
             lifecycle: Mutex::new(()),
             wake: Default::default(),
         }))
+    }
+    async fn ensure_enabled(&self, agent: &str) -> Result<()> {
+        if agent != "codex" && self.disabled.lock().await.contains(agent) {
+            return Err("AGENT_DISABLED".into());
+        }
+        Ok(())
+    }
+    pub async fn set_enabled(&self, body: &Value) -> Result<Value> {
+        let agent = string(body, "agent");
+        if !self.drivers.contains_key(agent) {
+            return Err("UNKNOWN_AGENT".into());
+        }
+        let enabled = body["enabled"]
+            .as_bool()
+            .ok_or("ENABLED_BOOLEAN_REQUIRED")?;
+        if agent == "codex" && !enabled {
+            return Err("CODEX_ALWAYS_ENABLED".into());
+        }
+        let mut disabled = self.disabled.lock().await;
+        let mut next = disabled.clone();
+        if enabled {
+            next.remove(agent);
+        } else {
+            next.insert(agent.to_owned());
+        }
+        save(&root().join("agents/disabled.json"), &json!(next))?;
+        *disabled = next;
+        Ok(json!({"agent":agent,"enabled":enabled}))
     }
     pub async fn inventory(&self) -> Value {
         let mut rows = Vec::new();
@@ -93,7 +129,7 @@ impl AgentHost {
                 p.alive.load(std::sync::atomic::Ordering::SeqCst)
                     && p.state.try_lock().is_ok_and(|s| s["agent"] == *agent)
             });
-            rows.push(json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"status":if ready {"ready"}else if binary.is_some() && version.is_some(){"installed"}else{"unavailable"},"version":version.as_deref().map(str::trim),"path":binary,"configuration":"inherited","readiness":"ready means a live initialized session, not provider authentication"}));
+            rows.push(json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"enabled":self.ensure_enabled(agent).await.is_ok(),"status":if ready {"ready"}else if binary.is_some() && version.is_some(){"installed"}else{"unavailable"},"version":version.as_deref().map(str::trim),"path":binary,"configuration":"inherited","readiness":"ready means a live initialized session, not provider authentication"}));
         }
         json!({"agents":rows,"defaultAgent":"codex","observedAt":now()})
     }
@@ -186,6 +222,7 @@ impl AgentHost {
         }
         let agent = args["agent"].as_str().unwrap_or("codex");
         let driver = self.drivers.get(agent).ok_or("UNKNOWN_AGENT")?;
+        self.ensure_enabled(agent).await?;
         if matches!(driver, AgentDriver::CodexNative) {
             return native_tool(native, name, args).await;
         }
@@ -364,6 +401,7 @@ impl AgentHost {
                 Err(e) => {
                     r["state"] = json!(if e.starts_with("RPC_REJECTED")
                         || e == "TASK_BUSY_OR_UNCONFIRMED"
+                        || e == "AGENT_DISABLED"
                     {
                         "rejected"
                     } else {
@@ -392,6 +430,7 @@ impl AgentHost {
         task: &str,
     ) -> Result<Value> {
         let agent = string(args, "agent");
+        self.ensure_enabled(agent).await?;
         let p = if name == "agent_create" {
             let _guard = self.lifecycle.lock().await;
             let t = json!({"taskId":task,"agent":agent,"runtimeSource":driver.protocol(),"sessionId":null,"threadId":null,"cwd":args["cwd"],"title":args["title"],"status":"starting","createdAt":now(),"updatedAt":now(),"metadata":{},"output":""});

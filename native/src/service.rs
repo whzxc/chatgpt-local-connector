@@ -679,6 +679,7 @@ impl Service {
                 Ok(json!({"ok":true}))
             }
             ("GET", "agents") => Ok(self.agents.inventory().await),
+            ("PUT", "agents") => self.agents.set_enabled(&body).await,
             ("GET", "dependencies") => {
                 let s = self.settings.lock().await.clone();
                 let describe = |binary: Option<PathBuf>| async move {

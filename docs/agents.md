@@ -2,6 +2,8 @@
 
 CLC 支持 Codex Native、Pi RPC 和 OpenCode ACP。设置页的 Agents 区域自动发现可执行文件、版本和连接方式，不保存或要求重复填写 provider/token。Codex 保持默认；调用通用工具时显式选择 `agent`。
 
+设置页以图标、名称和下一行协议及版本展示 Agent，Pi 仅在已安装时显示。Agents 标题栏右侧的“刷新”按钮可更新本机发现结果。Codex 始终开启；其他 Agent 的开关仅控制 CLC 是否接受该 Agent 的请求，关闭后新的 `agent_*` 调用返回 `AGENT_DISABLED`，不会卸载 Agent、修改其配置或终止已执行的任务。开关保存在本机，重启后仍生效；`agents` 返回 `enabled` 状态。本机管理接口 `PUT /api/agents` 接收 `{ "agent": "pi", "enabled": false }`，不能关闭 Codex。
+
 | Agent | 连接方式 | 配置与执行归属 | 能力边界 |
 | --- | --- | --- | --- |
 | Codex | App Server + Desktop IPC | 继承 Codex；按现有设置由 Desktop 或 Connector 执行 | 所有 `codex_*` 原生入口保持可用；通用入口只映射公共任务能力 |
