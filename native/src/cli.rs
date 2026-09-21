@@ -3,102 +3,30 @@ use std::io::Read;
 
 const GUIDE: &str = include_str!("../../docs/codex-setup.md");
 
-fn verification(status: &Value) -> Value {
-    let chat = &status["core"]["chatgpt"];
-    json!({"code":chat["code"],"verifiedAt":chat["verifiedAt"],"challengeVerifiedAt":chat["challengeVerifiedAt"],
-        "connectionRunning":status["connection"]["running"],
-        "prompt":format!("请使用 Local Connector 插件调用 connector_verify，code 为 {}。只验证连接，不创建任务。", string(chat,"code")),
-        "executionVerified":false,
-        "note":"verifiedAt 是历史入站记录，challengeVerifiedAt 仅由匹配验证码的 connector_verify 更新。新验收先执行 verify --fresh，再从 ChatGPT 调用并核对结果。任务执行需另读真实任务终态。"})
+fn onboarding(ingress: &Value) -> Value {
+    json!({"ingressId":ingress["id"],"controlSource":ingress["controlSource"],
+        "stage":if ingress["config"]["configured"]!=true {"configure"}else if ingress["state"]!="ready" {"start"}else if ingress["verification"]["challengeVerifiedAt"].is_string(){"inbound_verified"}else{"client_setup_or_verify"},
+        "transport":ingress["transport"],"authentication":ingress["auth"],"url":ingress["url"],"tunnelId":ingress["config"]["tunnelId"],
+        "verification":ingress["verification"],
+        "verificationPrompt":format!("调用 connector_verify，code 为 {}。只验证连接，不创建任务。",string(&ingress["verification"],"code")),
+        "executionPrompt":"创建一个无害 Agent 任务：不调用工具，不读取或修改文件，只回复 CLC_ONBOARDING_OK。使用唯一 UUID requestId，读取回执、taskId、turnId，再用默认 30 秒的 agent_wait/codex_wait；timeout 后沿用原 ID 和上一轮 snapshotHash 作为 expectedHash 继续 wait 至终态或交互，读取最终输出。timeout 不终止任务，不重新创建。未知状态回读原 requestId，不重复创建。",
+        "identityNote":"controlSource is a configured label, not an authenticated user identity. Bearer proves possession only.",
+        "clientSetup":"Use the client's supported MCP connection flow. Confirm support for the selected authentication; Slack/Notion labels do not install a bot or integration.",
+        "secretDelivery":"Supply credentials using stdin or a protected local file. Never paste tokens into chat or use command-line arguments."})
 }
-
-fn onboarding(status: &Value) -> Value {
-    let https = status["config"]["connectionMode"] == "https";
-    let ready = status["tunnel"]["state"] == "ready";
-    let value = if https {
-        &status["connection"]["mcpUrl"]
-    } else {
-        &status["config"]["tunnelId"]
-    };
-    json!({
-        "stage": if status["config"]["configured"] != true { "configure" }
-            else if !ready { "connect" }
-            else if status["core"]["chatgpt"]["challengeVerifiedAt"].is_string() { "inbound_verified" }
-            else { "chatgpt_setup_or_verify" },
-        "chatgptUrl":"https://chatgpt.com/plugins",
-        "connection":{"method":if https {"https"} else {"tunnel"},"value":value,
-            "authentication":"No Authentication",
-            "name":"Local Connector","description":if https {"通过 HTTPS MCP 连接到本地设备"} else {"通过 Tunnel 连接到本地设备"}},
-        "verification":verification(status),
-        "executionPrompt":"请通过 Local Connector 创建一个无害 Codex 任务：不调用工具，不读取或修改文件，只回复 CLC_ONBOARDING_OK。使用唯一 UUID requestId；读取持久化回执、threadId、turnId 和任务终态，确认输出。未知状态用原 requestId 回读，不重复创建任务。",
-        "browserSetup":"使用用户提供的已登录网页，按当前可见界面开启 Developer Mode、复用或创建连接、刷新工具并在新对话验证。身份确认、授权、验证码及安全机制阻断交给用户。",
-        "installationState":"unknown",
-        "note":"没有公开的 ChatGPT 创建连接 API 或预填协议可供本应用使用；打开页面不代表已安装。入站证据不识别调用方身份，需结合 ChatGPT 工具结果确认。任务执行必须单独验收。"
-    })
+async fn ingresses() -> crate::Result<Value> {
+    forward_request("ingress", "GET", json!({})).await
 }
-
 async fn doctor() -> crate::Result<Value> {
     let status = forward_request("status", "GET", json!({})).await?;
-    let config = &status["config"];
-    let login = forward_request("codex/login", "GET", json!({}))
-        .await
-        .unwrap_or_else(|e| json!({"state":"unavailable","message":e}));
-    let mut checks = vec![];
-    let mut add = |code: &str, passed: bool, action: &str| {
-        checks.push(json!({"code":code,"passed":passed,"action":if passed {""} else {action}}));
-    };
-    add(
-        "PLATFORM_SUPPORTED",
-        cfg!(target_os = "macos") || cfg!(windows),
-        "Desktop 任务接入支持 macOS 和 Windows。",
-    );
-    add(
-        "CONNECTION_CONFIGURED",
-        config["configured"] == true,
-        "补齐当前连接方式的配置；保留已有 HTTPS 或 Tunnel 选择。",
-    );
-    if config["connectionMode"] != "https" {
-        add(
-            "TUNNEL_ID",
-            !string(config, "tunnelId").is_empty(),
-            "打开 Platform Tunnel 设置取得 Tunnel ID，确认工作区关联与使用权限。",
-        );
-        add(
-            "RUNTIME_KEY",
-            config["hasApiKey"] == true,
-            "从安全本机来源配置 runtime API Key；没有来源时请用户直接填入应用。",
-        );
+    let mut items = Vec::new();
+    for ingress in status["ingresses"].as_array().into_iter().flatten() {
+        items.push(json!({"id":ingress["id"],"configured":ingress["config"]["configured"],"state":ingress["state"],"error":ingress["error"],"verification":ingress["verification"],"onboarding":onboarding(ingress)}));
     }
-    add(
-        "CODEX_LOGIN",
-        login["state"] == "authenticated",
-        "在 Codex Desktop 完成登录。",
-    );
-    let desktop = status["autoOpenCodex"] != false;
-    add(
-        "CODEX_EXECUTOR",
-        status["core"][if desktop { "desktop" } else { "appServer" }]["state"] == "ready",
-        "检查所选 Codex 执行方状态；Desktop 模式打开 Desktop，后台模式检查 appServer。",
-    );
-    add(
-        "TRANSPORT_READY",
-        status["tunnel"]["state"] == "ready",
-        "配置齐全后执行 connect；失败时读取 logs，按具体网络或凭据错误处理。",
-    );
-    add(
-        "CHATGPT_INBOUND",
-        !status["core"]["chatgpt"]["verifiedAt"].is_null(),
-        "在 ChatGPT 添加或选用连接并发送 verify 返回的验证消息。",
-    );
-    let next = checks.iter().find(|v| v["passed"] != true).cloned();
     Ok(
-        json!({"version":status["version"],"checks":checks,"next":next,
-        "stage":if next.is_some(){"action_required"}else{"inbound_previously_verified"},
-        "login":login,"tunnel":status["tunnel"],"desktop":status["core"]["desktop"],
-        "verification":verification(&status),"onboarding":onboarding(&status)}),
+        json!({"ingresses":items,"summary":status["ingressSummary"],"desktop":status["core"]["desktop"],"appServer":status["core"]["appServer"],"executionVerified":false}),
     )
 }
-
 fn stdin_json() -> crate::Result<Value> {
     let mut input = String::new();
     std::io::stdin()
@@ -121,29 +49,71 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
     match args.as_slice() {
         [] | ["help"] | ["--help"] => Ok(json!({"version":env!("CARGO_PKG_VERSION"),
             "usage":"<应用可执行文件> cli <command> [--json]",
-            "commands":["help","guide","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh"],
+            "commands":["help","guide","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress doctor <id>","ingress verify <id> [--fresh]"],
+            "ingressInput":{"id":"optional on add; immutable","name":"display name (defaults to controlSource)","controlSource":"chatgpt | notion | slack | any client label","transport":"openai-tunnel | https","auth":"openai for OpenAI Tunnel; none | bearer for HTTPS","bearerToken":"32+ printable ASCII characters, stdin only; never returned by list/status","enabled":true,"toolPolicy":"all or {allowlist:[connector_verify,agents,agent_create,agent_read,agent_wait,...]}","config":{"httpsProvider":"cloudflare | ngrok | custom","cloudflareMode":"quick | named","httpsUrl":"https://hostname/mcp; required for named/custom, optional fixed ngrok address","httpsHost":"127.0.0.1 default; custom only","httpsPort":"8787 default; choose distinct ports for named/custom and match the external route","cloudflareToken":"named Tunnel token; stdin only","ngrokAuthtoken":"ngrok credential; stdin only","tunnelId":"official Tunnel ID","apiKey":"official Tunnel runtime key; stdin only","tunnelBinary":"optional executable path"}},
+            "waitContract":"create/send → wait(30s default; 20–30s recommended) → timeout → same taskId/threadId and turnId, previous snapshotHash as expectedHash → wait again until terminal/interaction. Event-driven slices, not read/sleep polling. Timeout/cancelling wait never stops or recreates the task; unconfirmed is not failure. Ordinary Chat/general MCP clients should not block for minutes by default. Explicit maximum 300000ms requires upstream support; stdio forwarding budget remains 330s.",
+            "update":"Partial merge; stop the target before updating or rotating. Other ingresses remain online. Changes reset only this ingress verification.",
+            "authNote":"none exposes allowed tools to anyone with network access. Prefer fixed URL + bearer for long-lived clients that support it. OAuth/DCR is not implemented.",
+            "tokenDelivery":"token rotate returns the new secret once in stdout. Redirect to a protected local file (umask 077); do not capture it into chat/logs. Supply an initial bearerToken via stdin when adding.",
             "configureInput":{"tunnelId":"可选；省略保留原值","apiKey":"可选；空字符串保留原值"},
             "networkInput":{"proxyMode":"system | direct | custom","proxyUrl":"自定义 HTTP/HTTPS 地址，其余为空"},
             "note":"所有命令输出 JSON。guide 可离线读取；其余命令需要已打开的同版本应用。凭据仅从 stdin 输入，禁止放入命令参数或聊天。"})),
         ["guide"] => Ok(json!({"markdown":GUIDE})),
         ["doctor"] => doctor().await,
-        ["onboarding"] => Ok(onboarding(
-            &forward_request("status", "GET", json!({})).await?,
-        )),
+        ["onboarding"] => Ok(
+            json!({"ingresses":ingresses().await?.as_array().into_iter().flatten().map(onboarding).collect::<Vec<_>>()}),
+        ),
+        ["ingress", "list"] => ingresses().await,
+        ["ingress", "add", "--stdin"] => forward_request("ingress", "POST", stdin_json()?).await,
+        ["ingress", "update", id, "--stdin"] => {
+            forward_request(&format!("ingress/{id}"), "PUT", stdin_json()?).await
+        }
+        ["ingress", "remove", id] => {
+            forward_request(&format!("ingress/{id}"), "DELETE", json!({})).await
+        }
+        ["ingress", action @ ("start" | "stop"), id] => {
+            forward_request(&format!("ingress/{id}/{action}"), "POST", json!({})).await
+        }
+        ["ingress", action @ ("start-all" | "stop-all")] => {
+            forward_request(&format!("ingress/{action}"), "POST", json!({})).await
+        }
+        ["ingress", "token", "rotate", id] => {
+            forward_request(&format!("ingress/{id}/token"), "POST", json!({})).await
+        }
+        ["ingress", "doctor", id] | ["ingress", "verify", id] => {
+            let i = forward_request(&format!("ingress/{id}"), "GET", json!({})).await?;
+            Ok(json!({"ingress":i,"onboarding":onboarding(&i)}))
+        }
+        ["ingress", "verify", id, "--fresh"] => {
+            forward_request(
+                &format!("ingress/{id}/verification/reset"),
+                "POST",
+                json!({}),
+            )
+            .await?;
+            Ok(onboarding(
+                &forward_request(&format!("ingress/{id}"), "GET", json!({})).await?,
+            ))
+        }
         ["status"] => forward_request("status", "GET", json!({})).await,
         ["logs"] => Ok(forward_request("status", "GET", json!({})).await?["logs"].clone()),
         ["configure", "--stdin"] => forward_request("config/tunnel", "PATCH", stdin_json()?).await,
         ["network", "--stdin"] => forward_request("network", "PUT", stdin_json()?).await,
         ["connect"] => forward_request("start", "POST", json!({})).await,
         ["disconnect"] => forward_request("stop", "POST", json!({})).await,
-        ["verify"] => Ok(verification(
-            &forward_request("status", "GET", json!({})).await?,
-        )),
+        ["verify"] => Ok(
+            json!({"ingresses":ingresses().await?.as_array().into_iter().flatten().map(onboarding).collect::<Vec<_>>()}),
+        ),
         ["verify", "--fresh"] => {
-            forward_request("verification/reset", "POST", json!({})).await?;
-            Ok(verification(
-                &forward_request("status", "GET", json!({})).await?,
-            ))
+            for i in ingresses().await?.as_array().into_iter().flatten() {
+                forward_request(
+                    &format!("ingress/{}/verification/reset", string(i, "id")),
+                    "POST",
+                    json!({}),
+                )
+                .await?;
+            }
+            Ok(ingresses().await?)
         }
         _ => Err("参数无效，请运行 cli help；不接受命令行密钥".into()),
     }

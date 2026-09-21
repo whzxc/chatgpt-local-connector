@@ -1,5 +1,7 @@
 # 接入 ChatGPT：OpenAI Tunnel 与 HTTPS MCP
 
+多个入口可以同时运行，共享同一个 Core。本文中的设置页操作针对默认入口；新增入口及独立认证请用 `cli ingress`。Cloudflare Fixed 的 `httpsPort` 默认 8787，多个 Fixed 入口必须选择不同端口并同步服务端路由。
+
 [English](../tunnel.md) | **简体中文**
 
 > 本文对应英文版本；若有差异，以[英文版本](../tunnel.md)为准。
@@ -30,20 +32,19 @@ Cloudflare 临时体验使用 [Quick Tunnels](https://developers.cloudflare.com/
 
 ### Cloudflare 固定域名
 
-1. 在 [Cloudflare 控制台](https://dash.cloudflare.com/)的 Networking → Tunnels 创建 Tunnel，复制安装命令中的 Token（不要复制整个命令）。无需另行安装客户端或系统服务。
-2. 在应用选择 Cloudflare → 固定域名，填写 Tunnel Token 和公网 MCP URL，例如 `https://connector.example.com/mcp`，点击「保存并重连」。
-3. 在该 Tunnel 的 Routes 中添加 Published application，选择对应的域名，将 Service URL 设置为应用提供的 `http://127.0.0.1:8787`，路径可留空；请求的 `/mcp` 路径会保留。域名必须已接入该 Cloudflare 账号。
-4. 将公网 MCP URL 添加到 ChatGPT，认证选择 No authentication，再发起验证调用。
+在 Cloudflare 创建远程管理的 Tunnel，将 Tunnel Token 填入连接表单，点击「获取 MCP URL」。取得地址后选择认证方式并保存；保存前临时入口不开放工具调用。在 Cloudflare 配置明确的公网域名，把 HTTP 服务指向 CLC 提供的代理目标地址（去掉 /mcp 路径）。无需额外 Cloudflare API Token。
 
-正式 Tunnel 使用固定的本机地址；若 8787 端口被占用，应用会报错，不会静默换端口。Tunnel Token 通过私有临时文件交给 cloudflared，普通状态和日志不会显示它；留空保存保留已有 Token，更换 Token 或地址后需重新验证。应用只负责本机客户端，不创建或修改 Cloudflare 的域名、路由及账号资源。隧道就绪不代表公开路由已配置或 ChatGPT 已连通。操作细节见 [Cloudflare 正式 Tunnel 指南](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/)。
+CLC 从 cloudflared 本机配置接口发现指向当前入口的域名：唯一匹配自动使用，多个匹配提供选择，没有匹配则提示配置路由。通配符和限制路径的规则不自动选用。域名、DNS 和 TLS 仍需由用户配置，并通过客户端完成入站验证。
+
+新入口自动分配并保存本机端口，表单不提供 IP 和端口编辑项；端口被占用时明确报错。Tunnel Token 使用私有存储和临时文件，不进入普通日志或状态。CLC 不创建或修改 Cloudflare 域名、路由或 DNS。
 
 ### 自定义域名
 
-填写公网 `https://你的域名/mcp`，默认监听 `127.0.0.1:8787`。同机反向代理可直接复制「代理目标」；代理位于其他设备时，在「高级设置」中填写本机局域网 IP 和端口，并允许代理访问该端口。
+填写公网 `https://你的域名/mcp`，保存后可复制应用分配的本机代理目标；通过同机反向代理转发请求。表单不提供监听 IP 和端口编辑项。
 
 将公网 `/mcp` 转发至代理目标。`Host` 使用公网域名或实际监听 IP:端口，支持 JSON POST 与长请求，使用完整的五分钟任务等待时，代理超时应至少为 300 秒并预留传输开销。保存并从首页开启连接后，在 ChatGPT 添加对应 MCP URL，认证选择 No authentication。
 
-以上 HTTPS 接入方式均无需认证，任何能访问公网地址的客户端都能调用工具；自备反向代理可自行限制访问。当前原生入口不提供访问密钥或 OAuth 认证。
+每个 HTTPS 入口支持 `auth=none` 或 `auth=bearer`，通过 CLI 配置。none 允许所有能访问地址的调用方使用已授权工具；bearer 要求该入口独立的 Authorization 凭据。暂不支持 OAuth/DCR。详见 [Codex 配置指南](codex-setup.md)。
 
 原生 HTTP 入口仅提供 `/mcp`，与桌面管理 API、内部随机凭据隔离。使用无会话 Streamable HTTP，POST 返回 JSON，通知返回 202；不提供独立 SSE GET 流。HTTPS 由所选服务商或用户的代理终止。
 
@@ -110,7 +111,7 @@ HTTPS 接入的公网反向代理及本机 MCP 入站监听不受这个出站代
 
 ## 停止与排障
 
-点击「关闭连接」会停止 Tunnel、stdio 适配及 Connector 的辅助进程。Desktop 自己执行的任务继续运行，未确认的外部请求保留回执。需要撤回远程接入时，在 ChatGPT 中移除对应连接。
+停止入口只关闭该入口的 Tunnel、stdio 适配和 listener；AgentHost/Control 在 Core 退出时才关闭。Desktop 自己执行的任务继续运行，未确认的外部请求保留回执。需要撤回远程接入时，在 ChatGPT 中移除对应连接。
 
 无法发现工具时，先检查应用中的 Tunnel 状态和记录；本机程序未找到时安装程序或指定其完整路径。使用前应在 Codex Desktop 中完成登录；连接异常时检查 Desktop 是否可用。无法调用某个原生方法时查询 `codex_schema`，核对当前二进制是否提供该方法。
 

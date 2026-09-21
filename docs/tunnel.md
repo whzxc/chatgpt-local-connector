@@ -1,5 +1,7 @@
 # Connect ChatGPT: OpenAI Tunnel and HTTPS MCP
 
+Multiple ingresses run concurrently against one Core. Settings operate on the primary ingress; use `cli ingress` to add independently authenticated entries. Cloudflare Fixed defaults to httpsPort 8787; assign distinct ports and match the remote service routes for multiple Fixed entries.
+
 **English** | [简体中文](zh-CN/tunnel.md)
 
 Return to the [project home](../README.md). For assisted setup, send the home page's message to local Codex and follow the [setup and troubleshooting guide](codex-setup.md), which defaults to the official Tunnel. The instructions below cover manual setup. Configure and control connections in the native app's Settings. Missing connection components are prepared automatically; you do not need to create a Tunnel profile manually.
@@ -11,7 +13,7 @@ In Settings → Connection, select HTTPS MCP and choose a provider. All options 
 | Provider | Required information | Managed by the app | Boundaries |
 | --- | --- | --- | --- |
 | Cloudflare · Quick trial | None | Downloads cloudflared, starts a Quick Tunnel, obtains a public URL | No account or domain; the URL may change on reconnect. For trials, without availability guarantees |
-| Cloudflare · Fixed domain | Tunnel Token, public MCP URL | Downloads cloudflared, runs a named Tunnel, listens on `127.0.0.1:8787` | Your Cloudflare account must have the domain and a configured public route |
+| Cloudflare · Fixed domain | Tunnel Token | Downloads cloudflared, runs a named Tunnel, discovers matching public domains | Your Cloudflare account must have the domain and a configured public route |
 | ngrok | Account Authtoken | Downloads ngrok, starts a tunnel, obtains the account's public URL | Requires an ngrok account; its traffic, request, and concurrency limits apply |
 | Custom domain | Public MCP URL | Starts the local MCP listener | You provide a domain, valid TLS certificate, and reverse proxy |
 
@@ -28,12 +30,11 @@ Components are downloaded from official HTTPS sources and cached locally. Cloudf
 
 ### Cloudflare fixed domain
 
-1. Create a Tunnel under Networking → Tunnels in the [Cloudflare dashboard](https://dash.cloudflare.com/). Copy only the Token from the install command, not the entire command. No separate client or system service installation is needed.
-2. Choose Cloudflare → Fixed domain in the app. Enter the Tunnel Token and public MCP URL, such as `https://connector.example.com/mcp`, then select Save and reconnect.
-3. Under the Tunnel's Routes, add a Published application for your domain. Set the Service URL to the app's `http://127.0.0.1:8787`. The path can be empty; the request's `/mcp` path is preserved. The domain must belong to that Cloudflare account.
-4. Add the public MCP URL in ChatGPT with No authentication, then make a verification call.
+Create a remotely managed Tunnel in Cloudflare and copy its Tunnel Token into the connection editor. Click Get MCP URL to start URL discovery without publishing a usable MCP connection. Once a URL is available, choose authentication and save. Configure a published application route in Cloudflare with an exact hostname and the copyable HTTP proxy target shown by CLC (use the target origin, without /mcp). No extra Cloudflare API token is required for discovery.
 
-Named Tunnels use a fixed local address. If port 8787 is occupied, the app reports an error instead of silently changing ports. The Tunnel Token is passed to cloudflared in a private temporary file and omitted from normal status and logs. Saving an empty Token preserves the existing one; changing the Token or URL requires verification again. The app manages only the local client, not Cloudflare domains, routes, or account resources. Tunnel readiness does not prove the public route is configured or ChatGPT can connect. See the [Cloudflare named Tunnel guide](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/).
+CLC reads cloudflared's local configuration and selects a unique domain routed to this ingress; multiple matching domains are offered for selection. With no match it shows routing guidance. Wildcards and path-constrained rules are not automatically selected. DNS and TLS still need to be configured, and the client must perform inbound verification.
+
+Each ingress receives a saved local port; occupied ports fail explicitly instead of silently changing the route. The editor does not expose listener IP or port inputs. Tunnel Token is stored privately and passed in a temporary file, never in ordinary status or logs. CLC does not create or change Cloudflare domains, routes, or DNS records.
 
 ### Custom domain
 
@@ -41,7 +42,7 @@ Enter a public `https://your-domain/mcp` URL. The default listener is `127.0.0.1
 
 Forward public `/mcp` requests to the proxy target. Use the public domain or actual listening IP:port as `Host`. Support JSON POST and long requests; allow at least 300 seconds plus transport overhead if you use the full five-minute task wait. After saving and connecting from the home screen, add the MCP URL in ChatGPT with No authentication.
 
-All HTTPS options above are unauthenticated: any client that can access the public URL can call tools. A self-managed reverse proxy can restrict access. The native endpoint currently provides neither access keys nor OAuth authentication.
+Each HTTPS ingress supports `auth=none` or `auth=bearer`. With none, anyone reaching the endpoint can invoke its allowed tools. With bearer, the client must send that ingress’s token in Authorization. OAuth/DCR is not implemented. Use `cli ingress` for authentication and tool policies; see the [Codex setup guide](codex-setup.md).
 
 The native HTTP endpoint exposes only `/mcp`, separately from the desktop management API and its random internal credential. It uses stateless Streamable HTTP: POST returns JSON, notifications return 202, and no separate SSE GET stream is available. TLS terminates at the provider or your reverse proxy.
 
@@ -108,7 +109,7 @@ A browser reaching ChatGPT does not prove Tunnel can reach OpenAI. If creating t
 
 ## Stop and troubleshoot
 
-Disconnect stops Tunnel, the stdio adapter, and Connector helper processes. Desktop-owned tasks keep running; unconfirmed external requests retain their receipts. Remove the connection in ChatGPT when revoking remote access.
+Stopping an ingress stops only its Tunnel, stdio adapter and listener. AgentHost and Control remain alive until core shutdown. Desktop-owned tasks keep running; unconfirmed external requests retain their receipts. Remove the connection in ChatGPT when revoking remote access.
 
 If tools cannot be discovered, check Tunnel status and Records. If a local binary is missing, install it or specify its full path. Sign in to Codex Desktop before use and check that Desktop is available when connections fail. For an unavailable native method, query `codex_schema` and check whether the current binary provides it.
 

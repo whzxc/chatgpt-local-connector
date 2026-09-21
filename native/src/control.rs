@@ -360,7 +360,7 @@ impl Control {
             old["replayed"] = json!(true);
             return Ok(old);
         }
-        let mut receipt = json!({"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","createdAt":now(),"updatedAt":now()});
+        let mut receipt = json!({"origin":crate::ingress::current_origin(),"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","createdAt":now(),"updatedAt":now()});
         if operation == "create" || (operation == "native" && args["method"] == "thread/start") {
             receipt["executionOwner"] = json!(if self.auto_open_codex()? {
                 "desktop"
@@ -376,6 +376,7 @@ impl Control {
                 _ => "automatic",
             };
             receipt["task"] = task;
+            receipt["task"]["origin"] = receipt["origin"].clone();
             receipt["arguments"] = args.clone();
             receipt["approval"] = json!({"decision":decision,"source":"cloud","at":now()});
             if decision == "pending" {
@@ -416,7 +417,8 @@ impl Control {
         let op = operation.to_owned();
         let key = request.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let job = tokio::spawn(async move {
+        let origin = receipt["origin"].clone();
+        let job = tokio::spawn(crate::ingress::ORIGIN.scope(origin, async move {
             let outcome = c.perform(&op, &args, &mut receipt).await;
             match outcome {
                 Ok(result) => {
@@ -438,7 +440,7 @@ impl Control {
             let result = c.checkpoint(&mut receipt).map(|_| receipt);
             let _ = tx.send(result);
             c.jobs.lock().await.remove(&key);
-        });
+        }));
         jobs.insert(request.clone(), job);
         rx
     }

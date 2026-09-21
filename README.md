@@ -1,5 +1,7 @@
 # ChatGPT Local Connector
 
+CLC supports concurrent ingress for multiple MCP control sources. OpenAI Tunnel and HTTPS (Cloudflare, ngrok, custom domain) share one Core and task namespace. Configure per-ingress authentication, tool policy and lifecycle with `cli ingress`; see [Codex setup](docs/codex-setup.md).
+
 **English** | [简体中文](README.zh-CN.md)
 
 **Discuss an idea in ChatGPT. Let a coding agent on your computer do the work.**

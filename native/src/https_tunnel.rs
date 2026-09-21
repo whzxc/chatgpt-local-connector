@@ -14,6 +14,9 @@ pub struct Tunnel {
     cloudflare_named: bool,
     upstream: String,
     pub url: String,
+    pub urls: Vec<String>,
+    pub(crate) selected_url: String,
+    pub notice: String,
 }
 impl Drop for Tunnel {
     fn drop(&mut self) {
@@ -28,7 +31,7 @@ impl Tunnel {
     pub async fn ready(&mut self) -> Result<bool> {
         if self.child.try_wait().map_err(|e| e.to_string())?.is_some() {
             return Err(format!(
-                "{} 隧道进程已退出，请检查网络和账号后重新连接",
+                "{} 隧道进程已退出，请检查凭据、网络、账号并发会话和端点额度后重试",
                 self.provider
             ));
         }
@@ -45,6 +48,36 @@ impl Tunnel {
         }
         if self.provider == "cloudflare" {
             if self.cloudflare_named {
+                let response = client
+                    .get(self.health.replace("/ready", "/config"))
+                    .send()
+                    .await
+                    .map_err(|_| "无法读取 Cloudflare 路由配置，请检查 cloudflared 版本")?;
+                if !response.status().is_success() {
+                    return Err("无法读取 Cloudflare 路由配置，请更新 cloudflared".into());
+                }
+                let value = response
+                    .json::<Value>()
+                    .await
+                    .map_err(|_| "Cloudflare 路由配置无效")?;
+                if value["version"].as_i64().unwrap_or(-1) < 0 {
+                    return Ok(false);
+                }
+                self.urls = matching_urls(&value, &self.upstream);
+                self.url = if self.urls.contains(&self.selected_url) {
+                    self.selected_url.clone()
+                } else if self.urls.len() == 1 {
+                    self.urls[0].clone()
+                } else {
+                    String::new()
+                };
+                self.notice = if self.urls.is_empty() {
+                    format!("未发现指向 {}/mcp 的公网路由，请在 Cloudflare 配置对应 HTTP 服务及明确的域名", self.upstream)
+                } else if self.url.is_empty() {
+                    "发现多个公网域名，请选择此入口使用的地址".into()
+                } else {
+                    String::new()
+                };
                 return Ok(true);
             }
             let Ok(response) = client
@@ -88,6 +121,47 @@ impl Tunnel {
         }
         Ok(false)
     }
+}
+// Only unambiguous, exact public hosts routed to this ingress's HTTP origin.
+fn matching_urls(value: &Value, upstream: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let mut previous: Vec<String> = Vec::new();
+    for rule in value["config"]["ingress"].as_array().into_iter().flatten() {
+        let host = string(rule, "hostname");
+        let shadowed = previous
+            .iter()
+            .any(|h| h.is_empty() || h.contains('*') || h == host);
+        previous.push(host.to_owned());
+        if shadowed || host.is_empty() || host.contains('*') || !string(rule, "path").is_empty() {
+            continue;
+        }
+        let Ok(origin) = reqwest::Url::parse(string(rule, "service")) else {
+            continue;
+        };
+        let Ok(target) = reqwest::Url::parse(upstream) else {
+            continue;
+        };
+        let local = |host: Option<&str>| matches!(host, Some("localhost" | "127.0.0.1"));
+        if origin.scheme() != target.scheme()
+            || origin.port_or_known_default() != target.port_or_known_default()
+            || !(origin.host_str() == target.host_str()
+                || local(origin.host_str()) && local(target.host_str()))
+            || origin.path() != "/"
+            || origin.query().is_some()
+            || origin.fragment().is_some()
+            || !origin.username().is_empty()
+            || origin.password().is_some()
+        {
+            continue;
+        }
+        if let Some(url) = public_url(&format!("https://{host}"), false) {
+            if !urls.contains(&url) {
+                urls.push(url);
+            }
+        }
+    }
+    urls.sort();
+    urls
 }
 fn public_url(text: &str, cloudflare: bool) -> Option<String> {
     let u = reqwest::Url::parse(text).ok()?;
@@ -175,6 +249,9 @@ async fn spawn(
         cmd.args(["http", upstream, "--config"])
             .arg(&config)
             .arg("--inspect=false");
+        if let Ok(url) = reqwest::Url::parse(string(settings, "httpsUrl")) {
+            cmd.arg("--url").arg(url.origin().ascii_serialization());
+        }
         health = format!("http://{admin}/api/endpoints");
     }
     // Agent logs can include credentials and private requests. Read only the loopback status API.
@@ -192,11 +269,10 @@ async fn spawn(
         provider: provider.into(),
         cloudflare_named,
         upstream: upstream.into(),
-        url: if cloudflare_named {
-            string(settings, "httpsUrl").to_owned()
-        } else {
-            String::new()
-        },
+        url: String::new(),
+        urls: Vec::new(),
+        selected_url: string(settings, "httpsUrl").to_owned(),
+        notice: String::new(),
     };
     let deadline = Instant::now() + Duration::from_secs(90);
     loop {
@@ -217,6 +293,8 @@ async fn spawn(
     }
 }
 async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<PathBuf> {
+    static INSTALL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = INSTALL.lock().await;
     let platform = if cfg!(target_os = "macos") {
         "darwin"
     } else if cfg!(windows) {

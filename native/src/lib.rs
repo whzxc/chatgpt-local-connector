@@ -10,6 +10,7 @@ pub mod control;
 pub mod desktop;
 pub mod https;
 pub mod https_tunnel;
+pub mod ingress;
 pub mod projects;
 pub mod proxy;
 pub mod rpc;

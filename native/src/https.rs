@@ -1,6 +1,6 @@
 //! Stateless Streamable HTTP MCP ingress. TLS is terminated by the user's proxy.
 //! This listener never exposes the desktop management API.
-use crate::{service::Service, *};
+use crate::{ingress::Ingress, *};
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{
     body::{Bytes, Incoming},
@@ -18,13 +18,16 @@ use tokio::{
 };
 
 pub async fn listen(
-    service: Arc<Service>,
+    service: Arc<Ingress>,
     settings: &Value,
 ) -> Result<(JoinHandle<()>, SocketAddr)> {
     let managed = settings["httpsProvider"] != "custom";
     let addr = if settings["httpsProvider"] == "cloudflare" && settings["cloudflareMode"] == "named"
     {
-        "127.0.0.1:8787".parse::<SocketAddr>().unwrap()
+        SocketAddr::new(
+            "127.0.0.1".parse().unwrap(),
+            settings["httpsPort"].as_u64().ok_or("invalid port")? as u16,
+        )
     } else if managed {
         "127.0.0.1:0".parse::<SocketAddr>().unwrap()
     } else {
@@ -87,12 +90,29 @@ fn reply(code: u16, value: Option<Value>) -> Response<Full<Bytes>> {
 }
 async fn handle(
     request: Request<Incoming>,
-    service: Arc<Service>,
+    service: Arc<Ingress>,
     local_host: String,
 ) -> std::result::Result<Response<Full<Bytes>>, Infallible> {
     let error = |code, message| Ok(reply(code, Some(json!({"error":message}))));
     if request.uri().path() != "/mcp" || request.uri().query().is_some() {
         return error(404, "not found");
+    }
+    if !service
+        .authenticate(
+            request
+                .headers()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or(""),
+        )
+        .await
+    {
+        let mut response = reply(401, Some(json!({"error":"unauthorized"})));
+        response.headers_mut().insert(
+            "www-authenticate",
+            hyper::header::HeaderValue::from_static("Bearer"),
+        );
+        return Ok(response);
     }
     let url = service.mcp_url.lock().await.clone();
     let Ok(url) = reqwest::Url::parse(&url) else {
@@ -188,9 +208,15 @@ async fn handle(
     }
     // Notifications have no response and must never execute tools without a request ID.
     if value.get("id").is_none() {
+        if matches!(
+            string(&value, "method"),
+            "notifications/cancelled" | "notifications/initialized"
+        ) {
+            let _ = crate::transport::mcp_ingress(&service, value).await;
+        }
         return Ok(reply(202, None));
     }
-    match crate::transport::mcp(&service, value).await {
+    match crate::transport::mcp_ingress(&service, value).await {
         Ok(value) => Ok(reply(200, Some(value))),
         Err(_) => error(400, "invalid MCP request"),
     }

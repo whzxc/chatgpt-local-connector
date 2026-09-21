@@ -1,75 +1,82 @@
-# Set up and troubleshoot Local Connector with Codex
+# Configure Local Connector with Codex
 
 **English** | [简体中文](zh-CN/codex-setup.md)
 
-This is the operating guide for Codex on the target computer. Default to OpenAI Secure MCP Tunnel. A full installation and configuration request includes a real ChatGPT tool call and a harmless Codex task verification. Do not send the user back to the entire guide to do the work themselves; ask for intervention only when sign-in, permissions, credentials, or a necessary choice requires it.
+Use the CLI on the target computer. Start by reading `<app executable> cli help`, `cli status` and `cli ingress list`. Help and guide work offline; other commands require the matching running app. Do not overwrite another ingress or install over a running version without authorization. OpenAI Secure Tunnel remains the default ChatGPT onboarding path.
 
-## Entry points and installation
+On macOS the usual executable is `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop`; on Windows use the installed `local-connector-desktop.exe`. Do not require Node/npm on users' machines. Every CLI response is JSON: `{schemaVersion:1,ok:true,result:...}` or `{schemaVersion:1,ok:false,error:{code,message}}`, with exit status 0 or 1. Read operation results and per-ingress state, not just the exit code of a diagnostic command.
 
-Use local Codex with command execution on the target computer. A cloud task cannot directly configure the user's computer. Inspect existing installation and runtime state first; do not reinstall unnecessarily or overwrite working configuration. Desktop task integration supports Apple Silicon macOS and Windows x64; Windows requires Microsoft Store Codex Desktop.
+## Commands
 
-If missing, download the matching installer and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) and compare hashes for the same version. On macOS, install into Applications or use the installation guide's Homebrew Cask; on Windows, run the x64 EXE or MSI. Node, npm, Rust, and cloning the source are unnecessary. Follow the installation guide for OS security prompts without disabling global protections. Do not keep running the app from its DMG.
+| Command after `cli` | Purpose |
+| --- | --- |
+| `ingress list` | Redacted configuration, URL, runtime status, logs, verification for every ingress |
+| `ingress add --stdin` | Create an entry from JSON; omitted id is generated |
+| `ingress update <id> --stdin` | Partial update; config fields merge; stop the target first |
+| `ingress remove <id>` | Stop and remove one entry, preserving tasks and other entries |
+| `ingress start <id>` / `ingress stop <id>` | Start/stop only that entry |
+| `ingress start-all` / `ingress stop-all` | Operate on all entries; start skips disabled entries; results report each failure |
+| `ingress token rotate <id>` | While stopped, generate a bearer secret and return it once in stdout; resets target verification |
+| `ingress doctor <id>` | Configuration, runtime evidence and client setup instructions |
+| `ingress verify <id> --fresh` | Generate a fresh challenge for only this entry |
+| `ingress verify <id>` | Read the existing challenge without resetting it |
+| `status` / `doctor` / `onboarding` | Global summary and per-ingress JSON; readiness is not inbound or execution proof |
+| `network --stdin` | Global proxyMode/proxyUrl; existing ingress processes need reconnecting |
+| `configure --stdin`, `connect`, `disconnect` | Primary ingress onboarding shortcuts; do not operate on all entries |
+| `verify`, `verify --fresh` | Read all challenges, or explicitly reset all challenges |
 
-Open Local Connector on macOS. The default installation provides these CLI entry points:
+Add requires controlSource, transport, auth and config. Name defaults to controlSource, enabled to true, toolPolicy to all. `id` is immutable and contains ASCII letters, digits, hyphen or underscore. ControlSource is a descriptive client label, not an authenticated user identity. HTTPS requires auth none or bearer; OpenAI Tunnel requires auth openai. Bearer requires a unique 32+ printable ASCII secret supplied through stdin. `toolPolicy` is `"all"` or `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait"]}`. Both tool discovery and invocation enforce it. Include connector_verify to use challenge verification. This policy does not isolate tasks or filter native methods within a tool.
 
-```sh
-"/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli help
-"/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli guide
-"/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli doctor
+Configuration keys and limits are discoverable in help. No secret is accepted as a command argument. Pipe JSON from an authorized secure local source, or redirect a protected file. Do not put secrets in shell literals, chat, screenshots or logs. For rotation, arrange a private destination first (for example `umask 077` and stdout redirection to a local file); do not capture stdout into a conversation. Deliver the secret to the supported client credential field using authorized local interaction. Never substitute the desktop management token or provider credential for the ingress bearer token.
+
+## ChatGPT, Notion and Slack examples
+
+The following are configuration shapes, not real credentials. Replace secret fields through secure stdin input. Each represents a separate entry sharing the same Core and task IDs.
+
+ChatGPT uses the official identity system:
+
+```json
+{"id":"chatgpt","name":"ChatGPT","controlSource":"chatgpt","transport":"openai-tunnel","auth":"openai","config":{"tunnelId":"tunnel_example","apiKey":"FROM_SECURE_LOCAL_SOURCE"}}
 ```
 
-Use the actual installation location. `CFBundleExecutable` in `Contents/Info.plist` identifies the executable. On Windows, use `local-connector-desktop.exe cli help` in the installation directory and redirect its JSON output when needed.
+Obtain the Tunnel identity and runtime key through the official Platform flow and associate it with the intended workspace. Use the client's supported Tunnel connection UI. Personal sign-in, permissions, CAPTCHA and identity authorization remain user actions; do not bypass them.
 
-`cli guide` embeds the matching guide for the current binary and takes precedence over the website. If an older release has no CLI, do not repeatedly try unknown arguments. Check release support and upgrade if appropriate. Website documentation does not mean every command is already in the latest published installer.
+Notion-labelled MCP access via a fixed ngrok endpoint:
 
-## CLI conventions
+```json
+{"id":"notion","controlSource":"notion","transport":"https","auth":"bearer","bearerToken":"FROM_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"ngrok","httpsUrl":"https://your-reserved-domain.ngrok.app/mcp","ngrokAuthtoken":"FROM_SECURE_LOCAL_SOURCE"}}
+```
 
-Run `<app executable> cli <command>`; no separate CLI installation is needed. Each command outputs one JSON object; `--json` can be specified explicitly:
+Slack-labelled MCP access via Cloudflare Fixed:
 
-- Success: `{"schemaVersion":1,"ok":true,"result":...}`, exit code 0.
-- Failure: `{"schemaVersion":1,"ok":false,"error":{"code":"...","message":"..."}}`, exit code 1.
-- A successful `doctor` invocation does not prove configuration is complete. Read `result.checks`, `next`, and `stage`.
-- `APP_UNAVAILABLE`: open the app, then retry the read-only command. `APP_VERSION_MISMATCH`: check the mismatch between the running app and CLI capabilities.
-- `help` and `guide` do not need a backend. Other commands call the desktop app's existing local service and work while the tunnel is disconnected. Do not edit internal state files or expose internal management credentials.
+```json
+{"id":"slack","controlSource":"slack","transport":"https","auth":"bearer","bearerToken":"FROM_ANOTHER_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"cloudflare","cloudflareMode":"named","httpsUrl":"https://connector.example.com/mcp","httpsPort":8788,"cloudflareToken":"FROM_SECURE_LOCAL_SOURCE"}}
+```
 
-| Command | Purpose |
-| --- | --- |
-| `status` | Redacted configuration, connection and Desktop IPC state, historical verification |
-| `doctor` | Checks configuration, sign-in, transport, and historical inbound access for the current Tunnel / HTTPS mode and execution owner; returns the next step |
-| `onboarding` | Current step, web entry points, suggested name/description, connection type and URL/ID, verification and harmless-task messages; no keys or automatic website installation |
-| `configure --stdin` | Reads JSON from stdin, accepting only tunnelId and apiKey, and configures official Tunnel mode; preserve HTTPS settings through desktop Settings instead of overwriting them |
-| `network --stdin` | Reads proxyMode and proxyUrl from stdin, using the app's proxy settings |
-| `connect` / `disconnect` | Starts/stops through the existing backend; connect automatically prepares Tunnel Client |
-| `logs` | Connection logs redacted by the app |
-| `verify --fresh` | Generates a new code, clears verification for the current configuration, and starts a new verification round |
-| `verify` | Current code, ChatGPT verification message, verifiedAt, and challengeVerifiedAt; does not make a remote call |
+Set that Cloudflare tunnel's service route to `http://127.0.0.1:8788`. Each Fixed ingress needs its own route/port and Tunnel identity; do not reuse an identity to load-balance incompatible authentication contexts. Cloudflare stores remote-managed routing on its server; CLC does not change it with a Tunnel token. See [official routing setup](https://developers.cloudflare.com/tunnel/get-started/).
 
-## Workflow
+For Quick Tunnel use cloudflareMode quick, without a fixed URL or provider token. Use it for temporary trials. Prefer fixed addresses plus authentication for long-lived Notion/Slack-labelled access. For Custom Domain use httpsProvider custom, httpsUrl, httpsHost and httpsPort, and configure the TLS reverse proxy separately. The listener is HTTP behind TLS termination; never expose the desktop management listener.
 
-1. Run `doctor` and `status` to determine existing configuration, running state, and connection mode. Preserve a configured HTTPS connection instead of requesting a switch just because official Tunnel is the default. Clearly report unsupported platforms for full task integration.
-2. If Codex is missing or signed out, open the official installation or sign-in page and continue after the user signs in. Preserve task ownership, approval, and sign-in startup preferences by default.
-3. Only if official Tunnel is in use and details are missing, open [Platform Tunnel settings](https://platform.openai.com/settings/organization/tunnels). Prefer authorized secure local sources and read an existing Tunnel ID yourself. If a runtime API Key is missing, ask the user to enter it directly in the app. Verify workspace association and permissions; Codex sign-in does not replace these. Explain missing account/administrator requirements instead of retrying repeatedly.
-4. For official Tunnel, ask the user to enter and save credentials in Settings → Connection → OpenAI Tunnel only when no secure local source exists. Continue when doctor reports configuration. Never request keys in chat or expose them in arguments, logs, or screenshots. With an authorized secure local credential source, pass JSON through stdin without embedding literal secrets in shell commands. Omitted configure fields and an empty apiKey preserve existing values; a changed Tunnel ID needs a matching key. Configuration changes while connected are rejected: establish that a change is needed, then disconnect.
-5. Run connect, then poll doctor/status for readiness. A successful connect response only confirms the start request. Read logs for download/network failures and act on the observed error. Change only Connector's proxy: network accepts system, direct, or custom; custom requires an HTTP/HTTPS proxyUrl. Existing Tunnel connections need reconnecting to apply changes. Do not change the system proxy.
-6. Read onboarding (status/verify for older releases) for the suggested name, description, connection type, and value. If the user supplies a signed-in browser environment, actually attempt browser / GUI / Computer Use interaction. Prefer the specified signed-in tab, then the in-app Browser. Use visible text and accessible controls; do not assume selectors, coordinates, or settings deep links. State when browser control is unavailable.
-7. Check ChatGPT Settings → Security & sign-in → Developer Mode, then [Plugins](https://chatgpt.com/plugins). The create entry may be Add → Create MCP App or ＋. Match existing connections by the current URL/ID, not just name, and reuse them; create only if missing. For Tunnel, select the tunnel or enter value; for HTTPS, enter value with No authentication, never a management port or Tunnel API Key. Confirm discovery of connector_verify and other tools; refresh an existing connection from its details when needed. Rematch temporary URLs after changes and follow the active tool's confirmation requirements before deleting old connections. Pause only for personal sign-in, identity/permission authorization, security codes, missing account/workspace access, or unreliable controls. Identify the page and minimum action. Follow browser safety confirmation rules without bypassing them.
-8. Start a new verification round with verify --fresh and retain the code. To resume an interrupted round, use verify without regenerating it. Create a Chat conversation in ChatGPT (switch from Work if necessary), select Local Connector, and send the returned prompt. Try in chat from an existing plugin's details can also select it. Poll verify, confirm the code is unchanged and challengeVerifiedAt appears, and confirm the corresponding ChatGPT tool call succeeded. After a bounded wait (for example two minutes), inspect logs/doctor. Ordinary successful calls update verifiedAt only. If fields are missing, check the running version; older releases require the matching code/received tool result plus current inbound records. Never call locally to impersonate ChatGPT inbound access. Inbound access alone does not authenticate the caller's identity.
-9. For a full setup request, continue through the same ChatGPT connection with onboarding.executionPrompt, or create a task that calls no tools, reads or modifies no files, and only replies CLC_ONBOARDING_OK. This is a verification task, not a change to a real project. Follow the current tool schema, use a unique UUID requestId, and read the persistent receipt, native threadId/turnId, final state, and output. Handle approvals according to user authorization and tool rules. Read back unknown states with the original requestId; do not replay with a new ID. If this step is incomplete, report that task execution is not yet verified. Accepted/running does not mean complete.
+These labels configure CLC ingress, not Notion APIs, a Slack bot, or a client-side integration. Confirm the actual MCP client's authentication support. A client requiring OAuth/DCR cannot use this bearer-only implementation directly. Do not present a local listener as proof of official Notion/Slack connectivity.
 
-## Automation boundaries
+## Complete an authorized setup
 
-The desktop guide presents Enable Developer Mode → Create MCP App → Send verification message on one page. Name, description, HTTPS URL, and verification message can each be copied. Select the current Tunnel directly and choose No Authentication. Inbound results update automatically; verification can be repeated. CLI onboarding provides structured values, so users do not need to copy local URLs, IDs, or verification messages for Codex. The app itself neither reads browser sign-in state nor controls ChatGPT's website.
+For “add a Notion ngrok + bearer ingress”: inspect ingress list; preserve existing entries; prepare a protected bearer secret and the user's ngrok credential; add through stdin; start that id; poll its doctor until ready; read its public URL; securely configure the supported MCP client. Do not silently select a temporary URL if long-term use was requested. Report provider account/endpoint limits explicitly if startup fails.
 
-The official public flow still requires enabling Developer Mode, creating connections, refreshing tools, and selecting connections through ChatGPT UI. Public documentation links to Plugins but provides no creation/installation API, prefill protocol, or Developer Mode toggle deep link for CLC. Responses API MCP calls do not install plugins into a ChatGPT account. Do not use private interfaces, extract cookies/tokens, or run fixed DOM automation scripts.
+Run `ingress verify <id> --fresh`. Call connector_verify with that code from the actual control source and read back that entry's challengeVerifiedAt, ingressId and controlSource. A successful local probe proves local transport only. Ordinary tools update historical verifiedAt but cannot satisfy a fresh challenge. Verification on another ingress must not count. Resume interrupted setup using the existing code rather than generating another one.
 
-A signed-in page with available, authorized browser tools lets Codex navigate and fill visible controls. This is not a stable fully automatic platform API and does not guarantee zero user interaction for every account. Entry names vary; local software cannot bypass missing workspace permissions, Tunnel association, personal authorization, or security challenges. Hand back only the currently blocked step when controls are unreliable, then continue. This remains a local open-source tool without cloud accounts, hosting, public relays, or a Public Plugin.
+For full execution acceptance, create a harmless task through that source, using a unique UUID requestId and a prompt that uses no tools and only replies CLC_ONBOARDING_OK. Read the persistent receipt and taskId/threadId, then agent_wait/codex_wait and the terminal output. Unknown results require readback with the original requestId, never a fresh write. To check shared task namespace, read/send/wait the same task through another permitted ingress. Stopping an ingress must not stop Pi/ACP or Desktop tasks.
 
-## Troubleshooting and recovery
+In a supplied authenticated browser, use visible supported controls to configure the connection and refresh tools; prefer the in-app Browser unless a browser was specified. Do not extract cookies or use private platform APIs. If client sign-in or authorization is required, complete independent local work and identify the precise remaining client-side action.
 
-Start with doctor/status even in a new Codex conversation. Configuration and verification records belong to the app, not prior chat memory. Resume an existing verification code with verify; use --fresh only for a new round.
+## Boundaries
 
-Distinguish evidence for: app not running, missing details, expired sign-in, unavailable Desktop IPC, component download failure, Tunnel network errors, insufficient workspace access, ChatGPT not selecting the connection, and unknown submission results. Do not treat every error as a reason to reinstall or reset configuration. Apply authorized, evidence-supported fixes automatically; hand invalid credentials, administrator access, and account choices to the user. Read back state and verify again afterward.
+No-auth allows any reachable caller to invoke allowed tools. Bearer authenticates possession, not a person. Namespace is globally shared; no task/user RBAC exists. OAuth, DCR, Slack Identity and service-specific APIs are outside this implementation. Local listener request processing permits 300-second waits; external proxies and provider plans may impose shorter limits, which require their own verification/configuration. Shorter waits can be repeated with the same task ID; timeout never stops a task.
 
-Report local connection, ChatGPT inbound access, and task execution verification separately, including any outstanding action. Do not expose keys, complete private logs, or real task content.
+An ingress failure is local to that entry. Read its error and redacted logs before changing configuration. App shutdown closes ingress resources, then AgentHost and Control; ordinary disconnect does not. The home page shows a running count and one line per entry. Credentials, policies and provider details primarily belong in the CLI.
 
-References: [installation](installation.md), [Tunnel setup](tunnel.md), [official Tunnel documentation](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels), [ChatGPT connection documentation](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+## Monitoring tasks
+
+After create/send, obtain the original taskId/threadId and turnId from the receipt. Codex should call agent_wait/codex_wait in 20–30-second slices (default timeoutMs=30000): on timeout, keep the same IDs and pass the previous snapshotHash as expectedHash to the next wait, until completed/failed/cancelled or interaction-required. Do not recreate a task or resend its prompt after timeout. Timeout or cancelling a wait only ends that wait; unconfirmed is not task failure. expectedHash controls changed comparison, never suppressing terminal or interaction results.
+
+This is bounded event-driven long polling: each slice uses event wakeups and fresh owner-state checks, not repeated read/sleep polling. ChatGPT, Notion, Slack and other MCP clients may impose different outer tool-call timeouts. Use the shared 30-second default; ordinary Chat and general MCP clients should not block for minutes by default. Explicit timeoutMs up to 300000 remains available when the upstream client supports it; the OpenAI Tunnel stdio adapter retains a 330-second forwarding budget and HTTPS MCP does not impose a shorter execution deadline. CLC cannot extend external client/proxy timeouts.

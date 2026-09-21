@@ -1,77 +1,63 @@
-# 用 Codex 配置和排查 Local Connector
+# 用 Codex 配置 Local Connector
 
 [English](../codex-setup.md) | **简体中文**
 
-> 本文对应英文版本；若有差异，以[英文版本](../codex-setup.md)为准。
+在目标电脑使用应用自带 CLI，先读 `cli help`、`cli status`、`cli ingress list`。ChatGPT 默认推荐 OpenAI Secure Tunnel；保留已有入口，新增入口不覆盖默认连接。完整配置任务包含真实控制源入站与无害任务终态验证。
 
-本文是本机 Codex 的操作指南。默认使用 OpenAI Secure MCP Tunnel。完整安装配置请求默认包含真实 ChatGPT 工具调用和无害 Codex 任务验收。不要把用户引回整篇文档自行操作，只在需要登录、权限、凭据或必要选择时请用户介入。
+macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop cli help`；Windows 使用安装目录中的 `local-connector-desktop.exe cli help`。无需 Node/npm。help、guide 离线可用，其余命令需要同版本应用正在运行。成功输出 `{schemaVersion:1,ok:true,result:...}`，失败输出 `{schemaVersion:1,ok:false,error:{code,message}}`；退出码分别为 0、1。诊断成功不等于每个入口已经 ready。
 
-## 入口与安装
+## CLI 配置与生命周期
 
-必须使用能够在目标电脑执行命令的本机 Codex。云端任务不能直接配置用户电脑。先检查现有安装和运行状态，不重复安装，不覆盖已有可用配置。Desktop 任务接入支持 Apple Silicon macOS 和 Windows x64；Windows 需要安装 Microsoft Store 版 Codex Desktop。
+- `ingress list`：每入口脱敏配置、URL、运行状态、日志和验证。
+- `ingress add --stdin`：JSON 新建入口。
+- `ingress update <id> --stdin`：局部更新，config 按字段合并；先停止目标入口。
+- `ingress remove <id>`：停止并删除目标入口，保留任务和其他入口。
+- `ingress start <id>` / `ingress stop <id>`：独立启停。
+- `ingress start-all` / `ingress stop-all`：批量操作；start 跳过 enabled=false，每个结果独立报告。
+- `ingress token rotate <id>`：停止后轮换 bearer；新密钥仅此次 stdout 返回，重置该入口验证。
+- `ingress doctor <id>`：查看该入口配置、状态和接入指引。
+- `ingress verify <id> --fresh`：只重置该入口验证码；不带 --fresh 回读现有验证。
+- `status` / `doctor` / `onboarding`：全局摘要及多入口 JSON。
+- `network --stdin`：设置全局 proxyMode/proxyUrl；现有进程需重连生效。
+- `configure --stdin`、`connect`、`disconnect`：默认入口的简化操作，不影响其他入口。
+- `verify` 读取全部入口；`verify --fresh` 明确重置全部入口。
 
-未安装时，从 https://github.com/whzxc/chatgpt-local-connector/releases/latest 获取对应安装包和 SHA256SUMS.txt，核对同一版本的哈希；macOS 安装到 Applications，也可使用安装指南中的 Homebrew Cask；Windows 运行 x64 EXE 或 MSI 安装器。无需 Node、npm、Rust 或克隆源码。系统拦截按安装指南处理，不关闭系统整体安全机制。不要让用户从 DMG 内长期运行应用。
+新增必填 controlSource、transport、auth、config。name 默认 controlSource，enabled 默认 true，toolPolicy 默认 all；id 可省略自动生成，不能修改。id 只允许 ASCII 字母、数字、连字符、下划线。controlSource 是标签，不是已认证用户。
 
-在 macOS 打开 Local Connector。默认安装位置的 CLI：
+transport 为 `openai-tunnel` 时 auth 为 `openai`；HTTPS 支持 `none` 或 `bearer`。bearerToken 至少 32 个可打印 ASCII 字符，每入口独立，通过 stdin 输入。toolPolicy 为 `"all"` 或 `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait"]}`；tools/list 和 tools/call 同时执行限制。允许任务工具即允许访问共享任务，不按来源隔离；也不细分单个工具中的原生方法权限。
 
-```sh
-"/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli help
-"/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli guide
-"/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop" cli doctor
-```
+完整字段与 provider 选项见 `cli help` 和[英文配置示例](../codex-setup.md#chatgpt-notion-and-slack-examples)。凭据只能来自授权的安全本机来源并经 stdin 传递，不放在命令参数、shell 字面量、聊天、日志或截图中。轮换前先准备受保护的本机输出文件，例如设置 `umask 077` 并重定向 stdout，不让模型读取密钥输出。使用客户端支持的安全凭据输入完成交付。不要拿管理 API token、OpenAI key 或 provider token 代替 ingress bearer。
 
-以实际安装位置为准，应用包中的 `Contents/Info.plist` 的 `CFBundleExecutable` 指明可执行文件。Windows 可用安装目录中的 `local-connector-desktop.exe cli help`，通过重定向读取 JSON 输出。
+## 三类入口
 
-`cli guide` 是当前二进制内嵌的匹配版本指南，优先于网页。若旧版本不提供 CLI，不反复尝试未知参数；核对发行包是否已提供该能力，再升级。网页文档不代表最新发行包已经包含所有命令。
+ChatGPT：`controlSource=chatgpt`、`transport=openai-tunnel`、`auth=openai`；config 中填写官方 tunnelId 和 apiKey。保留官方身份申请、工作区关联及客户端接入流程。
 
-## CLI 约定
+Notion：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=ngrok` 入口。提供 ngrokAuthtoken 和独立 bearerToken；长期使用配置预留的 httpsUrl，以 `/mcp` 结尾。ngrok 自动使用独立 loopback 端口。
 
-命令为 `<应用可执行文件> cli <command>`，无需安装额外 CLI。所有命令输出单个 JSON 对象，允许显式添加 `--json`：
+Slack：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=cloudflare`、`cloudflareMode=named` 入口。配置 cloudflareToken、httpsUrl、httpsPort；例如 httpsPort=8788，对应 Cloudflare 服务端路由 `http://127.0.0.1:8788`。每个 Fixed 入口使用不同端口和 Tunnel 身份，不将不同认证上下文用同一身份做负载均衡。
 
-- 成功：`{"schemaVersion":1,"ok":true,"result":...}`，退出码 0。
-- 失败：`{"schemaVersion":1,"ok":false,"error":{"code":"...","message":"..."}}`，退出码 1。
-- `doctor` 检查执行成功不等于配置成功：读取 `result.checks`、`next` 和 `stage`。
-- `APP_UNAVAILABLE`：先打开应用，再重试只读命令。`APP_VERSION_MISMATCH`：运行中的应用与 CLI 能力不匹配，核对版本。
-- `help`、`guide` 无需后台；其他命令调用桌面应用持有的本机服务，隧道断开时仍可用。不直接编辑内部状态文件，不读出内部管理凭据。
+Cloudflare token 模式路由保存在服务端，CLC 不用 token 改写路由。Quick 模式自动分配临时地址，仅用于试用；长期入口优先固定地址加认证。Custom Domain 使用 httpsHost/httpsPort 接收自管 TLS 反向代理请求。不要公开桌面管理端口。
 
-| 命令 | 用途 |
-| --- | --- |
-| `status` | 脱敏配置、连接状态、Desktop IPC 状态和历史验证记录 |
-| `doctor` | 按当前 Tunnel / HTTPS 和任务执行方检查配置、登录、传输及历史入站；返回下一步 |
-| `onboarding` | 读取当前步骤、网页入口、名称/描述、连接方式及 URL/ID、验证消息和无害任务消息；不包含密钥，不代办网页安装 |
-| `configure --stdin` | 从标准输入读取 JSON，仅接收 tunnelId、apiKey，切换并配置官方 Tunnel；HTTPS 配置使用桌面设置，不调用此命令覆盖 |
-| `network --stdin` | 从标准输入读取 proxyMode、proxyUrl，复用应用的代理设置 |
-| `connect` / `disconnect` | 通过现有后台启停连接；connect 会自动准备 Tunnel Client |
-| `logs` | 读取经过应用脱敏的连接日志 |
-| `verify --fresh` | 生成新的验证 code，清除当前配置的旧验证记录，开始本轮验收 |
-| `verify` | 返回本轮 code、ChatGPT 验证消息、verifiedAt 和 challengeVerifiedAt，不发送远程调用 |
+Notion/Slack 标签不等于创建产品 API、Slack bot 或客户端集成。先核对实际 MCP 客户端是否支持静态 bearer；要求 OAuth/DCR 的客户端不能直接使用本轮实现。不能把本机探针成功报告为 Notion/Slack 官方产品接入成功。
 
-## 执行流程
+## 完整执行流程
 
-1. 执行 `doctor` 和 `status`，确认是否已经配置、是否在运行、是否使用官方 Tunnel。已有 HTTPS 配置直接保留并继续；不要因为默认推荐而要求用户切换。完整任务接入不支持的平台应明确报告限制。
-2. 缺少 Codex 或未登录时，打开官方安装或登录界面，用户完成登录后继续。默认保留用户的任务执行归属、审批和开机启动选择。
-3. 仅在当前使用官方 Tunnel 且缺少资料时，打开 https://platform.openai.com/settings/organization/tunnels 。优先复用用户授权的安全本机资料，自行读取已有 Tunnel ID；确实缺少 runtime API Key 才请用户在应用直接填写。确认通道关联目标 ChatGPT 工作区并具备权限。Codex 登录不能替代这些信息。账号或管理员操作无法完成时明确说明缺什么，不反复重试。
-4. 官方 Tunnel 仅在缺少安全本机凭据来源时，让用户直接在应用「设置 → 连接 → OpenAI Tunnel」输入凭据并保存；Codex 通过 doctor 发现已配置后继续。不要求用户把密钥贴进聊天，不在参数、日志或截图中显示密钥。需要程序配置且已有安全本机凭据来源时，通过 stdin 传递 JSON，不将密钥字面量写进 shell 命令。configure 省略字段保留原值，apiKey 空字符串也保留原值；修改 Tunnel ID 时必须使用与新通道匹配的密钥。连接开启期间修改配置会被拒绝，先确认确需更改再 disconnect。
-5. 执行 connect，随后读取 doctor/status 等待就绪；connect 返回成功只代表启动请求已完成。下载或网络失败时读取 logs，依据实际错误处理。仅调整 Connector 自身代理；network 的 proxyMode 支持 system、direct、custom，custom 需要 HTTP/HTTPS proxyUrl。代理变更需要重新连接才能作用于已有 Tunnel，不修改系统代理。
-6. 读取 onboarding（旧版本回退 status/verify），直接取得表单名称、描述、连接类型及 value。若用户已提供登录后的网页或浏览器环境，必须实际尝试浏览器 / GUI / Computer Use；优先用户指定的已登录标签页，其次 in-app Browser。按当前可见的文字或无障碍控件操作，不假定页面选择器、坐标或设置 deep link。没有浏览器控制能力时明确说明这一限制。
-7. 在 ChatGPT 检查「设置 → 安全与登录 → Developer Mode」，进入 https://chatgpt.com/plugins ，创建入口可能显示 Add → Create MCP App 或 ＋。先检查并复用与当前 URL/ID 匹配的连接，不能只按名称判断；没有才创建。Tunnel 选择通道或自行填入 value；HTTPS 填入 value 并选 No authentication，不填管理端口或 Tunnel API Key。完成发现后确认 connector_verify 等工具存在；已有连接需要更新工具时打开详情选择 Refresh。临时地址变化需重新匹配，删除旧连接前遵循当前工具的确认要求。只有本人登录、身份/权限授权、验证码、账号工作区权限不足或无法可靠操作时暂停，指出当前页面与最少动作；遵守浏览器工具的安全确认规则，不绕过限制。
-8. 新一轮验收执行 verify --fresh，保存 code；中断恢复直接 verify，勿重复刷新 code。在 ChatGPT 新建 Chat 对话（若默认进入 Work，先切换 Chat）、选用 Local Connector 并实际发送返回的 prompt。已有插件详情的 Try in chat 也可用于选用连接。自动轮询 verify，核对 code 未变、challengeVerifiedAt 出现，同时确认 ChatGPT 中该次工具调用成功；有界等待（例如两分钟）后读取 logs/doctor 排障。普通工具成功只更新 verifiedAt，不能替代验证码验收。新字段缺失时核对运行版本，旧版只能结合 ChatGPT 工具返回的匹配 code/received 和本轮入站记录确认。不能从本机直接调用工具来冒充 ChatGPT 入站；入站本身不认证调用方身份。
-9. 完整配置请求继续通过同一 ChatGPT 连接发送 onboarding.executionPrompt，或要求创建任务：不调用工具、不读取或修改文件，只回复 CLC_ONBOARDING_OK。这一步只创建验收任务，不在真实项目实施改动。依据当前工具 schema 使用唯一 UUID requestId，读取持久化回执、原生 threadId/turnId 和终态及输出；遇到任务审批按用户授权与工具规则处理。请求状态未知时以原 requestId 回读，不换 ID 重放。没有完成此步骤必须报告“任务执行尚未验收”，不能以 accepted/running 作为完成。
+“给 Notion 加一个 ngrok + bearer 入口”：检查现有入口 → 准备安全本机凭据 → stdin 创建 → 启动该 id → doctor 回读 ready 和公网 URL → 在支持的客户端安全配置 URL 与 bearer → 独立验证。账号额度、固定域名权限或 provider 并发限制必须按实际错误说明，不自动覆盖其他入口或悄悄降级为临时地址。
 
-## 自动化边界
+执行 `ingress verify <id> --fresh`，从真实控制源调用 connector_verify，回读同一入口的 challengeVerifiedAt、ingressId、controlSource。普通调用只更新历史 verifiedAt；本机直接调用只能证明本机链路。恢复中断的验证用原验证码，不重置其他入口。
 
-CLC 的桌面引导在一页展示「开启开发者模式 → Create MCP App → 发送验证消息」。名称、描述、HTTPS 地址和验证消息支持分别复制；Tunnel 直接选择当前通道，Authentication 选择 No Authentication。运行中自动读取入站结果，支持重新验证。CLI 提供结构化接入资料，Codex 无需让用户转抄 URL、ID 或验证消息。应用本身不读取浏览器登录态，也不控制 ChatGPT 网页。
+完整验收继续创建无害任务：不使用工具、不读写文件，只回复 CLC_ONBOARDING_OK。每次新操作用唯一 requestId，回读持久回执、taskId/threadId、turnId 和 agent_wait/codex_wait 终态输出。未知状态回读原 requestId，不重复提交。允许的另一入口能读取、续接、等待同一 taskId；停止创建入口不终止 Agent。
 
-官方公开流程仍要求在 ChatGPT UI 开启 Developer Mode、创建连接、刷新工具和在对话选用连接。官方文档提供 Plugins 页面入口，但未提供可供 CLC 使用的创建/安装 API、参数预填协议或 Developer Mode 开关 deep link；Responses API 的 MCP 调用不会给 ChatGPT 账号安装插件。不要使用私有接口、Cookie/令牌提取或固定 DOM 自动化脚本。
+用户提供已登录浏览器时，实际使用可见受支持界面配置和验证；未指定浏览器优先 in-app Browser。只在登录、身份授权、验证码、权限或无法可靠操作时交还精确步骤；不提取 Cookie、不调用私有接口。
 
-已登录网页加上可用且获授权的浏览器工具，可以让 Codex 按可见界面完成导航、填写和点击，但不是稳定的全自动平台接口，也不保证所有账号零操作。入口名称可能因账号而异；缺失工作区权限、Tunnel 工作区关联、本人授权和安全挑战不能由本机程序绕过。没有可靠控件时只交回当前阻塞步骤，之后自动继续，不把后续整套流程交回用户。项目仍是本地开源工具，不提供云账号、托管服务、公共 relay 或 Public Plugin。
+## 边界
 
-## 故障与恢复
+none 允许所有可达调用方调用已授权工具。bearer 只证明持有凭据；task namespace 全局共享，没有用户/组织 RBAC。本轮不实现 OAuth/DCR、Slack Identity、Notion API 或消息编排。listener 不提前截断 300 秒等待；外部代理和服务商限制需另行核对。重复短等待可沿用 taskId，超时不停止任务。
 
-换一个 Codex 对话也从 doctor/status 开始。现有配置和验证记录由应用保存，不依赖上次聊天记忆。之前验收中断且已有待验证 code 时直接继续 verify；仅开始新一轮验收才使用 --fresh。
+入口失败只影响自身。先读该入口错误与脱敏日志。停止入口只释放其进程、listener 和临时资源；退出 Core 才关闭 AgentHost/Control，Desktop-owned 任务沿用 Desktop 生命周期。UI 仅展示入口数量和每入口一行状态及基本动作，主要配置通过 CLI 完成。
 
-根据具体证据分辨：应用未启动、资料缺失、登录失效、Desktop IPC 不可用、组件下载失败、Tunnel 网络错误、工作区权限不足、ChatGPT 未选用连接、任务提交结果未知。不要把全部错误都处理为重装或重置配置。自动执行已授权且有证据支持的修复；凭据失效、管理员权限和账号选择交给用户。操作后重新读取相关状态并复验。
+## 监控任务
 
-最终向用户说明本机连接、ChatGPT 入站、任务执行分别是否验证成功，以及尚缺的具体动作。不输出密钥、完整私有日志或真实任务内容。
+Codex 在 create/send 后从回执取得原 taskId/threadId、turnId，默认以 30 秒（建议 20–30 秒）一个 slice 调用 agent_wait/codex_wait。收到 timeout 后保留原 ID，将上一轮 snapshotHash 作为 expectedHash 再次 wait，直到 completed/failed/cancelled 或 interaction-required。timeout/取消 wait 只结束当前等待，不终止源任务，不应重新创建任务或重发 prompt；unconfirmed 不代表失败。expectedHash 只控制 changed 比较，不屏蔽终态或交互。
 
-参考：[安装指南](installation.md)、[Tunnel 接入](tunnel.md)、[官方 Tunnel 文档](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)、[ChatGPT 接入文档](https://developers.openai.com/plugins/deploy/connect-chatgpt)。
+这是 bounded event-driven long poll；每个 slice 内仍由事件唤醒和真实 owner 状态复核驱动，不使用 read/sleep 高频轮询。ChatGPT、Notion、Slack 及其他 MCP Client 可能具有不同的外层工具超时，统一默认 timeoutMs=30000，不引入 per-client 配置。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟。确认上游支持时仍可显式传 timeoutMs=300000；这是上限而非推荐值。OpenAI Tunnel stdio adapter 保留 330 秒转发预算，HTTPS MCP 没有更短的等待执行限时；CLC 无法延长外部客户端或代理的超时。

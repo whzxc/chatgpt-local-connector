@@ -119,15 +119,20 @@ async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
-    let result = if path == "/mcp" && method == "POST" {
+    let result = if (path == "/mcp" || path.starts_with("/mcp/")) && method == "POST" {
+        let ingress = if let Some(id) = path.strip_prefix("/mcp/") {
+            s.ingress(id).await?
+        } else {
+            s.primary().await?
+        };
         if body["method"] == "tools/call" && is_wait(&body) {
             let mut disconnected = [0u8; 1];
             tokio::select! {
-                result = mcp(&s, body) => result,
+                result = mcp_ingress(&ingress, body) => result,
                 _ = stream.read(&mut disconnected) => return Ok(()),
             }
         } else {
-            mcp(&s, body).await
+            mcp_ingress(&ingress, body).await
         }
     } else if method == "GET" && path == "/healthz" {
         Ok(json!({"runtime":"rust","instance":s.control.session,"pid":std::process::id()}))
@@ -158,11 +163,25 @@ fn is_wait(request: &Value) -> bool {
     )
 }
 pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
+    mcp_ingress(&s.primary().await?, request).await
+}
+pub async fn mcp_ingress(s: &Arc<crate::ingress::Ingress>, request: Value) -> Result<Value> {
+    let origin = s.origin().await;
+    crate::ingress::ORIGIN
+        .scope(origin, dispatch(s, request))
+        .await
+}
+async fn dispatch(s: &Arc<crate::ingress::Ingress>, request: Value) -> Result<Value> {
     if request["jsonrpc"] != "2.0" {
         return Err("invalid jsonrpc".into());
     }
     let id = request.get("id").cloned();
     let method = string(&request, "method");
+    if method == "tools/call" && !s.allows(string(&request["params"], "name")).await {
+        return Ok(
+            json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":"tool not available"}}),
+        );
+    }
     let result = match method {
         "initialize" => {
             let protocol = request["params"]["protocolVersion"]
@@ -173,7 +192,15 @@ pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
             )
         }
         "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({"tools":catalog()["tools"]})),
+        "tools/list" => {
+            let mut tools = Vec::new();
+            for tool in catalog()["tools"].as_array().unwrap() {
+                if s.allows(string(tool, "name")).await {
+                    tools.push(tool.clone());
+                }
+            }
+            Ok(json!({"tools":tools}))
+        }
         "tools/call" if is_wait(&request) => {
             let key = id.as_ref().ok_or("wait requires a request id")?.to_string();
             let (guard, mut cancel) = s.wait_calls.register(key)?;
@@ -236,6 +263,7 @@ pub async fn stdio() -> Result<()> {
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;
+    let ingress = std::env::var("CLC_INGRESS_ID").map_err(|_| "missing ingress id")?;
     let stdout = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut reader = BufReader::new(tokio::io::stdin());
     let mut jobs = tokio::task::JoinSet::new();
@@ -246,9 +274,10 @@ pub async fn stdio() -> Result<()> {
         }
         let request: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
         let (client, token, out) = (client.clone(), token.clone(), stdout.clone());
+        let ingress = ingress.clone();
         jobs.spawn(async move {
             let response = client
-                .post(format!("http://127.0.0.1:{port}/mcp"))
+                .post(format!("http://127.0.0.1:{port}/mcp/{ingress}"))
                 .bearer_auth(token)
                 .timeout(Duration::from_secs(if is_wait(&request) {
                     330
@@ -313,11 +342,13 @@ pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<V
             format!("http://127.0.0.1:{port}/api/{route}"),
         )
         .bearer_auth(string(&info, "token"))
-        .timeout(Duration::from_secs(if route == "start" {
-            360
-        } else {
-            120
-        }));
+        .timeout(Duration::from_secs(
+            if route == "start" || route.ends_with("/start") || route.ends_with("/start-all") {
+                360
+            } else {
+                120
+            },
+        ));
     if method != reqwest::Method::GET {
         request = request.json(&body);
     }
