@@ -6,7 +6,7 @@
 
 Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，支持 Codex Native、Pi，以及 Gemini、Claude adapter、Cursor、Grok 等内置 ACP Agent。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
 
-![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
+![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.zh-CN.png)
 
 - **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，讨论有据可依。
 - **聊到哪，做到哪**：在对话里创建、续接或中断 Codex 任务，也能查看任务进展和结果。
