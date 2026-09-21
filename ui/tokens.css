@@ -1,4 +1,4 @@
-/* Shared compact desktop controls. New fields inherit these defaults. */
+/* Compact custom shell controls. Standard forms use UiProvider theme tokens. */
 :root {
   --control-height: 28px;
   --control-font-size: 12px;

@@ -1,0 +1,28 @@
+/* Custom shell controls only. Naive UI owns the styles of its component subtree. */
+*{box-sizing:border-box}
+body{margin:0}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))),input:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))),textarea:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))),select:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){font:inherit}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){cursor:pointer;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--control-radius);height:var(--control-height);padding:0 var(--control-padding-x);font-size:var(--control-font-size);line-height:var(--control-line-height);display:inline-flex;align-items:center;justify-content:center;gap:6px;vertical-align:middle;transition:background .18s,transform .18s}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):hover{background:var(--soft)}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):active{transform:translateY(1px)}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):disabled{opacity:.45;cursor:default}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):focus-visible,a:focus-visible,input:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):focus-visible,textarea:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):focus-visible,select:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):focus-visible,summary:focus-visible{outline:3px solid #87ad99;outline-offset:4px}
+button:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))).primary{background:var(--green);border-color:var(--green);color:#fff;padding:0 var(--control-padding-x)}
+.ghost,.text-button{border:0;background:transparent}
+.text-button{color:var(--green);padding:0 4px;font-size:var(--control-font-size)}
+.ghost:hover,.text-button:hover{background:transparent;color:#719482}
+a{color:var(--green)}
+h1,h2,h3,p{margin-top:0}
+h1{font-size:32px;line-height:1.4;letter-spacing:-1px;font-weight:550;margin-bottom:14px}
+h2{font-size:19px;font-weight:550}
+h3{font-size:15px;font-weight:550}
+p{line-height:1.8;font-size:14px}
+input:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))),textarea:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))),select:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){width:100%;min-width:0;border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:var(--control-radius);font-size:var(--control-font-size);line-height:var(--control-line-height);padding:0 var(--control-padding-x)}
+input:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))):not([type=checkbox]):not([type=radio]),select:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){height:var(--control-height)}
+textarea:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){padding:var(--control-padding-y) var(--control-padding-x)}
+select:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){width:auto}
+input:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider)))::placeholder{color:var(--muted)}
+label:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){display:block;font-size:13px;margin:18px 0 9px}
+input:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider)))[type=checkbox]{width:auto;margin-right:10px}
+textarea:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){min-height:110px}
+fieldset:not(:where([class^="n-"]:not(.n-config-provider) *, [class^="n-"]:not(.n-config-provider))){border:0;padding:0;margin:0;min-width:0}

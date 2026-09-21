@@ -1,0 +1,426 @@
+{
+  "description": "控制源、内置 Agents 与 CLC 的备用品牌资源；未接入运行时 UI。",
+  "lobeIconsVersion": "1.95.1",
+  "files": [
+    {
+      "file": "control-sources/chatgpt/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/openai.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "OpenAI 通用标志，用于 ChatGPT；不是独立 ChatGPT 专属设计。",
+      "sha256": "a595df6b423920c67a7f8f73c063e4bfb72d415948097b6cac063a2366bb5186"
+    },
+    {
+      "file": "control-sources/chatgpt/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/openai-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "OpenAI 通用标志，用于 ChatGPT；不是独立 ChatGPT 专属设计。",
+      "sha256": "fd61627c78d160b6391aaf72f29cf51547327d05ed19366c511d07578fc0099e"
+    },
+    {
+      "file": "control-sources/notion/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/notion.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "8ada8628489d6e2900ebf21d3643fe5d4566d0e59aba95a3df15b710caa00743"
+    },
+    {
+      "file": "control-sources/notion/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/notion-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "ebd43437a06e3ce2d916707d935f8a645b4f30a950d9a5bc2be1baa30055beec"
+    },
+    {
+      "file": "agents/codex/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/codex.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "d08b4e824cd6727e89617f59e4737273ff53e44c1da849d016dd64dfd08b33e1"
+    },
+    {
+      "file": "agents/codex/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/codex-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "4a2f43ce46b5b6e3722c95088f88d26ef91e6a8c2e598e70642a1c54367386e4"
+    },
+    {
+      "file": "agents/codex/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/codex-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "4d80f551277417f251c6eccbfa58895c59c4630b48bf723624e642d75109cd47"
+    },
+    {
+      "file": "agents/pi/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/pi.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "d82978781b824273c55473822c1f243a6ed34fc6e8c2dbfe1a90dfc66ae43ee8"
+    },
+    {
+      "file": "agents/pi/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/pi-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "d82978781b824273c55473822c1f243a6ed34fc6e8c2dbfe1a90dfc66ae43ee8"
+    },
+    {
+      "file": "agents/opencode/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/opencode.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "7cfa6e9d6726f7c9fa26c7d9aef0dfec52d20a137380454340f30f12ccbfd302"
+    },
+    {
+      "file": "agents/opencode/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/opencode-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "ac1c6a355c05b1c0308283bc1119e2561390af8595a518ad3100d68b5a55ea6b"
+    },
+    {
+      "file": "agents/gemini/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/gemini.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "87d5b3c4be75a66f54c1936482a263df68185545b741129badd1b7c2449c18d3"
+    },
+    {
+      "file": "agents/gemini/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/gemini-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "8ab0a9bafec11f7e69bcb9fc4ffd8f1bc927d1ddcbbb6ff36dee5ae8b5a9d602"
+    },
+    {
+      "file": "agents/gemini/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/gemini-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "d0d96b1c6def6990cab126243b11429b93598de1bd50576bba1b53f2ff496247"
+    },
+    {
+      "file": "agents/claude/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/claude.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "365a70a7eb3956d9b9a96086058ebe04e1dbd8e291a756ad964e8a283fbd6d38"
+    },
+    {
+      "file": "agents/claude/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/claude-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "a3101f3047a119aa11825ad9369510f0c472428c8c52d420e31bc62db44a8364"
+    },
+    {
+      "file": "agents/claude/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/claude-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "f882c1f1c9e735e1ebcb3bef76a622da4cb0e25738649d8b0deccbeaad069afa"
+    },
+    {
+      "file": "agents/cursor/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/cursor.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "0cb51bddf264ae108926fd554c063ef40fc1aac3c5c921ddb39ad184e4e5d0ef"
+    },
+    {
+      "file": "agents/cursor/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/cursor-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "306691a27883a819d8ba30aa08d133edba94e05b58ff6d6704f9ad7a5e131c26"
+    },
+    {
+      "file": "agents/grok/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/grok.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "9175fc90c22655160231976c849f25a03b888d7cc0e04c5f1b987b659bb07c95"
+    },
+    {
+      "file": "agents/grok/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/grok-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "6530f5befe0736296aab212875550b3bebab51756cf4d037126c2c7fa91c5fee"
+    },
+    {
+      "file": "agents/copilot/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/copilot.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "6708c5eb7fd426d3bd0de54edcecbb2a96bfcfd40ae1eb5745b0c12e19c8f1d2"
+    },
+    {
+      "file": "agents/copilot/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/copilot-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "04f15d0556fbac10a4e0f82d1560610db8b33cd04780a4f24ad3b91c4abd278d"
+    },
+    {
+      "file": "agents/copilot/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/copilot-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "f42dcff6f2df06f16ef43e86ad804d7f77827f43a9ec7f0bdbcf637caf0700c1"
+    },
+    {
+      "file": "agents/kimi/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/kimi.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "ed08131b46acf70e6e2144eceb775e74098b58ea65fa21eaee04be7b05cfe63b"
+    },
+    {
+      "file": "agents/kimi/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/kimi-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "74a7292aeb0220445d14c5d397d75760e2e8c6ed6a9e5fe4f3023471bf62a9ff"
+    },
+    {
+      "file": "agents/kimi/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/kimi-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "d5233dbde7cd3c9ae92ced85d6bf028b3c8f555609b47521b8bd7a075900348d"
+    },
+    {
+      "file": "agents/qwen/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/qwen.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "dcb3ba2f2b55ccbacbade0ca0bf98921fbaf8a07848972974b4a9bf8077376cf"
+    },
+    {
+      "file": "agents/qwen/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/qwen-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "77f5768c66d08ce1d3d14e73373975c1bc0454be88c81523ddd0ffd7e2974029"
+    },
+    {
+      "file": "agents/qwen/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/qwen-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "f9aea2d7db247d1ea51b686a1d9267fdfb3ded08f883bee95152c2a878336a1a"
+    },
+    {
+      "file": "agents/kiro/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/kiro.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "1e56073e35799b0d7075d5376ca2d99c3d3bbf51a000a1ec3d4b0df7612c91d6"
+    },
+    {
+      "file": "agents/kiro/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/kiro-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "4eae4d6e818da7342c32c7d443ab7c97b93c544db9af379d5b5bf7f0a3127d66"
+    },
+    {
+      "file": "agents/kiro/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/kiro-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "a90c14bb7e9bea0576acee30d2c47c976710a5d4d79033e59c53fe7155cecd4c"
+    },
+    {
+      "file": "agents/devin/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/devin.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "8d197b0c31522517ffa896cd4a1ee65719eb73bff9eb9bbf7edf64db6b1a573d"
+    },
+    {
+      "file": "agents/devin/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/devin-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "beb58575f94fda57a6c1f9ed5624e6407bff405f55b6258b53032b674aadd8c8"
+    },
+    {
+      "file": "agents/devin/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/devin-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "7d1ccf1935bf76dca0032b05f28e69dc3d1d251c501f2639c88d739f781ee540"
+    },
+    {
+      "file": "agents/cline/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/cline.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "9003d2cdce82b016147b732abb4def60af55c348ba2cea2ba0b69a3c7d159b19"
+    },
+    {
+      "file": "agents/cline/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/cline-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "dff1acec40bdaeb877a2eb65847c2c462e0e3fe9fcfbfa3de6f31194a30dade4"
+    },
+    {
+      "file": "agents/junie/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/junie.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "dded0700186377523b7b10bbb204fd3f095d1ea52fe89722cd6cc319a154e208"
+    },
+    {
+      "file": "agents/junie/color.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/junie-color.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "cec54c8be10ba733af250feb2bd78523d2aa2bab6b3599f0717faf1a740bb031"
+    },
+    {
+      "file": "agents/junie/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/junie-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "222812705626dd937426490b22cb06bcbea4af48d55c041a7fd48d47b838080f"
+    },
+    {
+      "file": "agents/hermes/mono.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/hermesagent.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "02d43c0a91fc2ee41f2684fc39613ff6687de29a4b079665bace5303671dd63b"
+    },
+    {
+      "file": "agents/hermes/wordmark.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.1/icons/hermesagent-text.svg",
+      "license": "MIT; brand trademarks reserved",
+      "note": "",
+      "sha256": "b512cb516b069e1ea87121d17ae20285d6becdf66f7d71bad38fcfaccd49a087"
+    },
+    {
+      "file": "licenses/lobe-icons-MIT.txt",
+      "source": "https://github.com/lobehub/lobe-icons",
+      "license": "MIT",
+      "note": "",
+      "sha256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a"
+    },
+    {
+      "file": "control-sources/slack/mono.svg",
+      "source": "https://raw.githubusercontent.com/devicons/devicon/7330accdbc47e2dc0c19789a48533c4a3c50fe58/icons/slack/slack-plain.svg",
+      "license": "MIT; Slack brand guidelines apply",
+      "note": "",
+      "sha256": "ce3a6b34d32134a4af7e03a7cff30addb95dee43acca34385479949740074a92"
+    },
+    {
+      "file": "control-sources/slack/color.svg",
+      "source": "https://raw.githubusercontent.com/devicons/devicon/7330accdbc47e2dc0c19789a48533c4a3c50fe58/icons/slack/slack-original.svg",
+      "license": "MIT; Slack brand guidelines apply",
+      "note": "",
+      "sha256": "5ff275ef6df5aca7ac8ed3cf95d003015b4b153f99c570bdcaf9d1674bd6aa5c"
+    },
+    {
+      "file": "control-sources/slack/wordmark-color.svg",
+      "source": "https://raw.githubusercontent.com/devicons/devicon/7330accdbc47e2dc0c19789a48533c4a3c50fe58/icons/slack/slack-original-wordmark.svg",
+      "license": "MIT; Slack brand guidelines apply",
+      "note": "",
+      "sha256": "f13a2f5292ea8e9999c278a242a6198d257265f78a8bd8e41921a547f6e6d639"
+    },
+    {
+      "file": "control-sources/slack/wordmark.svg",
+      "source": "https://raw.githubusercontent.com/devicons/devicon/7330accdbc47e2dc0c19789a48533c4a3c50fe58/icons/slack/slack-plain-wordmark.svg",
+      "license": "MIT; Slack brand guidelines apply",
+      "note": "",
+      "sha256": "85f9950a44b8c3a11323a6493b7d7bc9f6777c23f98dfac6d20a2c2f9c145635"
+    },
+    {
+      "file": "licenses/devicon-MIT.txt",
+      "source": "https://raw.githubusercontent.com/devicons/devicon/7330accdbc47e2dc0c19789a48533c4a3c50fe58/LICENSE",
+      "license": "MIT",
+      "note": "",
+      "sha256": "121194741d4a915b9f5890fdd6dd95121f9b1f816517c792358d72d7c838d664"
+    },
+    {
+      "file": "control-sources/chatgpt/app.png",
+      "source": "ui/assets/chatgpt.png",
+      "license": "OpenAI proprietary brand asset; not MIT",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "3453947a9ce2709b7ec51c0559c7eb976e4ac53b232b607d1d81b0d1d1048b61"
+    },
+    {
+      "file": "agents/codex/app.png",
+      "source": "ui/assets/codex.png",
+      "license": "OpenAI proprietary brand asset; not MIT",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "de7d43f3386105ab20952958c2c25beb0d903e2aeb6e1aef57c49a648c0d1c07"
+    },
+    {
+      "file": "app/local-connector/app.png",
+      "source": "ui/assets/local-connector.png",
+      "license": "Project asset",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "243c236221538741e033074298739aa8abcdc2bbe00d905a539dd7338482007b"
+    },
+    {
+      "file": "app/local-connector/head.png",
+      "source": "ui/assets/local-connector-head.png",
+      "license": "Project asset",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "4b476bf0adc4f3f993a585a595d8b8e96a44eb109ab5756e40dba0f220d150c0"
+    },
+    {
+      "file": "app/local-connector/tray.png",
+      "source": "desktop/icons/tray-logo.png",
+      "license": "Project asset",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "239e5a628b0a5b7f1a061f14122d2683c03a68fcebb6a96ba16d0d4bd0842fdb"
+    },
+    {
+      "file": "app/local-connector/icon.icns",
+      "source": "desktop/icons/icon.icns",
+      "license": "Project asset",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "81853c30e93f5be299357c45e676dfd587e11fca4e0164242530c3575c79231c"
+    },
+    {
+      "file": "app/local-connector/icon.ico",
+      "source": "desktop/icons/icon.ico",
+      "license": "Project asset",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "bca9c0a34b152603335e1125fc48280e668b9ad6abb3bec4fb14a1472409b784"
+    },
+    {
+      "file": "app/local-connector/icon.png",
+      "source": "desktop/icons/icon.png",
+      "license": "Project asset",
+      "note": "原文件拷贝，来源说明见 ui/assets/README.md。",
+      "sha256": "74619d2c8167ae8021cca35a272dab500b81fa52c88d20822490e724365fb3cb"
+    },
+    {
+      "file": "agents/hermes/logo.png",
+      "source": "https://raw.githubusercontent.com/NousResearch/hermes-agent/ea0c2b820bd30bace020a3791d8aef0b44002e0d/website/static/img/logo.png",
+      "license": "Upstream brand asset; trademark rights reserved",
+      "note": "上游网站原始资源；favicon 不等同于原生桌面应用图标。",
+      "sha256": "2eaff911b9da9b1f1fcc81adb02f4992bb9ea6b781f4dd048cd79349927ddb7a"
+    },
+    {
+      "file": "agents/hermes/favicon.svg",
+      "source": "https://raw.githubusercontent.com/NousResearch/hermes-agent/ea0c2b820bd30bace020a3791d8aef0b44002e0d/website/static/img/favicon.svg",
+      "license": "Upstream brand asset; trademark rights reserved",
+      "note": "上游网站原始资源；favicon 不等同于原生桌面应用图标。",
+      "sha256": "3b69843e19b42602b2a2723e7dd058c4b391cceef1caa1f46c19bb80ca88b260"
+    },
+    {
+      "file": "agents/hermes/favicon.ico",
+      "source": "https://raw.githubusercontent.com/NousResearch/hermes-agent/ea0c2b820bd30bace020a3791d8aef0b44002e0d/website/static/img/favicon.ico",
+      "license": "Upstream brand asset; trademark rights reserved",
+      "note": "上游网站原始资源；favicon 不等同于原生桌面应用图标。",
+      "sha256": "f438d1c5e4e68c68523dfea9323f42607a038443beb44c3ea6edac2ba80619e1"
+    }
+  ]
+}

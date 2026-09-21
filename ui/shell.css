@@ -1,0 +1,31 @@
+/* Window-sized canvas and the lower-left navigation surface. */
+.app-scene{--sheet-inset:20px;--sheet-top:20px;--dock-left:24px;--dock-bottom:24px;height:100dvh;min-height:0;overflow:hidden;position:relative;background:light-dark(#e3eee8,#20352f)}
+.app-scene.mac{--sheet-top:48px}
+.window-drag-strip{position:absolute;inset:0 0 auto;height:38px;z-index:60;display:flex;justify-content:flex-end}
+.window-controls{margin:0}
+.home-workspace{height:100%;overflow:auto;overscroll-behavior:contain}
+.home-workspace .connection-core{min-height:100dvh;border:0;border-radius:0;padding:68px clamp(24px,5vw,80px) 112px;display:flex;flex-direction:column;justify-content:center}
+.home-workspace .connection-graph{flex-shrink:0}
+.navigation-capsule{position:absolute;left:var(--dock-left);bottom:var(--dock-bottom);z-index:50;display:flex;flex-direction:column;gap:4px;padding:6px;border:1px solid color-mix(in srgb,var(--green) 15%,transparent);border-radius:32px;background:var(--surface);box-shadow:0 6px 24px #15342a12;transition:background .25s,box-shadow .25s}
+.navigation-capsule button,.update-shortcut{width:44px;height:44px;padding:11px;display:grid;place-items:center;background:transparent;border:0;box-shadow:none;border-radius:50%;position:relative;color:var(--ink)}
+.navigation-capsule button:hover{background:var(--soft);color:var(--green)}
+.navigation-capsule button svg,.update-shortcut svg{width:22px;height:22px;stroke-width:1.7}
+.navigation-capsule.expanded{border-color:transparent;background:transparent;box-shadow:none}
+.navigation-capsule .capsule-close{background:var(--soft)}
+.update-shortcut{position:absolute;right:24px;bottom:24px;z-index:50;background:var(--surface)}
+.page-sheet{position:absolute;inset:var(--sheet-top) var(--sheet-inset) var(--sheet-inset);z-index:30;border:1px solid var(--line);border-radius:28px;background:var(--canvas);box-shadow:0 12px 48px #132a2418;display:flex;flex-direction:column;overflow:hidden;clip-path:inset(0 round 28px)}
+.page-sheet::after{content:"";height:64px;flex-shrink:0}
+.sheet-heading{flex-shrink:0;padding:28px 32px 18px}
+.sheet-heading h1{margin:0;font-size:20px;font-weight:600;outline:none}
+.workspace{min-height:0;flex:1;width:100%;max-width:none;margin:0;padding:0 32px 24px;overflow:auto;overscroll-behavior:contain}
+.workspace.records-workspace{padding-top:0;padding-bottom:24px}
+.workspace>.settings-page{max-width:900px;margin:0 auto}
+.app-feedback{position:absolute;left:24px;right:24px;top:48px;z-index:70;margin:0 auto;max-width:760px}
+.capsule-page-enter-active{transition:clip-path 540ms cubic-bezier(.2,.8,.2,1),opacity 200ms}
+.capsule-page-leave-active{transition:clip-path 380ms cubic-bezier(.4,0,.6,1),opacity 360ms}
+.capsule-page-enter-from,.capsule-page-leave-to{clip-path:inset(calc(100% - 156px) calc(100% - 60px) 4px 4px round 28px)}
+.capsule-page-leave-to{opacity:.5}
+.capsule-page-enter-active .sheet-heading,.capsule-page-enter-active .workspace{animation:sheet-content-in 440ms 100ms both}
+@keyframes sheet-content-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media(max-width:600px){.app-scene{--sheet-inset:12px;--sheet-top:12px;--dock-left:16px;--dock-bottom:16px}.sheet-heading{padding:24px 20px 16px}.workspace{padding:0 20px 24px}.home-workspace .connection-core{padding:64px 20px 104px}.update-shortcut{right:16px;bottom:16px}}
+@media(prefers-reduced-motion:reduce){.capsule-page-enter-active,.capsule-page-leave-active{transition:none}.capsule-page-enter-active .sheet-heading,.capsule-page-enter-active .workspace{animation:none}}

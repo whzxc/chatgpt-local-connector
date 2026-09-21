@@ -1,36 +1,12 @@
-<script lang="ts">
-import { ref } from 'vue';
-
-type Agent = { agent: string; installed?: boolean; enabled?: boolean; version?: string | null; displayName?: string; };
-// Keep the last successful snapshot across settings page mounts.
-const agents = ref<Agent[]>([]);
-const loaded = ref(false);
-const loading = ref(false);
-const saving = ref('');
-const error = ref('');
-</script>
-
 <script setup lang="ts">
 import { displayMessage } from '../messages';
 import { t } from '../i18n';
 import { computed, onMounted } from 'vue';
-import { api } from '../composables/useConnector';
+import { NButton, NSwitch } from 'naive-ui';
 import { Bot } from '@lucide/vue';
-import codexIcon from '../assets/agents/openai.svg?raw';
-import piIcon from '../assets/agents/pi.svg?raw';
-import opencodeIcon from '../assets/agents/opencode.svg?raw';
-import claudeIcon from '../assets/agents/claude.svg?raw';
-import cursorIcon from '../assets/agents/cursor.svg?raw';
-import geminiIcon from '../assets/agents/gemini.svg?raw';
-import grokIcon from '../assets/agents/grok.svg?raw';
-import copilotIcon from '../assets/agents/copilot.svg?raw';
-import kimiIcon from '../assets/agents/kimi.svg?raw';
-import qwenIcon from '../assets/agents/qwen.svg?raw';
-import kiroIcon from '../assets/agents/kiro.svg?raw';
-import devinIcon from '../assets/agents/devin.svg?raw';
-import clineIcon from '../assets/agents/cline.svg?raw';
-import junieIcon from '../assets/agents/junie.svg?raw';
-import hermesIcon from '../assets/agents/hermes.svg?raw';
+import { ref } from 'vue';
+import { useAgents, icons, name, type Agent } from '../composables/useAgents';
+const { agents, loaded, loading, saving, error, refresh, toggle } = useAgents();
 import SettingsGroup from './SettingsGroup.vue';
 const expanded = ref(false);
 const initialAgent: Agent = { agent: 'codex', displayName: 'Codex' };
@@ -39,35 +15,14 @@ const sorted = computed(() => [...agents.value]
 const collapsed = computed(() => sorted.value.filter(agent => agent.installed).slice(0, 3));
 const visible = computed(() => !loaded.value ? [initialAgent] : expanded.value ? sorted.value : collapsed.value);
 const canExpand = computed(() => loaded.value && sorted.value.length > collapsed.value.length);
-const icons: Record<string, string> = { codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: geminiIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon };
-const name = (agent: Agent) => agent.displayName || ({ codex: 'Codex', pi: 'Pi', opencode: 'OpenCode' }[agent.agent] || agent.agent);
-async function refresh() {
-  if (loading.value || saving.value) return;
-  loading.value = true;
-  try { agents.value = (await api<{ agents: Agent[] }>('agents')).agents; loaded.value = true; error.value = ''; }
-  catch (e) { error.value = e instanceof Error ? e.message : String(e); }
-  finally { loading.value = false; }
-}
-async function toggle(agent: Agent, event: Event) {
-  const input = event.target as HTMLInputElement;
-  const enabled = input.checked;
-  input.checked = !!agent.enabled;
-  saving.value = agent.agent;
-  try {
-    const result = await api<{ enabled: boolean }>('agents', 'PUT', { agent: agent.agent, enabled });
-    agent.enabled = result.enabled;
-    error.value = '';
-  } catch (e) { error.value = e instanceof Error ? e.message : String(e); }
-  finally { saving.value = ''; }
-}
 onMounted(refresh);
 </script>
 <template>
   <SettingsGroup title="Agents">
     <template #heading-actions>
-      <button class="agent-refresh" :disabled="loading || !!saving" :aria-label="t('refreshAgents')" :title="t('refreshAgents')" @click="refresh">
+      <NButton class="agent-refresh" :disabled="loading || !!saving" :aria-label="t('refreshAgents')" :title="t('refreshAgents')" @click="refresh">
         {{ loading ? t('refreshing') : t('refresh') }}
-      </button>
+      </NButton>
     </template>
     <div v-for="agent in visible" :key="agent.agent" class="agent-row">
       <component :is="agent.installed ? 'label' : 'div'" :for="agent.installed ? `agent-${agent.agent}` : undefined" class="agent-info">
@@ -78,14 +33,14 @@ onMounted(refresh);
           <span v-if="agent.installed && agent.version" class="agent-version">{{ agent.version }}</span>
         </span>
       </component>
-      <input v-if="agent.installed" :id="`agent-${agent.agent}`" class="settings-switch" type="checkbox" role="switch"
-        :aria-label="t('allowConnectorToUseValue', { agent: name(agent) })" :checked="agent.agent === 'codex' || agent.enabled"
+      <NSwitch v-if="agent.installed" :id="`agent-${agent.agent}`"
+        :aria-label="t('allowConnectorToUseValue', { agent: name(agent) })" :value="agent.agent === 'codex' || agent.enabled"
         :disabled="agent.agent === 'codex' || !!saving || loading || typeof agent.enabled !== 'boolean'"
         :title="agent.agent === 'codex' ? t('codexIsAlwaysEnabled') : t('allowConnectorToAcceptRequestsForThisAgent')"
-        @change="toggle(agent, $event)" />
+        @update:value="toggle(agent, $event)" />
     </div>
     <div v-if="canExpand" class="agent-expand">
-      <button :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? t('collapseList') : t('showAllValue', { count: sorted.length }) }}</button>
+      <NButton :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? t('collapseList') : t('showAllValue', { count: sorted.length }) }}</NButton>
     </div>
     <p v-if="error" class="agent-error" role="alert">{{displayMessage(error)}}</p>
   </SettingsGroup>

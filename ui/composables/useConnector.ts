@@ -30,7 +30,15 @@ export interface Config {
   autoStart: boolean;
   hasApiKey: boolean;
 }
+export interface Ingress {
+  discoveredUrls?: string[]; routeNotice?: string;
+  id: string; name: string; controlSource: string; transport: string;
+  state: string; running: boolean; error: string; enabled: boolean; auth: string;
+  config: Config; url: string; verification?: { verifiedAt?: string; challengeVerifiedAt?: string };
+}
 export interface Status {
+  ingresses: Ingress[];
+  ingressSummary: { running: number; ready: number; total: number };
   taskApprovalEnabled: boolean;
   autoOpenCodex: boolean;
   core: CoreSnapshot;

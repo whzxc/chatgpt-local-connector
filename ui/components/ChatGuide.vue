@@ -38,7 +38,7 @@ const reset = () => run('chatgpt-verify', async () => { await api('verification/
           <div><dt>Connection</dt><dd>{{https ? 'Server URL' : 'Tunnel'}}</dd></div>
           <div v-if="https"><dt>Server URL</dt><dd><CopyField :value="endpoint" :label="t('chatgptConnectionUrl')" /></dd></div>
           <div v-else><dt>Tunnel</dt><dd><span>{{ t('selectTheCurrentTunnel') }}</span><small v-if="endpoint">{{endpoint}}</small></dd></div>
-          <div><dt>Authentication</dt><dd>No Authentication</dd></div>
+          <div><dt>Authentication</dt><dd>{{ (status?.ingresses.find(i => i.id === 'default') ?? status?.ingresses[0])?.auth === 'bearer' ? 'Bearer (configure with CLI)' : 'No Authentication' }}</dd></div>
         </dl>
       </div></li>
       <li><span class="guide-step-number">3</span><div><strong>{{ t('sendVerificationMessage') }}</strong><p>{{ t('selectTheConnectionInANewConversationAnd') }}</p><CopyField v-if="code" :value="prompt" :label="t('connectionVerificationMessage')" multiline />

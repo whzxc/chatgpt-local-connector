@@ -1,8 +1,7 @@
-import { createApp } from "vue";
+import { createApp, h } from "vue";
 import { i18n } from "./i18n";
+import UiProvider from "./components/UiProvider.vue";
 import App from "./App.vue";
 import "./style.css";
 
-createApp(App).use(i18n).mount("#app");
-
-document.documentElement.dataset.theme = localStorage.getItem('theme') || 'system';
+createApp({ render: () => h(UiProvider, null, { default: () => h(App) }) }).use(i18n).mount("#app");
