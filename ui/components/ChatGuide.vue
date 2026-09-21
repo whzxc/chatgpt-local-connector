@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { displayMessage } from '../messages';
+import { t } from '../i18n';
 import { SquareArrowOutUpRight } from '@lucide/vue';
 import { computed } from 'vue';
 import { api, useConnector } from '../composables/useConnector';
@@ -8,38 +10,39 @@ const emit = defineEmits<{ done: []; settings: [] }>();
 const { status, busy, run, refresh, connectionError } = useConnector();
 const https = computed(() => status.value?.config.connectionMode === 'https');
 const endpoint = computed(() => https.value ? status.value?.connection?.mcpUrl || '' : status.value?.config.tunnelId || '');
-const description = computed(() => `通过 ${https.value ? 'HTTPS MCP' : 'Tunnel'} 连接到本地设备`);
+// These values are copied into ChatGPT; keep model-facing text locale-independent.
+const description = computed(() => `Connect to this computer via ${https.value ? 'HTTPS MCP' : 'Tunnel'}`);
 const online = computed(() => !connectionError.value && status.value?.tunnel.state === 'ready');
 const verified = computed(() => status.value?.core.chatgpt?.challengeVerifiedAt);
 const code = computed(() => status.value?.core.chatgpt?.code || '');
-const prompt = computed(() => `请使用 Local Connector 插件调用 connector_verify，code 为 ${code.value}。只验证连接，不创建任务。`);
+const prompt = computed(() => `Use the Local Connector plugin to call connector_verify with code ${code.value}. Only verify the connection; do not create a task.`);
 const open = (url: string) => run('chatgpt-open', () => openUrl(url));
 const reset = () => run('chatgpt-verify', async () => { await api('verification/reset', 'POST'); await refresh(); });
 </script>
 <template>
   <div class="chat-guide">
-    <h1>接入 ChatGPT</h1>
+    <h1>{{ t('connectChatgpt') }}</h1>
     <div v-if="!online" class="guide-notice" role="status">
-      <span>{{connectionError || status?.tunnel.error || '请先开启本机连接'}}</span>
-      <button v-if="!status?.config.configured" class="text-button" @click="emit('settings')">配置连接 →</button>
-      <button v-else class="text-button" :disabled="!!busy || ['starting','installing','connecting'].includes(status?.tunnel.state || '')" @click="run('connect', async () => { await api('start', 'POST'); await refresh(); })">开启连接</button>
+      <span>{{displayMessage(connectionError || status?.tunnel.error) || t('startTheLocalConnectionFirst')}}</span>
+      <button v-if="!status?.config.configured" class="text-button" @click="emit('settings')">{{ t('configureConnection') }}</button>
+      <button v-else class="text-button" :disabled="!!busy || ['starting','installing','connecting'].includes(status?.tunnel.state || '')" @click="run('connect', async () => { await api('start', 'POST'); await refresh(); })">{{ t('connect') }}</button>
     </div>
     <ol class="guide-steps">
-      <li><span class="guide-step-number">1</span><div><div class="guide-step-heading"><strong>开启开发者模式</strong><button class="text-button" :disabled="!!busy" @click="open('https://chatgpt.com/settings/security')">打开设置 <SquareArrowOutUpRight class="external-icon" aria-hidden="true" /></button></div><p>设置 → 安全与登录 → Developer Mode</p></div></li>
+      <li><span class="guide-step-number">1</span><div><div class="guide-step-heading"><strong>{{ t('enableDeveloperMode') }}</strong><button class="text-button" :disabled="!!busy" @click="open('https://chatgpt.com/settings/security')">{{ t('openSettings') }} <SquareArrowOutUpRight class="external-icon" aria-hidden="true" /></button></div><p>{{ t('settingsSecuritySignInDeveloperMode') }}</p></div></li>
       <li><span class="guide-step-number">2</span><div>
-        <div class="guide-step-heading"><strong>Create MCP App</strong><button class="text-button" :disabled="!!busy" @click="open('https://chatgpt.com/plugins')">打开 Plugins <SquareArrowOutUpRight class="external-icon" aria-hidden="true" /></button></div>
+        <div class="guide-step-heading"><strong>Create MCP App</strong><button class="text-button" :disabled="!!busy" @click="open('https://chatgpt.com/plugins')">{{ t('openPlugins') }} <SquareArrowOutUpRight class="external-icon" aria-hidden="true" /></button></div>
         <p>Plugins → Add / ＋ → Create MCP App</p>
         <dl class="guide-fields">
-          <div><dt>Name</dt><dd><CopyField value="Local Connector" label="推荐名称" /></dd></div>
-          <div><dt>Description</dt><dd><CopyField :value="description" label="推荐描述" /></dd></div>
+          <div><dt>Name</dt><dd><CopyField value="Local Connector" :label="t('suggestedName')" /></dd></div>
+          <div><dt>Description</dt><dd><CopyField :value="description" :label="t('suggestedDescription')" /></dd></div>
           <div><dt>Connection</dt><dd>{{https ? 'Server URL' : 'Tunnel'}}</dd></div>
-          <div v-if="https"><dt>Server URL</dt><dd><CopyField :value="endpoint" label="ChatGPT 接入地址" /></dd></div>
-          <div v-else><dt>Tunnel</dt><dd><span>选择当前通道</span><small v-if="endpoint">{{endpoint}}</small></dd></div>
+          <div v-if="https"><dt>Server URL</dt><dd><CopyField :value="endpoint" :label="t('chatgptConnectionUrl')" /></dd></div>
+          <div v-else><dt>Tunnel</dt><dd><span>{{ t('selectTheCurrentTunnel') }}</span><small v-if="endpoint">{{endpoint}}</small></dd></div>
           <div><dt>Authentication</dt><dd>No Authentication</dd></div>
         </dl>
       </div></li>
-      <li><span class="guide-step-number">3</span><div><strong>发送验证消息</strong><p>新对话中选用连接，发送以下消息</p><CopyField v-if="code" :value="prompt" label="连接验证消息" multiline />
-        <p v-if="online && verified" class="guide-result" role="status">✓ 已收到验证请求 <button class="text-button" :disabled="!!busy" @click="reset">重新验证</button></p>
+      <li><span class="guide-step-number">3</span><div><strong>{{ t('sendVerificationMessage') }}</strong><p>{{ t('selectTheConnectionInANewConversationAnd') }}</p><CopyField v-if="code" :value="prompt" :label="t('connectionVerificationMessage')" multiline />
+        <p v-if="online && verified" class="guide-result" role="status">{{ t('verificationRequestReceived') }} <button class="text-button" :disabled="!!busy" @click="reset">{{ t('verifyAgain') }}</button></p>
       </div></li>
     </ol>
   </div>

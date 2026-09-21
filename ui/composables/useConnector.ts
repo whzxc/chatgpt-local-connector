@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { CoreSnapshot } from '../types';
 import { onUnmounted } from 'vue';
 import { desktopRequest, isDesktop } from '../platform';
@@ -74,10 +75,10 @@ export async function api<T = unknown>(
   try {
     data = await response.json();
   } catch {
-    throw new Error("服务返回了无法识别的响应，请确认管理服务已启动。");
+    throw new Error(t('unrecognizedServiceResponseMakeSureTheManagementService'));
   }
   if (!response.ok)
-    throw new Error(data.error || data.message || "请求失败，请重试。");
+    throw new Error(data.error || data.message || t('requestFailedPleaseRetry'));
   return data as T;
 }
 
@@ -103,7 +104,7 @@ function createConnector() {
       await action();
     } catch (error) {
       notify(
-        error instanceof Error ? error.message : typeof error === "string" ? error : "操作失败，请重试。",
+        error instanceof Error ? error.message : typeof error === "string" ? error : t('operationFailedPleaseRetry'),
         true,
       );
     } finally {
@@ -118,7 +119,7 @@ function createConnector() {
         connectionError.value = "";
       } catch (error) {
         connectionError.value =
-          error instanceof Error ? error.message : typeof error === "string" ? error : "无法连接管理服务";
+          error instanceof Error ? error.message : typeof error === "string" ? error : t('unableToConnectToTheManagementService');
         throw error;
       } finally {
         refreshing = undefined;
@@ -159,6 +160,6 @@ export function provideConnector() {
 }
 export function useConnector() {
   const connector = inject(connectorKey);
-  if (!connector) throw new Error("缺少 Connector 上下文");
+  if (!connector) throw new Error(t('missingConnectorContext'));
   return connector;
 }

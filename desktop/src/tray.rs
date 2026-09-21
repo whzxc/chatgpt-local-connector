@@ -1,3 +1,4 @@
+use crate::i18n::t;
 use crate::{request, show_main_window};
 use serde_json::{json, Value};
 use std::sync::{
@@ -15,41 +16,53 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     let heading = MenuItem::with_id(
         app,
         "status",
-        "Local Connector · 正在检查",
+        t("serviceLocalConnectorChecking"),
         false,
         None::<&str>,
     )?;
     let desktop = MenuItem::with_id(
         app,
         "desktop-status",
-        "Codex · 正在检查",
+        t("serviceCodexChecking"),
         false,
         None::<&str>,
     )?;
     let verification = MenuItem::with_id(
         app,
         "verification",
-        "ChatGPT · 正在检查",
+        t("serviceChatgptChecking"),
         false,
         None::<&str>,
     )?;
-    let connection =
-        CheckMenuItem::with_id(app, "connection", "开启连接", false, false, None::<&str>)?;
+    let connection = CheckMenuItem::with_id(
+        app,
+        "connection",
+        t("serviceConnect"),
+        false,
+        false,
+        None::<&str>,
+    )?;
     let startup = CheckMenuItem::with_id(
         app,
         "startup",
-        "登录系统时开启连接",
+        t("serviceConnectAtSystemSignIn"),
         false,
         false,
         None::<&str>,
     )?;
-    let approval =
-        CheckMenuItem::with_id(app, "approval", "任务审批模式", false, false, None::<&str>)?;
-    let tasks = MenuItem::with_id(app, "tasks", "任务…", true, None::<&str>)?;
-    let home = MenuItem::with_id(app, "overview", "打开首页", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-    let records = MenuItem::with_id(app, "logs", "记录…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
+    let approval = CheckMenuItem::with_id(
+        app,
+        "approval",
+        t("serviceTaskApprovalMode"),
+        false,
+        false,
+        None::<&str>,
+    )?;
+    let tasks = MenuItem::with_id(app, "tasks", t("serviceTasks"), true, None::<&str>)?;
+    let home = MenuItem::with_id(app, "overview", t("serviceOpenHome"), true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", t("serviceSettings"), true, None::<&str>)?;
+    let records = MenuItem::with_id(app, "logs", t("serviceRecords"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t("serviceQuitApp"), true, None::<&str>)?;
     let separator1 = PredefinedMenuItem::separator(app)?;
     let separator2 = PredefinedMenuItem::separator(app)?;
     let separator3 = PredefinedMenuItem::separator(app)?;
@@ -131,6 +144,12 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     let app = app.handle().clone();
     std::thread::spawn(move || loop {
         if !busy.load(Ordering::SeqCst) {
+            let _ = home.set_text(t("serviceOpenHome"));
+            let _ = settings.set_text(t("serviceSettings"));
+            let _ = records.set_text(t("serviceRecords"));
+            let _ = quit.set_text(t("serviceQuitApp"));
+            let _ = startup.set_text(t("serviceConnectAtSystemSignIn"));
+            let _ = approval.set_text(t("serviceTaskApprovalMode"));
             let status = tauri::async_runtime::block_on(request(&app, "status", "GET", json!({})));
             let service =
                 tauri::async_runtime::block_on(request(&app, "service", "GET", json!({})));
@@ -148,8 +167,10 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                             .count()
                     });
                 let _ = tasks.set_text(match pending {
-                    Some(n) if n > 0 => format!("任务… · {n} 条待审批"),
-                    _ => "任务…".to_owned(),
+                    Some(n) if n > 0 => {
+                        t("serviceTasksValueAwaitingApproval").replace("{n}", &n.to_string())
+                    }
+                    _ => t("serviceTasks").to_owned(),
                 });
                 match status {
                     Ok(value) => {
@@ -160,50 +181,52 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                         let codex_ready = value["core"]["desktop"]["state"] == "ready";
                         let verified = value["core"]["chatgpt"]["verifiedAt"].is_string();
                         let label = match state {
-                            "ready" if !codex_ready => "连接需要处理 · Codex 未就绪",
-                            "ready" if verified => "已连接",
-                            "ready" => "通道已就绪 · 等待 ChatGPT 接入",
-                            "starting" => "正在连接",
-                            "stopping" => "正在关闭",
-                            "error" | "degraded" => "连接需要处理",
-                            _ => "连接已关闭",
+                            "ready" if !codex_ready => {
+                                t("serviceConnectionNeedsAttentionCodexNotReady")
+                            }
+                            "ready" if verified => t("serviceConnected"),
+                            "ready" => t("serviceTunnelReadyAwaitingChatgpt"),
+                            "starting" => t("serviceConnecting"),
+                            "stopping" => t("serviceDisconnecting"),
+                            "error" | "degraded" => t("serviceConnectionNeedsAttention"),
+                            _ => t("serviceConnectionClosed"),
                         };
                         let failure = error.lock().unwrap().take();
                         let _ = heading.set_text(
                             failure
                                 .as_ref()
-                                .map(|_| "操作未完成 · 请查看应用")
+                                .map(|_| t("serviceActionIncompleteCheckTheApp"))
                                 .unwrap_or(label),
                         );
                         let codex = match state {
-                            "starting" | "stopping" => "连接中",
-                            "error" | "degraded" => "连接异常",
+                            "starting" | "stopping" => t("serviceConnecting"),
+                            "error" | "degraded" => t("serviceConnectionError"),
                             "ready" => match value["core"]["desktop"]["state"].as_str() {
-                                Some("ready") => "已就绪",
-                                Some("running") => "已打开",
-                                Some("connecting") => "准备中",
-                                Some("unavailable") => "不可用",
-                                Some("error") => "连接异常",
-                                Some("disconnected") => "未就绪",
-                                _ => "需检查",
+                                Some("ready") => t("serviceReady"),
+                                Some("running") => t("serviceOpen"),
+                                Some("connecting") => t("servicePreparing"),
+                                Some("unavailable") => t("serviceUnavailable"),
+                                Some("error") => t("serviceConnectionError"),
+                                Some("disconnected") => t("serviceNotReady"),
+                                _ => t("serviceCheckRequired"),
                             },
-                            _ => "未连接",
+                            _ => t("serviceDisconnected"),
                         };
                         let _ = desktop.set_text(format!("Codex · {codex}"));
                         let _ = verification.set_text(if state != "ready" {
-                            "ChatGPT · 未连接"
+                            t("serviceChatgptDisconnected")
                         } else if verified {
-                            "ChatGPT · 已验证"
+                            t("serviceChatgptVerified")
                         } else {
-                            "ChatGPT · 等待验证"
+                            t("serviceChatgptAwaitingVerification")
                         });
                         let _ = approval
                             .set_checked(value["taskApprovalEnabled"].as_bool().unwrap_or(false));
                         let _ = approval.set_enabled(!cfg!(debug_assertions));
                         let _ = connection.set_text(if active {
-                            "关闭连接"
+                            t("serviceDisconnect")
                         } else {
-                            "开启连接"
+                            t("serviceConnect")
                         });
                         let _ = connection.set_checked(active);
                         let configured = value["config"]["configured"].as_bool().unwrap_or(false);
@@ -214,9 +237,9 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                         );
                     }
                     Err(_) => {
-                        let _ = heading.set_text("连接状态异常 · 请打开应用");
-                        let _ = desktop.set_text("Codex · 状态未知");
-                        let _ = verification.set_text("ChatGPT · 状态未知");
+                        let _ = heading.set_text(t("serviceConnectionStatusErrorOpenTheApp"));
+                        let _ = desktop.set_text(t("serviceCodexStatusUnknown"));
+                        let _ = verification.set_text(t("serviceChatgptStatusUnknown"));
                         let _ = connection.set_checked(false);
                         let _ = connection.set_enabled(false);
                         let _ = approval.set_enabled(false);

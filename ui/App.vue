@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { displayMessage } from './messages';
+import { t } from './i18n';
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { LayoutDashboard, Logs, Settings, Power, ArrowLeft, RefreshCw, Download, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
 import { provideConnector, api } from './composables/useConnector';
@@ -35,17 +37,17 @@ const needsConfiguration = computed(() => {
 const state = computed(() => status.value?.tunnel.state || 'stopped');
 const connected = computed(() => state.value === 'ready' && (status.value?.autoOpenCodex === false ? status.value?.core.appServer?.state === 'ready' : status.value?.core.desktop?.state === 'ready'));
 const desktopState = computed(() => (status.value?.autoOpenCodex === false ? status.value?.core.appServer?.state : status.value?.core.desktop?.state) || 'unknown');
-const desktopLabel = computed(() => ({ ready: '已就绪', running: '已打开', connecting: '准备中', disconnected: '未就绪', unavailable: '不可用', error: '连接异常', unknown: '检测中' })[desktopState.value] || '检测中');
+const desktopLabel = computed(() => ({ ready: t('ready'), running: t('open'), connecting: t('preparing'), disconnected: t('notReady'), unavailable: t('unavailable'), error: t('connectionError'), unknown: t('checking') })[desktopState.value] || t('checking'));
 const verified = computed(() => !!status.value?.core.chatgpt?.verifiedAt);
 const tunnelRunning = computed(() => status.value?.connection?.running ?? !['stopped','error'].includes(state.value));
 const progressing = computed(() => ['connect','disconnect'].includes(busy.value) || ['starting','stopping'].includes(state.value));
-const title = computed(() => needsConfiguration.value ? '请先配置连接。' : progressing.value ? (busy.value === 'disconnect' ? '正在关闭连接…' : '正在建立连接…') : connected.value ? (verified.value ? '已连接，从 ChatGPT 开始' : status.value?.config.connectionMode === 'https' ? '本机 MCP 已开启，等待公网验证。' : '本机连接已启动，等待 ChatGPT 验证。') : ['error','degraded'].includes(state.value) ? '连接异常，请重试。' : '连接 ChatGPT 与本机 Codex。');
+const title = computed(() => needsConfiguration.value ? t('configureTheConnectionFirst') : progressing.value ? (busy.value === 'disconnect' ? t('disconnecting') : t('connecting')) : connected.value ? (verified.value ? t('connectedStartInChatgpt') : status.value?.config.connectionMode === 'https' ? t('localMcpIsRunningAwaitingPublicEndpointVerification') : t('localConnectionStartedAwaitingChatgptVerification')) : ['error','degraded'].includes(state.value) ? t('connectionErrorPleaseRetry') : t('connectChatgptToCodexOnThisComputer'));
 const links = computed(() => {
   const pending = progressing.value;
   const failed = ['error', 'degraded'].includes(state.value);
   return [
-    { ready: verified.value && state.value === 'ready', pending, failed, label: `ChatGPT — Connector：${pending ? '连接中' : failed ? '连接异常' : state.value !== 'ready' ? '未连接' : verified.value ? '已验证' : '等待验证'}` },
-    { ready: connected.value, pending: pending || desktopState.value === 'connecting', failed: failed || desktopState.value === 'error' || desktopState.value === 'unavailable', label: `Connector — Codex：${pending ? '连接中' : state.value !== 'ready' ? '未连接' : desktopLabel.value}` },
+    { ready: verified.value && state.value === 'ready', pending, failed, label: t('chatgptConnectorValue', { status: pending ? t('connectingLabel') : failed ? t('connectionError') : state.value !== 'ready' ? t('disconnected') : verified.value ? t('verified') : t('awaitingVerification') }) },
+    { ready: connected.value, pending: pending || desktopState.value === 'connecting', failed: failed || desktopState.value === 'error' || desktopState.value === 'unavailable', label: t('connectorCodexValue', { status: pending ? t('connectingLabel') : state.value !== 'ready' ? t('disconnected') : desktopLabel.value }) },
   ];
 });
 function linkIcon(link: {ready: boolean; pending: boolean; failed: boolean}) {
@@ -63,7 +65,7 @@ onUnmounted(() => unlisteners.forEach(stop => stop()));
 async function windowAction(action: 'minimize' | 'toggleMaximize' | 'close') {
   const { getCurrentWindow } = await import('@tauri-apps/api/window'); await getCurrentWindow()[action]();
 }
-watch(() => status.value?.core.appServer.state, (n,old) => { if(old && n==='error' && n!==old) void notifyNative('本机连接异常','请在设置中查看诊断').catch(()=>{}); });
+watch(() => status.value?.core.appServer.state, (n,old) => { if(old && n==='error' && n!==old) void notifyNative(t('localConnectionError'),t('checkDiagnosticsInSettings')).catch(()=>{}); });
 let toastTimer: ReturnType<typeof setTimeout>;
 watch(() => feedback.value.text, text => { clearTimeout(toastTimer); if(text && !feedback.value.error) toastTimer=setTimeout(()=>feedback.value.text='',4500); });
 onUnmounted(()=>clearTimeout(toastTimer));
@@ -79,7 +81,7 @@ const connectionIssue = computed(() => {
   if (connectionError.value) return connectionError.value;
   if (status.value?.tunnel.error) return status.value.tunnel.error;
   // Present current product states rather than backend implementation details.
-  return desktopState.value === 'unavailable' ? '未找到 Codex，请先安装并打开应用。' : 'Codex 尚未就绪，请确认应用已打开后重试。';
+  return desktopState.value === 'unavailable' ? t('codexWasNotFoundInstallAndOpenIt') : t('codexIsNotReadyMakeSureTheApp');
 });
 async function reconnect() {
   await run('connect', async () => { await api('stop', 'POST'); await api('start', 'POST'); await refresh(); });
@@ -90,39 +92,39 @@ async function reconnect() {
 <template>
   <div class="app-scene" :class="{desktop:isDesktop,mac}">
     <header class="app-header" data-tauri-drag-region>
-      <button v-if="page==='overview'||page==='guide'" class="brand ghost" @click="navigate('overview')" aria-label="首页"><img :src="logo" alt=""/> <span>Local Connector</span></button>
-      <div v-else class="header-page-title"><button class="ghost" aria-label="返回首页" @click="navigate('overview')"><ArrowLeft aria-hidden="true"/></button><h1>{{page==='settings'?'设置':page==='tasks'?'任务':'记录'}}</h1></div>
-      <nav class="top-nav" aria-label="主导航">
-        <button v-if="appUpdate.available.value" class="active" :aria-label="`更新至 ${appUpdate.update.value?.version}`" :title="`新版本 ${appUpdate.update.value?.version} · 查看更新`" aria-haspopup="dialog" @click="appUpdate.showUpdate"><Download aria-hidden="true"/></button>
-        <button class="tasks-nav" :class="{active:page==='tasks'}" :aria-pressed="page==='tasks'" aria-label="任务" title="任务" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
-        <button :class="{active:page==='logs'}" :aria-pressed="page==='logs'" aria-label="记录" title="记录" @click="navigate('logs')"><Logs aria-hidden="true" /></button>
-        <button :class="{active:page==='settings'}" :aria-pressed="page==='settings'" aria-label="设置" title="设置" @click="navigate('settings')"><Settings aria-hidden="true" /></button>
+      <button v-if="page==='overview'||page==='guide'" class="brand ghost" @click="navigate('overview')" :aria-label="t('home')"><img :src="logo" alt=""/> <span>Local Connector</span></button>
+      <div v-else class="header-page-title"><button class="ghost" :aria-label="t('backToHome')" @click="navigate('overview')"><ArrowLeft aria-hidden="true"/></button><h1>{{page==='settings'?t('settings'):page==='tasks'?t('tasks'):t('records')}}</h1></div>
+      <nav class="top-nav" :aria-label="t('mainNavigation')">
+        <button v-if="appUpdate.available.value" class="active" :aria-label="t('updateToValue', { version: appUpdate.update.value?.version })" :title="t('newVersionValueViewUpdate', { version: appUpdate.update.value?.version })" aria-haspopup="dialog" @click="appUpdate.showUpdate"><Download aria-hidden="true"/></button>
+        <button class="tasks-nav" :class="{active:page==='tasks'}" :aria-pressed="page==='tasks'" :aria-label="t('tasks')" :title="t('tasks')" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
+        <button :class="{active:page==='logs'}" :aria-pressed="page==='logs'" :aria-label="t('records')" :title="t('records')" @click="navigate('logs')"><Logs aria-hidden="true" /></button>
+        <button :class="{active:page==='settings'}" :aria-pressed="page==='settings'" :aria-label="t('settings')" :title="t('settings')" @click="navigate('settings')"><Settings aria-hidden="true" /></button>
       </nav>
-      <div v-if="isDesktop&&!mac" class="window-controls"><button aria-label="最小化" @click="windowAction('minimize')"><Minus /></button><button aria-label="最大化或还原" @click="windowAction('toggleMaximize')"><Square /></button><button aria-label="关闭窗口" @click="windowAction('close')"><X /></button></div>
+      <div v-if="isDesktop&&!mac" class="window-controls"><button :aria-label="t('minimize')" @click="windowAction('minimize')"><Minus /></button><button :aria-label="t('maximizeOrRestore')" @click="windowAction('toggleMaximize')"><Square /></button><button :aria-label="t('closeWindow')" @click="windowAction('close')"><X /></button></div>
     </header>
     <main ref="workspace" class="workspace" :class="{'records-workspace':page==='logs'}">
-      <div v-if="feedback.text && feedback.error" class="status-banner warning" role="alert"><TriangleAlert aria-hidden="true"/><span>{{feedback.text}}</span><button class="ghost banner-dismiss" aria-label="关闭提示" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
+      <div v-if="feedback.text && feedback.error" class="status-banner warning" role="alert"><TriangleAlert aria-hidden="true"/><span>{{displayMessage(feedback.text)}}</span><button class="ghost banner-dismiss" :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
       <template v-if="page==='guide'"><ChatGuide @done="navigate('overview')" @settings="navigate('settings')"/></template>
       <template v-else-if="page==='overview'">
-          <div v-if="status?.connection?.updateAvailable" class="status-banner" role="status"><Info aria-hidden="true"/><span>连接组件有更新</span><button class="text-button" :disabled="!!busy" @click="reconnect"><RefreshCw aria-hidden="true"/> 更新连接</button></div>
-          <div v-if="needsReconnect && !progressing && !needsConfiguration" class="status-banner warning" role="status"><TriangleAlert aria-hidden="true"/><span>{{connectionIssue}}</span><button class="text-button" :disabled="!!busy" @click="reconnect"><RefreshCw aria-hidden="true"/> 重新连接</button></div>
+          <div v-if="status?.connection?.updateAvailable" class="status-banner" role="status"><Info aria-hidden="true"/><span>{{ t('connectionComponentUpdateAvailable') }}</span><button class="text-button" :disabled="!!busy" @click="reconnect"><RefreshCw aria-hidden="true"/> {{ t('updateConnection') }}</button></div>
+          <div v-if="needsReconnect && !progressing && !needsConfiguration" class="status-banner warning" role="status"><TriangleAlert aria-hidden="true"/><span>{{displayMessage(connectionIssue)}}</span><button class="text-button" :disabled="!!busy" @click="reconnect"><RefreshCw aria-hidden="true"/> {{ t('reconnect') }}</button></div>
           <section class="connection-panel" :class="{connected,progressing}">
             <div class="connection-content"><h2>{{title}}</h2>
-              <p v-if="needsConfiguration">前往设置，填写连接信息后即可开启连接。</p>
-              <button v-if="needsConfiguration" class="connection-action" @click="navigate('settings')"><span class="connection-knob"><Settings aria-hidden="true"/></span><span class="connection-action-label">前往设置</span></button>
-              <button v-else class="connection-action" :class="{'is-on':tunnelRunning,'is-busy':progressing}" :aria-label="progressing?'连接切换中':tunnelRunning?'关闭连接':'开启连接'" :aria-busy="progressing" :disabled="!!busy || progressing || loading || !status" @click="toggle">
+              <p v-if="needsConfiguration">{{ t('goToSettingsAndEnterYourConnectionDetails') }}</p>
+              <button v-if="needsConfiguration" class="connection-action" @click="navigate('settings')"><span class="connection-knob"><Settings aria-hidden="true"/></span><span class="connection-action-label">{{ t('goToSettings') }}</span></button>
+              <button v-else class="connection-action" :class="{'is-on':tunnelRunning,'is-busy':progressing}" :aria-label="progressing?t('switchingConnection'):tunnelRunning?t('disconnect'):t('connect')" :aria-busy="progressing" :disabled="!!busy || progressing || loading || !status" @click="toggle">
                 <span class="connection-switch-track" aria-hidden="true"><span class="connection-knob"><LoaderCircle v-if="progressing"/><Power v-else/></span></span>
-                <span class="connection-action-label">{{progressing?'请稍候…':tunnelRunning?'关闭连接':'开启连接'}}</span>
+                <span class="connection-action-label">{{progressing?t('pleaseWait'):tunnelRunning?t('disconnect'):t('connect')}}</span>
                 <span class="connection-action-light" aria-hidden="true"></span>
               </button>
             </div>
             <div class="connection-art"><PlayfulMascot/><span class="art-orbit" aria-hidden="true"></span><span class="art-orbit second" aria-hidden="true"></span></div>
-            <section class="connection-path" aria-label="连接状态">
-              <div class="path-node" :class="{ready:verified}"><a class="path-shortcut" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" aria-label="打开 ChatGPT 网页" title="打开 ChatGPT 网页" @click="isDesktop && ($event.preventDefault(), run('chatgpt-open', () => openUrl('https://chatgpt.com/')))"><img class="product-logo" :src="chatgptLogo" alt=""/><strong>ChatGPT</strong></a></div>
-              <button class="path-link path-link-action" :class="{ready:links[0].ready,pending:links[0].pending,failed:links[0].failed}" :aria-label="`${links[0].label}，打开接入引导`" :title="`${links[0].label} · 点击查看接入与验证`" @click="navigate('guide')"><component :is="linkIcon(links[0])" aria-hidden="true"/><span v-if="!links[0].ready" class="path-link-caption">{{links[0].pending ? '连接中' : links[0].failed ? '连接异常' : state==='ready' ? '待验证' : '未连接'}}</span></button>
+            <section class="connection-path" :aria-label="t('connectionStatus')">
+              <div class="path-node" :class="{ready:verified}"><a class="path-shortcut" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" :aria-label="t('openChatgptWebsite')" :title="t('openChatgptWebsite')" @click="isDesktop && ($event.preventDefault(), run('chatgpt-open', () => openUrl('https://chatgpt.com/')))"><img class="product-logo" :src="chatgptLogo" alt=""/><strong>ChatGPT</strong></a></div>
+              <button class="path-link path-link-action" :class="{ready:links[0].ready,pending:links[0].pending,failed:links[0].failed}" :aria-label="t('valueOpenSetupGuide', { status: links[0].label })" :title="t('valueViewSetupAndVerification', { status: links[0].label })" @click="navigate('guide')"><component :is="linkIcon(links[0])" aria-hidden="true"/><span v-if="!links[0].ready" class="path-link-caption">{{links[0].pending ? t('connectingLabel') : links[0].failed ? t('connectionError') : state==='ready' ? t('unverified') : t('disconnected')}}</span></button>
               <div class="path-node" :class="{ready:state==='ready'}"><img class="product-logo connector-logo" :src="logo" alt=""/><strong>Connector</strong></div>
               <span class="path-link" :class="{ready:links[1].ready,pending:links[1].pending,failed:links[1].failed}" role="img" :aria-label="links[1].label" :title="links[1].label"><component :is="linkIcon(links[1])" aria-hidden="true"/></span>
-              <div class="path-node" :class="{ready:desktopState==='ready'}"><button type="button" class="path-shortcut" aria-label="打开 Codex Desktop" title="打开 Codex Desktop" :disabled="!!busy" @click="run('codex-open', async () => { await api('codex/login', 'POST'); })"><img class="product-logo" :src="codexLogo" alt=""/><strong>Codex</strong></button></div>
+              <div class="path-node" :class="{ready:desktopState==='ready'}"><button type="button" class="path-shortcut" :aria-label="t('openCodexDesktop')" :title="t('openCodexDesktop')" :disabled="!!busy" @click="run('codex-open', async () => { await api('codex/login', 'POST'); })"><img class="product-logo" :src="codexLogo" alt=""/><strong>Codex</strong></button></div>
             </section>
           </section>
 
@@ -137,6 +139,6 @@ async function reconnect() {
       </template>
     </main>
     <AppUpdateDialog/>
-    <div v-if="feedback.text && !feedback.error" class="message" role="status">{{feedback.text}}<button aria-label="关闭提示" @click="feedback.text=''"><X aria-hidden="true" /></button></div>
+    <div v-if="feedback.text && !feedback.error" class="message" role="status">{{displayMessage(feedback.text)}}<button :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true" /></button></div>
   </div>
 </template>

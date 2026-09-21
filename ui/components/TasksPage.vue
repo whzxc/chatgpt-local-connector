@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { displayMessage } from '../messages';
+import { t, locale } from '../i18n';
 import { X } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useClipboard, useIntervalFn, usePreferredReducedMotion, useResizeObserver } from '@vueuse/core';
@@ -9,13 +11,13 @@ const emit = defineEmits<{ refresh: [] }>();
 const { busy, run } = useConnector();
 const runtimes = ref<Record<string, TaskRuntime>>({});
 const { copy, copied } = useClipboard();
-const runtimeLabels: Record<string,string> = { waiting:'等待交互', active:'运行中', idle:'空闲', systemError:'运行异常' };
-const decisions: Record<string,string> = {pending:'等待确认', automatic:'自动执行', approved:'已批准', bypass:'已绕过', reject:'已拒绝'};
-const kinds: Record<string,string> = {create:'创建任务',send:'发送输入',interrupt:'中断任务',native:'管理任务'};
+const runtimeLabels = computed<Record<string, string>>(() => ({ waiting:t('awaitingInteraction'), active:t('running'), idle:t('idle'), systemError:t('runtimeError') }));
+const decisions = computed<Record<string, string>>(() => ({pending:t('awaitingConfirmation'), automatic:t('automaticExecution'), approved:t('approved'), bypass:t('bypassed'), reject:t('rejected')}));
+const kinds = computed<Record<string, string>>(() => ({create:t('createTask'),send:t('sendInput'),interrupt:t('interruptTask'),native:t('manageTask')}));
 const idOf = (r: TaskRecord) => r.threadId || r.task.threadId;
 const projectOf = (r: TaskRecord) => r.task.project || r.task.directory || (idOf(r) && runtimes.value[idOf(r)!]?.project) || '';
-const titleOf = (r: TaskRecord) => r.task.title || (idOf(r) && runtimes.value[idOf(r)!]?.title) || r.task.prompt.split('\n')[0]?.slice(0, 90) || kinds[r.task.kind] || '任务请求';
-const time = (s: string) => new Date(s).toLocaleString('zh-CN', { hour12: false });
+const titleOf = (r: TaskRecord) => r.task.title || (idOf(r) && runtimes.value[idOf(r)!]?.title) || r.task.prompt.split('\n')[0]?.slice(0, 90) || kinds.value[r.task.kind] || t('taskRequest');
+const time = (s: string) => new Date(s).toLocaleString(locale.value, { hour12: false });
 const groups = computed(() => {
   const result = new Map<string, TaskRecord[]>();
   for (const r of props.records) {
@@ -33,12 +35,12 @@ watch(() => props.records, records => {
   }
 }, { immediate:true });
 const projectName = (r: TaskRecord) => projectOf(r).replace(/[\\/]+$/, '').split(/[\\/]/).pop() || projectOf(r);
-const createdTime = (s: string) => new Date(s).toLocaleString('zh-CN', { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
+const createdTime = (s: string) => new Date(s).toLocaleString(locale.value, { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
 function stateOf(g: (typeof groups.value)[number]) {
   const runtime = runtimes.value[g.id];
-  if (runtime?.archived) return '已归档';
+  if (runtime?.archived) return t('archived');
   if (!runtime || runtime.stale) return '';
-  return runtimeLabels[runtime.runtimeStatus] || '';
+  return runtimeLabels.value[runtime.runtimeStatus] || '';
 }
 let checking = false;
 async function refreshRuntime() {
@@ -63,7 +65,7 @@ async function decide(r: TaskRecord, action: string) {
 }
 async function copyPrompt(prompt: string) {
   actionError.value = '';
-  try { await copy(prompt); } catch { actionError.value = '复制失败，请手动选择正文复制。'; }
+  try { await copy(prompt); } catch { actionError.value = t('copyFailedSelectAndCopyTheTextManually'); }
 }
 const actionError = ref('');
 const openingTask = ref(false);
@@ -72,7 +74,7 @@ async function openTask(id: string) {
   actionError.value = '';
   openingTask.value = true;
   try { await api('tasks/open', 'POST', { threadId: id }); }
-  catch { if (selectedId.value === id) actionError.value = '无法打开 Codex，请确认 Codex 已启动后重试。'; }
+  catch { if (selectedId.value === id) actionError.value = t('unableToOpenCodexMakeSureCodexIs'); }
   finally { openingTask.value = false; }
 }
 const selectedId = ref<string>();
@@ -154,8 +156,8 @@ async function closeCard() {
 onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
 </script>
 <template>
-  <section class="tasks-page" aria-label="云端任务">
-    <p v-if="error" class="status-banner warning" role="alert">{{error}}</p>
+  <section class="tasks-page" :aria-label="t('cloudTasks')">
+    <p v-if="error" class="status-banner warning" role="alert">{{displayMessage(error)}}</p>
     <div class="task-grid">
       <div v-for="g in visible" :key="g.id" class="task-cell"><button ref="cards" class="task-document" :class="{'is-focused':selectedId===g.id}" aria-haspopup="dialog" @click="focusCard(g.id,$event)">
         <span class="task-document-heading"><strong class="task-document-title">{{titleOf(g.first)}}</strong><span v-if="g.first.task.model" class="task-tag">{{g.first.task.model}}</span><span v-if="g.first.task.effort" class="task-tag">{{g.first.task.effort}}</span></span>
@@ -169,23 +171,23 @@ onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
         <div class="task-focus-sheet">
           <header class="task-focus-header">
             <div><div class="task-document-heading"><h2 id="task-focus-title" tabindex="-1" autofocus>{{titleOf(selected.first)}}</h2><span v-if="selected.first.task.model" class="task-tag">{{selected.first.task.model}}</span><span v-if="selected.first.task.effort" class="task-tag">{{selected.first.task.effort}}</span></div><time class="task-document-time">{{createdTime(selected.first.createdAt)}}</time></div>
-            <button class="task-focus-close" aria-label="关闭任务详情" @click="closeCard"><X aria-hidden="true"/></button>
+            <button class="task-focus-close" :aria-label="t('closeTaskDetails')" @click="closeCard"><X aria-hidden="true"/></button>
           </header>
           <div class="task-focus-content">
-          <p v-if="selected.first.executionOwner === 'connector'" class="hint">此任务由 Connector 后台执行；关闭连接会停止后台执行，不保证可在 Codex Desktop 中继续或中断。</p>
+          <p v-if="selected.first.executionOwner === 'connector'" class="hint">{{ t('connectorRunsThisTaskInTheBackgroundDisconnecting') }}</p>
         <section v-for="r in [...selected.records].reverse()" :key="r.requestId" class="task-entry">
-          <div class="task-entry-heading"><strong>{{kinds[r.task.kind] || '管理任务'}}</strong><span v-if="r.task.model" class="task-tag">{{r.task.model}}</span><span v-if="r.task.effort" class="task-tag">{{r.task.effort}}</span><time>{{time(r.createdAt)}}</time><button v-if="r.task.prompt" class="text-button" @click="copyPrompt(r.task.prompt)">{{copied?'已复制':'复制 Prompt'}}</button></div>
+          <div class="task-entry-heading"><strong>{{kinds[r.task.kind] || t('manageTask')}}</strong><span v-if="r.task.model" class="task-tag">{{r.task.model}}</span><span v-if="r.task.effort" class="task-tag">{{r.task.effort}}</span><time>{{time(r.createdAt)}}</time><button v-if="r.task.prompt" class="text-button" @click="copyPrompt(r.task.prompt)">{{copied?t('copied'):t('copyPrompt')}}</button></div>
           <pre v-if="r.task.prompt" class="task-prompt">{{r.task.prompt}}</pre>
-          <div v-if="decisions[r.approval.decision]" class="task-entry-meta"><span v-if="decisions[r.approval.decision]">{{decisions[r.approval.decision]}} · {{r.approval.source==='local'?'本机':'云端'}}</span></div>
-          <p v-if="r.error?.message" class="status-banner warning">{{r.error.message}}</p>
-          <div v-if="r.state==='awaiting-approval'" class="task-entry-actions"><button class="primary" :disabled="!!busy" @click="decide(r,'approve')">批准并提交</button><button :disabled="!!busy" @click="decide(r,'reject')">拒绝</button></div>
+          <div v-if="decisions[r.approval.decision]" class="task-entry-meta"><span v-if="decisions[r.approval.decision]">{{decisions[r.approval.decision]}} · {{r.approval.source==='local'?t('local'):t('cloud')}}</span></div>
+          <p v-if="r.error?.message" class="status-banner warning">{{displayMessage(r.error.message)}}</p>
+          <div v-if="r.state==='awaiting-approval'" class="task-entry-actions"><button class="primary" :disabled="!!busy" @click="decide(r,'approve')">{{ t('approveAndSubmit') }}</button><button :disabled="!!busy" @click="decide(r,'reject')">{{ t('reject') }}</button></div>
         </section>
           </div>
-          <p v-if="actionError" class="status-banner warning" role="alert">{{actionError}}</p>
-          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask" @click="openTask(selected.id)">{{openingTask ? '正在打开…' : '在 Codex 中打开 ↗'}}</button></footer>
+          <p v-if="actionError" class="status-banner warning" role="alert">{{displayMessage(actionError)}}</p>
+          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask" @click="openTask(selected.id)">{{openingTask ? t('opening') : t('openInCodex')}}</button></footer>
         </div>
       </dialog>
     </Teleport>
-    <p v-if="!visible.length && !error" class="empty">暂无任务</p>
+    <p v-if="!visible.length && !error" class="empty">{{ t('noTasksYet') }}</p>
   </section>
 </template>

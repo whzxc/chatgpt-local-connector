@@ -1,78 +1,80 @@
-# 安装与更新
+# Installation and updates
 
-## 下载
+**English** | [简体中文](zh-CN/installation.md)
 
-从 [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) 获取安装包和 `SHA256SUMS.txt`。可下载版本与文件以发布页为准。
+## Download
 
-| 平台 | 文件 | 支持范围 |
+Download the installer and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest). The release page is the source of truth for available versions and files.
+
+| Platform | File | Support |
 | --- | --- | --- |
-| macOS | `Local.Connector_<版本>_aarch64.dmg` | 仅支持 Apple Silicon |
-| Windows x64 | `…-setup.exe` / `….msi` | 需要 Microsoft Store 版 Codex Desktop |
+| macOS | `Local.Connector_<version>_aarch64.dmg` | Apple Silicon only |
+| Windows x64 | `…-setup.exe` / `….msi` | Requires Microsoft Store Codex Desktop |
 
-应用不需要用户安装 Node、npm、Rust 或 Cargo。使用前需安装并登录 Codex Desktop；官方模式填写 Tunnel ID/runtime API Key，连接组件在首次开启连接时自动准备；HTTPS MCP 可选择免账号的 Cloudflare 临时体验、固定域名、ngrok 或自备反向代理，所需组件由应用管理，具体配置见 [接入指南](tunnel.md)。两种方式都需在 ChatGPT 添加连接后才可远程使用，详见 [Codex 配置引导](codex-setup.md)。
+You do not need Node, npm, Rust, or Cargo to run the app. Install Codex Desktop and sign in before use. Official Tunnel mode requires a Tunnel ID and runtime API Key; the app prepares connection components on first connect. HTTPS MCP supports a temporary Cloudflare trial without an account, a fixed domain, ngrok, or your reverse proxy, with required client components managed by the app. See the [connection guide](tunnel.md). Both modes require adding a connection in ChatGPT before remote use; see [Codex-assisted setup](codex-setup.md).
 
-## macOS 安装
+## macOS installation
 
-打开 DMG，将 Local Connector 拖入 Applications，弹出镜像后从应用程序目录启动。不要长期从 DMG 中运行。覆盖安装前从菜单栏退出 Local Connector，拖入新版替换；配置和 Codex 历史不在 App 内，不会因替换 App 而清空。
+Open the DMG, drag Local Connector into Applications, eject the image, and launch from Applications. Do not keep running it from the DMG. Before replacing an installation, quit Local Connector from the menu bar and drag in the new app. Configuration and Codex history are stored outside the app and survive replacement.
 
-本项目暂不使用 Apple Developer ID 签名和公证。首次打开可能被系统阻止。确认文件来自上述发布页并核对 SHA256 后，可在系统设置的「隐私与安全性」中选择「仍要打开」。如果系统报告应用损坏，可仅对已确认来源的此 App 移除隔离标记：
+The project does not currently use Apple Developer ID signing or notarization. macOS may block the first launch. After confirming the download source and SHA256, choose **Open Anyway** in System Settings → Privacy & Security. If macOS reports that the app is damaged, remove the quarantine flag only from this verified app:
 
 ```sh
 xattr -rd com.apple.quarantine "/Applications/Local Connector.app"
 ```
 
-若提示没有权限，可使用管理员账户处理该 App 的权限；不需要关闭系统整体的 Gatekeeper。若文件哈希不一致，应重新下载，而不是移除隔离标记。
+If permission is denied, use an administrator account to handle this app's permissions. You do not need to disable Gatekeeper globally. If the hash differs, download again instead of removing quarantine.
 
-核对下载文件：
+Verify a download:
 
 ```sh
 shasum -a 256 Local.Connector_0.6.1_aarch64.dmg
 ```
 
-将结果与同版本 `SHA256SUMS.txt` 的对应行比较。
+Compare the result with the corresponding entry in `SHA256SUMS.txt` for the same release.
 
 ## Homebrew
 
-使用仓库提供的 Cask 安装：
+Install using the repository's Cask:
 
 ```sh
 brew tap whzxc/chatgpt-local-connector https://github.com/whzxc/chatgpt-local-connector
 brew install --cask local-connector
 ```
 
-若遇到隔离提示，可在确认来源后使用 `brew install --cask --no-quarantine local-connector`。已手动安装同名 App 时，退出 App 后使用 `brew install --cask --force local-connector` 覆盖。Cask 不自动执行 sudo 或清除整个 App 的扩展属性。
+If quarantine blocks launch, after verifying the source you can use `brew install --cask --no-quarantine local-connector`. To replace a manually installed app with the same name, quit it and use `brew install --cask --force local-connector`. The Cask does not automatically run sudo or clear all extended attributes from the app.
 
-应用内更新可直接使用；通过 Homebrew 更新则执行：
+In-app updates work directly. To update through Homebrew:
 
 ```sh
 brew update
 brew upgrade --cask --greedy local-connector
 ```
 
-## Windows 安装
+## Windows installation
 
-选择 x64 的 NSIS `.exe` 或 MSI，运行安装器。安装并登录 Microsoft Store 版 Codex Desktop；Connector 通过命名管道连接同一用户的 Desktop，任务会在 Desktop 中打开并执行。未使用 Authenticode 签名，系统可能显示未知发布者；企业策略禁止运行时需要管理员处理，应用不能绕过策略。
+Run the x64 NSIS `.exe` or MSI installer. Install and sign in to Microsoft Store Codex Desktop. Connector connects to Desktop for the same user over named pipes; tasks open and run in Desktop. Installers are not Authenticode-signed, so Windows may show an unknown publisher. An administrator must handle enterprise policies that block execution; the app cannot bypass them.
 
-PowerShell 校验示例：
+PowerShell verification example:
 
 ```powershell
 Get-FileHash .\Local.Connector_0.6.1_x64-setup.exe -Algorithm SHA256
 ```
 
-升级时退出 App，使用同一种安装器覆盖安装。配置默认保留，不要求用户先卸载。
+To upgrade, quit the app and install over it using the same installer type. Configuration is preserved by default; uninstalling first is unnecessary.
 
-## 应用内更新
+## In-app updates
 
-默认在应用可见时每六小时检查一次，有新版本时显示入口；可在设置中关闭自动检查、手动检查、查看更新说明或跳过某个版本。手动检查会重新显示已跳过的版本。
+By default, the app checks every six hours while visible and shows an entry when a new version is available. In Settings you can disable automatic checks, check manually, read release notes, or skip a version. A manual check shows skipped versions again.
 
-点击下载并安装后可查看进度，下载阶段可以取消。安装阶段不可取消。应用先下载并验签，再关闭 Connector 连接、替换并重启，恢复更新前的连接状态；不会重启 Codex Desktop 或接管其任务。
+After selecting Download and install, progress is displayed. Downloads can be cancelled; installation cannot. The app downloads and verifies the update signature before closing the Connector connection, replacing and restarting the app, and restoring its previous connection state. It does not restart Codex Desktop or take ownership of its tasks.
 
-更新失败会显示错误，可重试或打开手动下载页。安装失败会尝试恢复原连接；若恢复也失败，显示实际错误。没有可用发行版、离线或无法访问 GitHub 时可能无法检查更新，连接功能仍可使用。
+Failures display an error with retry or manual download options. If installation fails, the app tries to restore the connection; any restoration failure is also reported. Update checks may fail when offline, when GitHub is inaccessible, or when no release is available; connection features remain usable.
 
-更新包使用本项目独立密钥签名，客户端内置公钥验签；它不替代 Apple/Windows 系统代码签名。
+Updates are signed with the project's independent key and verified with a public key embedded in the client. This does not replace Apple or Windows code signing.
 
-## 卸载
+## Removal
 
-先在设置关闭登录系统启动，再从菜单栏退出应用，然后删除 App 或使用系统卸载器。Homebrew 用户可执行 `brew uninstall --cask local-connector`。
+Disable connecting at sign-in in Settings, quit the app from the menu bar, then delete the app or use the system uninstaller. Homebrew users can run `brew uninstall --cask local-connector`.
 
-Connector 配置默认保留在 macOS 的 `~/.local/state/chatgpt-local-connector` 或 Windows 的 `%LOCALAPPDATA%/chatgpt-local-connector`。只有不再需要 Tunnel 配置、回执与日志时才自行删除该目录；Codex 项目和历史由 Codex 管理。
+Connector configuration remains in `~/.local/state/chatgpt-local-connector` on macOS or `%LOCALAPPDATA%/chatgpt-local-connector` on Windows by default. Delete that directory yourself only if you no longer need Tunnel settings, receipts, or logs. Codex manages its own projects and history.

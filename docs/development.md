@@ -1,43 +1,53 @@
-# 开发与构建
+# Development and builds
 
-## 日常开发
+## Everyday development
 
-工具链：Node 24.12+、npm、Rust stable 与 macOS/Windows 平台 SDK。Node 只运行开发工具，不是产品运行依赖。
+Use Node 24.12+, npm, stable Rust, and the macOS/Windows platform SDK. Node runs development tools only; it is not a product runtime dependency.
 
 ```sh
 npm ci
 npm run dev:ui
 ```
 
-Vite 保持在 `http://127.0.0.1:5187`。Vue/CSS 修改热更新，不打包、不安装、不重启正式应用。Dev 通过本机认证代理操作正在运行的构建版，与构建版共享连接、配置和任务；保存、启停和审批会立即影响真实后台。请先打开构建版，后台不可用时页面会提示，不会启动备用服务。代理保留本机 Host、Origin 与写请求标记校验，不自动重试写入。
+Vite listens on `http://127.0.0.1:5187`. Vue/CSS edits hot-reload without packaging, installing, or restarting the built app. The authenticated local proxy shares the built app's connections, configuration, and tasks: saves, connection changes, and approvals affect its real backend immediately. Open the built app first. An unavailable backend produces an error rather than starting a fallback service. The proxy retains local Host, Origin, and write-request checks and does not automatically retry writes.
 
-原生窗口开发使用 `npm run desktop:dev`，Rust 变动由 Tauri 增量编译。开发窗口也将读写请求转发给构建版，不持有独立连接。后端逻辑变动需重新构建并运行构建版才能用于联调。应用更新仍由构建版执行。
+For native window development, use `npm run desktop:dev`; Tauri incrementally compiles Rust changes. The development window forwards reads and writes to the built app and owns no separate connection. Rebuild and run the built app to exercise backend changes. Updates are still handled by the built app.
 
-## 代码结构
+## Code layout
 
-- `ui/`：Vue 页面、状态类型与交互。
-- `native/`：Rust 连接核心。负责 Desktop IPC、辅助 Codex RPC、AgentHost 与 Pi/ACP 子进程、42 个 MCP 工具、回执、事件、配置和 Tunnel 生命周期。
-- `desktop/`：Tauri 主程序、托盘、窗口、系统集成与更新。直接调用同进程的 Rust 核心。
-- `tooling/`：开发和构建脚本；不进入应用运行资源。
-- `tests/`：契约测试，以隔离的模拟上游检查 Rust 核心；测试专用 feature 不用于发行构建。
+- `ui/`: Vue pages, state types, and interactions.
+- `native/`: Rust core for Desktop IPC, auxiliary Codex RPC, AgentHost and Pi/ACP processes, 42 MCP tools, receipts, events, configuration, and Tunnel lifecycle.
+- `desktop/`: Tauri entry point, tray, windows, OS integration, and updates; calls the in-process Rust core.
+- `tooling/`: development/build scripts, excluded from runtime resources.
+- `tests/`: contract tests against the Rust core with an isolated simulated upstream; the test-only feature is excluded from release builds.
 
-MCP stdio 由同一个原生可执行文件的 `stdio` 子命令承担，仅向持有连接的主进程转发。它使用父进程环境传递的本机端口和随机凭据，不暴露公共接口。配置与凭据不进入浏览器持久存储。
+The native executable's `stdio` subcommand forwards MCP requests to the connection-owning main process. It receives a local port and random credential through its parent environment and exposes no public interface. Connection configuration and credentials are not stored in browser storage.
 
-同一可执行文件的 `cli` 子命令提供配置和诊断入口，通过已有本机认证传输调用后台，不启动第二个服务。`cli guide` 内嵌 `docs/codex-setup.md`，与应用版本一起分发；命令约定见该指南。
+Its `cli` subcommand provides configuration and diagnostics through the existing authenticated local transport without starting a second service. `cli guide` embeds the English `docs/codex-setup.md` and ships with the app version. See that guide for command conventions.
 
-## 扩展 ACP Agent
+## UI languages
 
-在 `native/src/agents/builtins.json` 增加描述，先核实官方当前入口、版本要求、认证归属及能力限制。与 Custom manifest 共用 `manifest.rs`，不得把静态说明当成握手能力或为品牌复制 Driver/wait。发现规则可描述同参数别名、安装路径、版本探测和 CLI help 条件；不同参数的入口使用独立 Custom manifest。保持内置 ID 唯一，更新 agents 支持矩阵及现有工具/列表预期，不新增测试文件或测试用例。
+`ui/i18n.ts` configures Vue I18n in Composition API mode. Vue I18n handles reactive translation, interpolation, and fallback; VueUse handles browser language detection and persistent preferences. English is the default and fallback. `ui/locales/en.json` defines typed keys; `zh-CN.json` supplies Simplified Chinese. Language uses the same localStorage preference mechanism as theme and notifications. Missing or invalid preferences select Auto; unsupported system/browser languages resolve to English. Manual choices take priority. WebView and browser previews have separate storage origins.
 
-真实调用使用隔离的 `CLC_STATE_DIR` 和临时工作目录，调用当前编译的 AgentHost/传输层；不要用已安装旧后端代表源代码验收。只对已有认证做无害任务，不自动登录或改 provider；保留回执并通过 agent_wait 确认输出、续聊/恢复、取消与安全可触发的权限交互。缺少安装或认证时明确记录验证边界。临时证据放仓库外，文档仅保留当前支持事实与覆盖范围。
+Use `t(key, params)` for display text, with whole messages and named placeholders. Put derived label dictionaries in computed values so switching language updates them. Dates use the resolved locale; filters and protocol state retain stable identifiers. `ui/messages.ts` translates recognized CLC messages at the rendering boundary, including retained feedback and service errors. Unknown third-party diagnostics remain verbatim. Do not apply it to user task content, identifiers, or entire API responses.
 
-## 界面控件
+The WebView sends its resolved locale to `desktop/src/i18n.rs`; the tray uses the same JSON resources and refreshes through its existing polling loop (normally within two seconds). It defaults to English until the WebView reports its preference. This state is presentation-only: the service, MCP schemas/descriptions, error codes, and Agent/Codex contracts never read it. Text copied into ChatGPT as a model instruction or connection description stays English regardless of UI language.
 
-`ui/tokens.css` 定义桌面控件尺寸；`ui/style.css` 的原生按钮、单行输入框和选择框默认使用这些 token：高度 28px、字号 12px、行高 18px、圆角 6px、水平内边距 10px。多行文本框使用相同字号与圆角，高度按内容用途设置；开关保留独立形态。
+To add a language, add its JSON resource with matching keys/placeholders, register the locale, option and language matching in `ui/i18n.ts`, and extend the tray resource selection in `desktop/src/i18n.rs`. Missing translated keys fall back to English. Check both languages' rendered pages, long labels, Auto/manual switching, persisted and invalid preferences, dates, retained errors, and tray labels. README and the three core user guides have English canonical versions and corresponding `zh-CN` translations; link each translation to its source. No translation pipeline is required.
 
-设置页复用 `SettingsGroup` 和 `SettingsRow`。新增表单只设置布局和必要宽度，不局部覆盖控件高度、字号、圆角或垂直内边距。调整密度应修改共享 token，并检查设置页与任务页的实际渲染。
+## Extending ACP Agents
 
-## 检查
+Add descriptions to `native/src/agents/builtins.json` after verifying the official entry point, version requirements, authentication ownership, and limits. Built-ins and Custom manifests share `manifest.rs`. Static descriptions are not negotiated capabilities; do not duplicate Driver/wait logic by brand. Discovery rules can specify aliases with identical arguments, installation locations, version probes, and CLI help conditions. Different argument entry points need separate Custom manifests. Keep built-in IDs unique and update the Agents support matrix and existing tool/list expectations; do not add test files or cases.
+
+For real calls, use an isolated `CLC_STATE_DIR` and temporary working directory with the currently compiled AgentHost/transport. An installed old backend does not validate current source. Run harmless tasks only with existing authentication; do not automatically sign in or change providers. Retain receipts and use agent_wait to verify output, continuation/resumption, cancellation, and safely triggered permission interactions. Report missing installation or authentication as verification limits. Keep temporary evidence outside the repository; documentation describes current support and scope.
+
+## UI controls
+
+`ui/tokens.css` defines desktop control sizing. Buttons, single-line inputs, and selects in `ui/style.css` use a 28px height, 12px font, 18px line height, 6px radius, and 10px horizontal padding. Textareas share typography and radius with content-appropriate heights; switches have their own shape.
+
+Settings uses `SettingsGroup` and `SettingsRow`. Add layout and necessary widths rather than locally overriding control height, typography, radius, or vertical padding. Change shared tokens to adjust density, then inspect Settings and Tasks rendering.
+
+## Checks
 
 ```sh
 npm run check
@@ -49,9 +59,9 @@ cargo fmt --manifest-path native/Cargo.toml -- --check
 cargo fmt --manifest-path desktop/Cargo.toml -- --check
 ```
 
-Desktop IPC 外部任务管理支持 macOS Unix socket 和 Windows 命名管道；Windows 使用已安装的 Microsoft Store 版 Codex Desktop。
+Desktop IPC task management supports macOS Unix sockets and Windows named pipes. Windows uses the installed Microsoft Store Codex Desktop.
 
-## 发行构建
+## Release builds
 
 ```sh
 npm run desktop:prepare
@@ -59,8 +69,8 @@ npm run desktop:build
 npm run check:package
 ```
 
-macOS 安装包仅构建 Apple Silicon（arm64），产物在 `desktop/target/aarch64-apple-darwin/release/bundle/`。macOS 构建需安装 `uv`，用于运行固定版本的 dmgbuild，生成无文案的拖拽安装布局；构建依赖不进入应用。`check:package` 检查 App 中没有 Node、npm、node_modules 或旧 runtime 目录，并报告体积；可传入其他产物目录。Windows 使用 NSIS/MSI，按平台构建。
+macOS installers target Apple Silicon (arm64) and are written to `desktop/target/aarch64-apple-darwin/release/bundle/`. macOS builds need `uv` to run a pinned dmgbuild version for the drag-to-install layout without text; build dependencies are excluded from the app. `check:package` checks for Node, npm, node_modules, and old runtime directories and reports size; it accepts another artifact directory. Windows builds use NSIS/MSI.
 
-发行包只包含原生可执行文件、前端静态资源和图标。构建脚本将 Rust 源码中的本机用户目录与仓库路径映射为通用构建路径，避免在二进制中嵌入私人路径。官方 Tunnel Client 首次使用时独立下载并校验，Codex 使用用户安装的 Desktop 随附二进制，不重复打包。构建命令生成安装产物，不自动覆盖已安装应用。
+Packages contain only the native executable, frontend static resources, and icons. Build scripts remap local user/repository paths in Rust source to generic build paths, avoiding private paths in binaries. Official Tunnel Client is downloaded and verified separately on first use. Codex uses the binary bundled in the user's Desktop installation rather than packaging another copy. Building does not overwrite the installed app.
 
-版本需同步 `package.json`、`native/Cargo.toml`、`desktop/Cargo.toml` 与 Tauri 配置。更新地址和项目公钥固定在 `desktop/tauri.conf.json`；发布构建需要仓库外的 `TAURI_SIGNING_PRIVATE_KEY`。完整流程见 [发布维护](release.md)。
+Keep versions synchronized across `package.json`, `native/Cargo.toml`, `desktop/Cargo.toml`, and Tauri configuration. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).

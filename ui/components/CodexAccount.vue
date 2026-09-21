@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { displayMessage } from '../messages';
+import { t } from '../i18n';
 import { onMounted, ref } from "vue";
 import { useIntervalFn } from "@vueuse/core";
 import { api, useConnector, type Login } from "../composables/useConnector";
@@ -15,7 +17,7 @@ async function refresh() {
     error.value = "";
   } catch (cause) {
     error.value =
-      cause instanceof Error ? cause.message : "无法读取 Codex 登录状态";
+      cause instanceof Error ? cause.message : t('unableToReadCodexSignInStatus');
   } finally {
     checking.value = false;
   }
@@ -37,21 +39,21 @@ useIntervalFn(() => {
   <section class="card">
     <div class="card-head">
       <div>
-        <h2>Codex 账号</h2>
-        <p>在 Codex Desktop 中完成这台设备的授权。</p>
+        <h2>{{ t('codexAccount') }}</h2>
+        <p>{{ t('authorizeThisDeviceInCodexDesktop') }}</p>
       </div>
       <StatusBadge :state="login.state" />
     </div>
-    <p v-if="error" class="error-detail" role="alert">{{ error }}</p>
-    <p class="hint">{{ login.message }}</p>
+    <p v-if="error" class="error-detail" role="alert">{{displayMessage(error)}}</p>
+    <p class="hint">{{displayMessage(login.message)}}</p>
     <div class="actions">
       <button
         :disabled="!!busy || login.state === 'authenticated'"
         @click="authorize"
       >
-        {{ busy === "codex-login" ? "正在发起授权…" : "登录 Codex" }}</button
+        {{ busy === "codex-login" ? t('startingAuthorization') : t('signInToCodex') }}</button
       ><button :disabled="!!busy || checking" @click="refresh">
-        {{ checking ? "检查中…" : "检查登录状态" }}
+        {{ checking ? t('checkingLabel') : t('checkSignInStatus') }}
       </button>
     </div>
   </section>

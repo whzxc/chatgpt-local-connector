@@ -1,29 +1,30 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { computed } from "vue";
 const props = defineProps<{ state?: string }>();
-const labels: Record<string, string> = {
-  running: "运行中",
-  connected: "已连接",
-  ready: "已就绪",
-  stopped: "已停止",
-  starting: "启动中",
-  connecting: "连接中",
-  error: "异常",
-  failed: "失败",
-  degraded: "连接待就绪",
-  unknown: "待确认",
-  disconnected: "未连接",
-  unconfigured: "未配置",
-  authenticated: "已登录",
-  unauthenticated: "未登录",
-  pending: "等待授权",
-  ok: "通过",
-  pass: "通过",
-  passed: "通过",
-  fail: "失败",
-  warning: "需关注",
-  warn: "需关注",
-};
+const labels = computed<Record<string, string>>(() => ({
+  running: t('running'),
+  connected: t('connected'),
+  ready: t('ready'),
+  stopped: t('stopped'),
+  starting: t('starting'),
+  connecting: t('connectingLabel'),
+  error: t('errorLabel'),
+  failed: t('failed'),
+  degraded: t('connectionNotReady'),
+  unknown: t('unconfirmed'),
+  disconnected: t('disconnected'),
+  unconfigured: t('notConfigured'),
+  authenticated: t('signedIn'),
+  unauthenticated: t('signedOut'),
+  pending: t('awaitingAuthorization'),
+  ok: t('passed'),
+  pass: t('passed'),
+  passed: t('passed'),
+  fail: t('failed'),
+  warning: t('needsAttention'),
+  warn: t('needsAttention'),
+}));
 const tone = computed(() =>
   [
     "running",
@@ -46,6 +47,6 @@ const tone = computed(() =>
 </script>
 <template>
   <span class="badge" :class="tone">{{
-    labels[state || ""] || state || "读取中"
+    labels[state || ""] || state || t('loading')
   }}</span>
 </template>

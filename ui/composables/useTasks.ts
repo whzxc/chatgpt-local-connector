@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { computed, onMounted, ref } from 'vue';
 import { useIntervalFn } from '@vueuse/core';
 import { api } from './useConnector';
@@ -39,7 +40,7 @@ export function useTasks() {
     if (refreshing) return refreshing;
     refreshing = api<{ records: TaskRecord[] }>('tasks').then(data => {
       const ids = new Set(data.records.filter(r => r.state === 'awaiting-approval').map(r => r.requestId));
-      if (seen && [...ids].some(id => !seen!.has(id))) void notifyNative('有新的任务请求待审批', '可在 Connector 或 ChatGPT 中确认，也可按用户意图直接执行。').catch(() => {});
+      if (seen && [...ids].some(id => !seen!.has(id))) void notifyNative(t('newTaskRequestsAwaitApproval'), t('confirmInConnectorOrChatgptOrExecuteDirectly')).catch(() => {});
       seen = ids;
       records.value = data.records;
       error.value = '';

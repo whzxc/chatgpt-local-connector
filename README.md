@@ -1,72 +1,76 @@
 # ChatGPT Local Connector
 
-**在 ChatGPT 里聊想法，让本机的 coding agent 接着干。**
+**English** | [简体中文](README.zh-CN.md)
 
-Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，支持 Codex Native、Pi，以及 Gemini、Claude adapter、Cursor、Grok 等内置 ACP Agent。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+**Discuss an idea in ChatGPT. Let a coding agent on your computer do the work.**
 
-![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
+Local Connector connects ChatGPT to local coding agents: Codex Native, Pi, and built-in ACP Agents including Gemini, the Claude adapter, Cursor, and Grok. Through OpenAI Secure MCP Tunnel or HTTPS MCP, ChatGPT can inspect projects, read code, check Git status, hand tasks to Codex, and follow their progress.
 
-- **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，讨论有据可依。
-- **聊到哪，做到哪**：在对话里创建、续接或中断 Codex 任务，也能查看任务进展和结果。
-- **一次等到关键进展**：创建或续接后用 `agent_wait`（Codex 原生入口为 `codex_wait`）等待完成、失败或需要交互，单次最长五分钟；超时不终止任务。
-- **连接有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，连接状态一眼可见。
+![Local Connector home screen showing ChatGPT, Connector, and Codex connected](docs/images/local-connector.png)
 
-CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使用各自所需的运行环境。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
+- **Less copying and pasting:** let ChatGPT read local projects, files, and Git status to ground the discussion.
+- **Keep work in the conversation:** create, continue, or interrupt Codex tasks and inspect progress and results.
+- **Wait for meaningful progress:** after creating or continuing a task, use `agent_wait` (`codex_wait` for native Codex) to wait for completion, failure, or required interaction, for up to five minutes per call. A timeout does not stop the task.
+- **Managed connections:** the app downloads, verifies, configures, starts, and stops the Tunnel Client and displays its connection status.
 
-Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；设置中的 Agents 区域显示全部内置项、安装状态、版本及 native/adapter 类型。内置 ACP 还包括 Copilot、Kimi、Qwen、Kiro、Devin、Cline、Junie、Hermes 和 OpenCode。公共任务使用 `agent_*` 工具，差异与使用方法见[本地 Agents](docs/agents.md)。
+CLC itself requires no Node, npm, Rust, or Cargo installation. External Agents still need their own runtimes. Desktop task integration supports **Apple Silicon Mac** and **Windows x64**.
 
-## 安装
+Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. Settings → Agents lists built-in Agents, detected installation status and versions, and lets you enable installed Agents. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Other built-in ACP Agents include Copilot, Kimi, Qwen, Kiro, Devin, Cline, Junie, Hermes, and OpenCode. Shared task operations use the `agent_*` tools.
 
-安装包与可用版本以 [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) 为准。直接安装、Homebrew、系统拦截、更新与卸载见 [安装指南](docs/installation.md)。
+## Installation
 
-## 让 Codex 帮你配置（推荐）
+See [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) for available versions and installers. The [installation guide](docs/installation.md) covers direct installation, Homebrew, operating system security prompts, updates, and removal.
 
-在这台电脑的 Codex 中发送下面的消息。Codex 会检查已有进度，完成安装、配置、排障和验收；可提供已登录的 ChatGPT 网页让它继续代操作；只有本人确认或工具无法可靠完成的步骤再由你操作。默认使用官方 OpenAI Secure MCP Tunnel。
+## Let Codex set it up (recommended)
+
+Send the following message to Codex on the target computer. It checks existing progress and handles installation, configuration, troubleshooting, and verification. You can provide a signed-in ChatGPT browser session for it to operate. You only need to handle steps that require your identity or confirmation, or that its tools cannot reliably complete. The default connection uses the official OpenAI Secure MCP Tunnel.
 
 ```text
-请在这台电脑上安装、配置并完整验收 ChatGPT Local Connector。默认使用官方 Secure MCP Tunnel，保留已有可用 Tunnel / HTTPS 配置，不引入 CLC 云服务或公共 relay。先检查安装，读取 cli help、cli guide、cli doctor；没有 CLI 时读取 https://github.com/whzxc/chatgpt-local-connector/blob/main/docs/codex-setup.md ，按实际发行版本操作。
-优先自动完成所有可自动化步骤。若我提供已登录 ChatGPT 的网页或浏览器环境，请实际使用可用的浏览器 / GUI / Computer Use 操作当前可见页面：检查 Developer Mode、复用或创建自定义 MCP、填入连接资料、刷新工具并选用连接。不要仅给我操作教程；不使用私有 API、Cookie 提取、固定 DOM 脚本或绕过安全机制。
-通过 cli onboarding / status 自行读取 URL、Tunnel ID、配置和验证消息，不让我转抄本机已有值。已有安全本机凭据通过 stdin 配置；缺失密钥让我直接填入应用，不发到聊天。只在确需本人登录、身份确认、授权、验证码、管理员权限，或当前工具无法可靠操作时暂停，说明具体阻塞并只给最少动作；完成后继续。
-自动从 ChatGPT 调用 connector_verify，并核对本轮验证码、工具结果和本机 challengeVerifiedAt；然后通过同一连接执行无害 Codex 任务（不调用工具、不读取或修改文件，只回复 CLC_ONBOARDING_OK），读取持久化回执、原生 threadId / turnId 和完成输出。未知状态按原 requestId 回读，不重复派单。分别报告本机就绪、ChatGPT 入站、任务完成的真实证据，不能把打开页面或 Tunnel ready 当成接入成功。
+Install, configure, and fully verify ChatGPT Local Connector on this computer. Default to the official Secure MCP Tunnel, preserve any working Tunnel / HTTPS configuration, and do not introduce a CLC cloud service or public relay. Check the installation first and read cli help, cli guide, and cli doctor. If the CLI is unavailable, read https://github.com/whzxc/chatgpt-local-connector/blob/main/docs/codex-setup.md and follow the actual installed release.
+Complete all automatable steps. If I provide a signed-in ChatGPT page or browser environment, use the available browser / GUI / Computer Use tools on the visible page: check Developer Mode, reuse or create a custom MCP connection, enter its details, refresh tools, and select it. Do not just give me instructions. Do not use private APIs, extract cookies, run fixed DOM scripts, or bypass security controls.
+Read URLs, Tunnel ID, configuration, and verification messages from cli onboarding / status without asking me to copy values already on this computer. Configure existing secure local credentials through stdin. Ask me to enter missing keys directly in the app, never in chat. Pause only for required sign-in, identity confirmation, authorization, verification codes, administrator access, or a step the available tools cannot reliably perform. Explain the exact blocker and the minimum action, then continue.
+Call connector_verify from ChatGPT and check the current code, tool result, and local challengeVerifiedAt. Then run a harmless Codex task over the same connection: do not call tools or read or modify files; only reply CLC_ONBOARDING_OK. Read the persistent receipt, native threadId / turnId, and completed output. Read back unknown states with the original requestId instead of submitting again. Report separate evidence for local readiness, ChatGPT inbound access, and task completion. Opening a page or reaching Tunnel ready is not proof of successful setup.
 ```
 
-之后遇到连接问题，也可以复制上面的消息，直接让 Codex 按同一指南排查。使用有本机命令执行能力的 Codex；ChatGPT 账号/工作区权限、Tunnel 身份和必要的用户授权仍需具备。
+You can reuse this message for connection problems. Use a Codex session that can execute commands on the target computer. Your ChatGPT account/workspace permissions, Tunnel identity, and required authorizations are still necessary.
 
-[Codex 操作指南与 CLI](docs/codex-setup.md)提供配置流程和诊断方式；以实际发行包内的 `cli help` / `cli guide` 为准。希望自己配置，可阅读[手动接入指南](docs/tunnel.md)。
+The [Codex setup and CLI guide](docs/codex-setup.md) covers configuration and diagnostics; the installed release's `cli help` / `cli guide` take precedence. For self-service setup, see the [manual connection guide](docs/tunnel.md).
 
-## 日常使用
+## Everyday use
 
-首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口后连接继续运行，退出应用则关闭连接。macOS 可在「设置 → 通用 → 显示位置」选择「全部」「仅菜单栏」或「仅 Dock 栏」，修改立即生效并自动保存。
+Choose Auto / English / 简体中文 in **Settings → General → Language**. Auto follows your system or browser language, falling back to English for unsupported languages. A manual selection takes priority, is saved, and takes effect immediately. Like the theme, this preference belongs to the current WebView/browser; it does not affect MCP tools, task content, or protocols.
 
-`agent_wait` 支持 Codex、Pi、全部内置 ACP 与 Custom ACP，在本机连接期间等待；`codex_wait` 保留原生语义。历史读取和事件查询继续使用相应的 read/events 工具。普通 Chat 回复结束后不会继续后台等待；它不提供定时唤醒或主动推送。详见[等待工具](docs/tools.md#任务等待)。
+After setup, keep the computer online, Desktop available, and Connector connected. Connecting at sign-in is optional. Closing the window leaves the connection running; quitting the app disconnects it. On macOS, **Settings → General → Show app in** offers All, Menu bar only, or Dock only. Changes apply immediately and are saved automatically.
 
-### 分工与边界
+`agent_wait` supports Codex, Pi, all built-in ACP Agents, and Custom ACP while the local connection is running; `codex_wait` preserves native semantics. Use the corresponding read/events tools for history and events. An ordinary Chat response does not keep waiting after it ends; these tools provide neither scheduled wakeups nor proactive push notifications. See [task waiting](docs/tools.md#任务等待).
 
-设置中的「自动打开 Codex 任务」默认开启，新任务由 Desktop 接管执行；关闭后，新任务由 Connector 后台执行，不自动打开 Desktop，也不保证可在 Desktop 中操作。开关仅影响新任务，已有任务仍由原执行方管理。关闭 Connector 会停止其后台执行，但不会主动中断 Desktop 所有的任务；未知状态不显示为空闲。
+### Responsibilities and boundaries
 
-不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。
+**Automatically open Codex tasks** is enabled by default: Desktop owns and runs new tasks. When disabled, Connector runs new tasks in the background without opening Desktop, and Desktop control of those tasks is not guaranteed. The setting affects only new tasks; existing tasks retain their execution owner. Closing Connector stops its background execution but does not actively interrupt Desktop-owned tasks. Unknown states are not shown as idle.
 
-## 开发
+Connections are not restricted by Codex Desktop version numbers. Availability depends on the actual IPC handshake and support for each operation. Private protocols can change with Desktop updates; a successful connection does not guarantee compatibility with every operation.
+
+## Development
 
 ```sh
 npm ci
 npm run dev:ui
 ```
 
-技术栈是 **Tauri + Rust + Vue**：Rust 管理连接、配置、MCP 与 Desktop 通信，Vue 运行在系统 WebView 中。安装包不携带 Node、npm、Rust 或 Cargo，Node 仅用于源码开发和前端构建。
+The stack is **Tauri + Rust + Vue**. Rust manages connections, configuration, MCP, and Desktop communication; Vue runs in the system WebView. Installers contain no Node, npm, Rust, or Cargo runtime. Node is used only for source development and frontend builds.
 
-开发需要 Node 24.12+、Rust stable 和对应平台 SDK。Dev 界面使用 Vite 热更新，与正在运行的构建版共用同一个后台，可直接操作配置、连接与任务。请先打开构建版；Dev 不启动独立后台。
+Development requires Node 24.12+, stable Rust, and the platform SDK. The Vite development UI shares the running built app's backend and can change its configuration, connections, and tasks. Open the built app first; development does not start a separate backend.
 
-相关文档：
+Documentation:
 
-- [安装与更新](docs/installation.md)
-- [发布维护](docs/release.md)
-- [版本说明](CHANGELOG.md)
-- [开发与构建](docs/development.md)
-- [桌面生命周期](docs/desktop.md)
-- [MCP 工具与任务边界](docs/tools.md)
-- [架构说明](docs/architecture.md)
+- [Installation and updates](docs/installation.md)
+- [Release maintenance](docs/release.md)
+- [Changelog](CHANGELOG.md)
+- [Development and builds](docs/development.md)
+- [Desktop lifecycle](docs/desktop.md)
+- [MCP tools and task boundaries](docs/tools.md)
+- [Architecture](docs/architecture.md)
 
-本机数据默认位于 macOS 的 `~/.local/state/chatgpt-local-connector` 或 Windows 的 `%LOCALAPPDATA%/chatgpt-local-connector`，可通过 `CLC_STATE_DIR` 指定。密钥、回执和日志只保存在本机；卸载应用不会删除 Codex 历史。
+Local data defaults to `~/.local/state/chatgpt-local-connector` on macOS or `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Override it with `CLC_STATE_DIR`. Keys, receipts, and logs are stored locally; removing the app does not remove Codex history.
 
-采用 [MIT 许可证](LICENSE)。源码与桌面安装包使用 GitHub 分发，不发布公共 npm 包。
+Licensed under [MIT](LICENSE). Source and desktop installers are distributed through GitHub. No public npm package is published.

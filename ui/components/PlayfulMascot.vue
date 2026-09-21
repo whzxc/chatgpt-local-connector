@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { onUnmounted, ref } from 'vue';
 import logo from '../assets/local-connector-head.png';
 
@@ -26,7 +27,7 @@ onUnmounted(() => clearTimeout(timer));
 
 <template>
   <div class="mascot" :style="motion">
-    <button class="mascot-button" type="button" aria-label="戳一下脑袋" @click="bounce">
+    <button class="mascot-button" type="button" :aria-label="t('pokeTheMascot')" @click="bounce">
       <img :key="reaction" :src="logo" alt="" draggable="false" :class="{ 'mascot-bouncing': face }" />
     </button>
     <span v-if="face" :key="reaction" class="mascot-face" aria-hidden="true">{{ face }}</span>

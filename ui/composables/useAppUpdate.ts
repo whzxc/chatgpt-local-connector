@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { computed, ref } from 'vue';
 import { isDesktop, openUrl } from '../platform';
 const releaseUrl = 'https://github.com/whzxc/chatgpt-local-connector/releases/latest';
@@ -27,9 +28,9 @@ async function check(manual = true) {
     error.value = ''; message.value = '';
     localStorage.setItem('update-last-check', String(Date.now()));
     if (available.value && (manual || update.value.version !== dismissedVersion)) showUpdate();
-    if (manual && !update.value.available) message.value = '已是最新版本。';
+    if (manual && !update.value.available) message.value = t('youAreUpToDate');
   } catch (cause) {
-    if (manual) error.value = `检查更新失败：${String(cause)}。可重试或前往下载页。`;
+    if (manual) error.value = t('updateCheckFailedValueRetryOrVisitThe', { error: String(cause) });
   } finally { checking.value = false; }
 }
 async function install() {
@@ -47,10 +48,10 @@ async function install() {
     });
     const result = await invoke<Update>('install_update', { version: update.value.version });
     if (result.restarting) { restarting = true; phase.value = 'installing'; return; }
-    if (!result.available) { update.value = result; message.value = '已是最新版本。'; }
+    if (!result.available) { update.value = result; message.value = t('youAreUpToDate'); }
   } catch (cause) {
-    if (String(cause) === 'UPDATE_CANCELLED') message.value = '已取消下载，当前连接未改变。';
-    else error.value = `更新失败：${String(cause)}`;
+    if (String(cause) === 'UPDATE_CANCELLED') message.value = t('downloadCancelledTheCurrentConnectionIsUnchanged');
+    else error.value = t('updateFailedValue', { error: String(cause) });
   } finally { unlisten?.(); if (!restarting) phase.value = 'idle'; }
 }
 async function cancel() {
@@ -86,6 +87,6 @@ export function startUpdateChecks() {
   return () => { clearTimeout(first); clearInterval(timer); };
 }
 async function openDownloads() {
-  try { await openUrl(releaseUrl); } catch (cause) { error.value = `无法打开下载页：${String(cause)}`; }
+  try { await openUrl(releaseUrl); } catch (cause) { error.value = t('unableToOpenDownloadsValue', { error: String(cause) }); }
 }
 export const useAppUpdate = () => ({ update, checking, phase, active, available, progress, downloaded, error, message, autoCheck, supported, dialogOpen, showUpdate, dismissUpdate, check, install, cancel, skip, setAutoCheck, openDownloads });

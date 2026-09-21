@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@lucide/vue": "^1.47.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/cli": "^2.11.4",
     "@tauri-apps/plugin-dialog": "^2.7.3",
@@ -37,8 +38,8 @@
     "typescript": "6.0.3",
     "vite": "8.3.0",
     "vue": "3.5.42",
-    "vue-tsc": "3.3.11",
-    "@modelcontextprotocol/sdk": "1.30.0"
+    "vue-i18n": "^11.4.12",
+    "vue-tsc": "3.3.11"
   },
   "repository": {
     "type": "git",

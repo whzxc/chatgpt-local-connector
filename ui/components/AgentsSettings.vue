@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { displayMessage } from '../messages';
+import { t } from '../i18n';
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../composables/useConnector';
 import { Bot } from '@lucide/vue';
@@ -56,8 +58,8 @@ onMounted(refresh);
 <template>
   <SettingsGroup title="Agents">
     <template #heading-actions>
-      <button class="agent-refresh" :disabled="loading || !!saving" aria-label="刷新 Agents" title="刷新 Agents" @click="refresh">
-        {{ loading ? '刷新中…' : '刷新' }}
+      <button class="agent-refresh" :disabled="loading || !!saving" :aria-label="t('refreshAgents')" :title="t('refreshAgents')" @click="refresh">
+        {{ loading ? t('refreshing') : t('refresh') }}
       </button>
     </template>
     <div v-for="agent in visible" :key="agent.agent" class="agent-row">
@@ -65,20 +67,20 @@ onMounted(refresh);
         <span v-if="icons[agent.agent]" class="agent-icon" v-html="icons[agent.agent]" aria-hidden="true" />
         <Bot v-else class="agent-fallback" :size="22" aria-hidden="true" />
         <span class="agent-copy">
-          <span class="agent-name">{{ name(agent) }}<span v-if="agent.agent === 'codex'" class="agent-default">（默认）</span></span>
+          <span class="agent-name">{{ name(agent) }}<span v-if="agent.agent === 'codex'" class="agent-default">{{ t('default') }}</span></span>
           <span v-if="agent.installed && agent.version" class="agent-version">{{ agent.version }}</span>
         </span>
       </component>
       <input v-if="agent.installed" :id="`agent-${agent.agent}`" class="settings-switch" type="checkbox" role="switch"
-        :aria-label="`允许 Connector 使用 ${name(agent)}`" :checked="agent.agent === 'codex' || agent.enabled"
+        :aria-label="t('allowConnectorToUseValue', { agent: name(agent) })" :checked="agent.agent === 'codex' || agent.enabled"
         :disabled="agent.agent === 'codex' || !!saving || loading || typeof agent.enabled !== 'boolean'"
-        :title="agent.agent === 'codex' ? 'Codex 始终开启' : '允许 Connector 接受此 Agent 的请求'"
+        :title="agent.agent === 'codex' ? t('codexIsAlwaysEnabled') : t('allowConnectorToAcceptRequestsForThisAgent')"
         @change="toggle(agent, $event)" />
     </div>
     <div v-if="canExpand" class="agent-expand">
-      <button :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '收起列表' : `展开全部（${sorted.length}）` }}</button>
+      <button :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? t('collapseList') : t('showAllValue', { count: sorted.length }) }}</button>
     </div>
-    <p v-if="error" class="agent-error" role="alert">{{ error }}</p>
+    <p v-if="error" class="agent-error" role="alert">{{displayMessage(error)}}</p>
   </SettingsGroup>
 </template>
 <style scoped>

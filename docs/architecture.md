@@ -1,21 +1,21 @@
-# 架构说明
+# Architecture
 
-采用 Vue + Tauri + Rust，单一原生核心管理连接状态、MCP 请求、幂等回执和用户日志。前端使用系统 WebView，发行包不携带 Node/npm/node_modules。
+Vue + Tauri + Rust provides a single native core for connection state, MCP requests, idempotent receipts, and user logs. The frontend runs in the system WebView; packages include no Node/npm/node_modules.
 
-连接方式分为官方 Tunnel 与自备 HTTPS MCP。官方 Tunnel Client 独立下载管理；HTTPS 模式由 Rust 提供独立的 Streamable HTTP 监听，仅暴露无需认证的 MCP。应用管理 Cloudflare Quick Tunnel、固定域名 Tunnel 或 ngrok 客户端，也支持用户自备反向代理；TLS 与公网转发由所选服务商或代理负责。两种入口复用相同工具分发、审批和回执，不能同时开启。默认由 Codex Desktop 拥有任务执行权，Connector 通过 Desktop IPC 管理任务。关闭「自动打开 Codex 任务」后，新任务由 Connector 持有的 app-server 后台执行，不唤起 Desktop。执行归属按任务持久化，切换开关不会迁移已有任务；查询、续接和中断沿用任务原有路径。
+Connections use either official Tunnel or HTTPS MCP. The official Tunnel Client is downloaded and managed separately. In HTTPS mode, Rust exposes an independent unauthenticated Streamable HTTP MCP listener. The app manages Cloudflare Quick Tunnel, named Tunnel, or ngrok clients, or accepts a user-managed reverse proxy. The provider/proxy handles TLS and public forwarding. Both entry points share dispatch, approvals, and receipts and cannot run simultaneously. Codex Desktop owns task execution by default, controlled through Desktop IPC. Disabling Automatically open Codex tasks gives new tasks to Connector's app-server without opening Desktop. Ownership is persisted per task; toggling the setting does not migrate existing tasks. Reads, continuation, and interruption retain the original path.
 
-42 个工具定义保存在 Rust 编译内嵌的 `native/src/catalog.json` 中；参数由 JSON Schema 校验，写请求有持久化回执。大量输出可分页，事件持久化与界面日志分开，常规界面不展示协议握手噪声。
+The 42 tool definitions in `native/src/catalog.json` are embedded in Rust builds. JSON Schema validates parameters, and writes have persistent receipts. Large outputs support pagination. Persistent events are separate from UI logs, which omit routine protocol handshake noise.
 
-Desktop 接入不按应用版本号设白名单，保留实际协议和任务 owner 校验；跨版本兼容性以实际调用为准。Desktop 外部任务管理支持 macOS 和 Windows。通信与生命周期详见 [桌面说明](desktop.md)，接口见 [MCP 工具](tools.md)。
+Desktop access has no app-version allowlist; actual protocol and task ownership checks determine compatibility. External task management supports macOS and Windows. See [desktop lifecycle](desktop.md) and [MCP tools](tools.md).
 
-任务审批是可由本机或云端决定的可选确认流程。任务请求内容、审批决定和提交状态共用持久化回执；任务页按 threadId 汇总请求，使用原生状态快照查询运行状态，不解析会话 JSONL。审批设置独立保存，可在连接期间切换，不改变 Codex 的执行权限。
+Task approval is an optional confirmation flow controlled locally or from the cloud. Request content, approval decisions, and submission state share persistent receipts. Tasks groups requests by threadId and reads native runtime snapshots without parsing conversation JSONL. Approval settings persist independently, can change while connected, and do not change Codex execution permissions.
 
-`native/src/waiter.rs` 提供通用只读等待引擎。Codex 适配器固定连接到任务所属的 App Server 或 Desktop owner；通知只负责唤醒，状态判定依赖重新读取原生快照，每两秒兜底核实。事件缓冲截断、通知丢失或合并不会影响最终判定。读操作与等待都不持有全局锁，取消只销毁等待 future，不中断轮次。Connector 关闭以 watch 通道通知所有等待者。
+`native/src/waiter.rs` provides a shared read-only waiting engine. The Codex adapter stays attached to the task's App Server or Desktop owner. Notifications wake the waiter; fresh native snapshots determine state, with a two-second fallback check. Truncated buffers, missing notifications, and coalesced events do not affect the final classification. Reads and waits do not hold a global lock. Cancelling drops the wait future without interrupting the turn. Connector shutdown notifies waiters through a watch channel.
 
-## Agent 边界
+## Agent boundaries
 
-`Service` 将 `agent_*` 路由交给 `AgentHost`，现有 `codex_*` 仍直接交给 `Control`。Host 负责公共任务身份、持久化回执、确认流程与生命周期；`AgentDriver::CodexNative` 只适配公共参数和返回值，复用原有 Control，不改变 Desktop owner、schema、events、account、plugin 或 skills 语义。
+`Service` sends `agent_*` routes to `AgentHost`; existing `codex_*` routes still go directly to `Control`. The Host owns common task identity, persistent receipts, confirmation, and lifecycle. `AgentDriver::CodexNative` adapts shared arguments/results while reusing Control; it preserves Desktop ownership, schema, events, account, plugin, and skills semantics.
 
-`agents/builtins.json` 和用户 manifest 共用严格的 Manifest 类型，描述启动参数、发现规则、版本探测及兼容性说明；静态描述不宣称协商能力。`AgentDriver::Acp` 共用描述驱动的发现和启动流程，初始化协商 ACP v1；`AgentDriver::Pi` 使用官方 RPC。两者复用有界 JSONL 传输，但分别处理响应与完成语义。每个任务独立子进程，原始会话与 CLC 身份分别持久化。进程重启不自动重放未知写操作。能力和限制见[本地 Agents](agents.md)。
+`agents/builtins.json` and user manifests share a strict Manifest type for launch arguments, discovery, version probing, and compatibility. Static descriptions do not claim negotiated capabilities. `AgentDriver::Acp` shares descriptor-driven discovery/startup and negotiates ACP v1; `AgentDriver::Pi` uses official RPC. They share bounded JSONL transport while handling responses and completion separately. Each task has its own process; raw sessions and CLC identities persist separately. Restarting a process never automatically replays unknown writes. See [Local Agents](agents.md) for capabilities and limits.
 
-`agent_wait` 与 `codex_wait` 共用 `waiter` 的超时、事件唤醒、周期复核、快照 hash 和条件判定。Codex 直接委托原生等待入口；Pi/ACP 通过轻量 `WaitSource` 适配进程观察，复用已有 Host/Driver，不启动或恢复任务。Pi 使用 `get_state` 复核，ACP 使用存活子进程的协议状态与 prompt 最终响应；等待不持有全局锁。MCP 取消和连接断开只释放该次等待。
+`agent_wait` and `codex_wait` share waiter timeouts, event wakeups, periodic checks, snapshot hashes, and condition evaluation. Codex delegates to its native wait entry point. Pi/ACP use a lightweight `WaitSource` over existing Host/Driver process observations without starting or resuming tasks. Pi checks `get_state`; ACP uses live process protocol state and the final prompt response. Waiting holds no global lock. MCP cancellation and disconnect release only the current wait.

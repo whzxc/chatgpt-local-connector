@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod appearance;
+mod i18n;
 mod tray;
 mod updates;
 #[cfg(target_os = "macos")]
@@ -95,6 +96,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             service_request,
+            i18n::set_ui_locale,
             updates::check_update,
             updates::install_update,
             updates::cancel_update

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '../i18n';
 import { ref } from "vue";
 import { useClipboard } from "@vueuse/core";
 import { useConnector } from "../composables/useConnector";
@@ -14,7 +15,7 @@ async function copyValue() {
     await copy();
   } catch {
     field.value?.select();
-    notify("复制失败，请复制已选中的内容。", true);
+    notify(t('copyFailedCopyTheSelectedTextManually'), true);
   }
 }
 </script>
@@ -24,7 +25,7 @@ async function copyValue() {
       type="button"
       @click="copyValue"
     >
-      {{ copied ? "已复制" : "复制" }}
+      {{ copied ? t('copied') : t('copy') }}
     </button>
   </div>
 </template>
