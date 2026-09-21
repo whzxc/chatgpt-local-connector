@@ -107,11 +107,22 @@ fn main() {
                 app.manage(service.clone());
                 tauri::async_runtime::block_on(connector_core::transport::listen(service.clone()))
                     .map_err(std::io::Error::other)?;
-                if updates::take_resume()
-                    .unwrap_or_else(|| std::env::args().any(|arg| arg == "--autostart"))
-                {
+                let resume = updates::take_resume();
+                if resume.is_some() || std::env::args().any(|arg| arg == "--autostart") {
                     tauri::async_runtime::spawn(async move {
-                        if let Err(error) = service.request("start", "POST", json!({})).await {
+                        if let Some(ids) = resume {
+                            for id in ids {
+                                if let Err(error) = service
+                                    .request(&format!("ingress/{id}/start"), "POST", json!({}))
+                                    .await
+                                {
+                                    service.log("ERROR", &error).await;
+                                }
+                            }
+                        } else if let Err(error) = service
+                            .request("ingress/start-all", "POST", json!({}))
+                            .await
+                        {
                             service.log("ERROR", &error).await;
                         }
                     });

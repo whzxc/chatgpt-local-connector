@@ -3,11 +3,13 @@
 The production app is one Tauri/Rust process owning a single connection core. There is no separate Node service, copied runtime directory, or app/backend version pairing.
 
 - **Connect:** Desktop mode ensures Desktop is available; background mode initializes Connector's app-server without opening Desktop. Official mode starts Tunnel Client, which launches the same executable's `stdio` adapter as needed. HTTPS mode starts a separate MCP listener and the configured Cloudflare/ngrok client. Tunnel management and auxiliary RPC use Desktop's bundled native Codex binary directly, without npm launcher scripts.
-- **Disconnect:** stops the Tunnel process group, MCP forwarding, and Connector's app-server, including its background execution. Unconfirmed requests retain receipts and must not be automatically retried as unexecuted.
+- **Disconnect:** stops only the selected ingress process group and MCP forwarding; Connector app-server and Agent processes continue until core shutdown. Unconfirmed requests retain receipts and must not be automatically retried as unexecuted.
 - **Close window:** hides it while keeping the connection running. Reopen through the macOS menu bar/Dock or Windows tray.
 - **Quit:** stops Connector-owned connection processes, then exits.
 - **Start at sign-in:** the OS starts the native app and connects it.
 - **Update:** downloads and verifies the signature, then disconnects, installs, and restarts. Codex Desktop task ownership does not change.
+
+The home view places control sources on the left, the shared Connector in the center, and installed, supported Agents on the right. Each line shows its own status; an installed Agent can remain on standby. The top Connect/Disconnect button starts enabled ingresses or stops running ingresses. Click a built-in platform icon to open its website, or its line status icon to edit the connection, or use the plus button to add ChatGPT, Notion, Slack, or a custom MCP client. Each source has its own connection dialog with save, connect, disconnect, and remove actions. Applicable authentication and listener fields are displayed directly. Platform and display name are separate: the chosen platform stays fixed, and every source has an editable name; only ChatGPT offers OpenAI Tunnel. The editor reads back that ingress’s API key as a password, while other blank secret fields preserve saved credentials. Settings contains Agent and application preferences, not a single global Connection form.
 
 The tray uses a transparent brand logo and shows connection state, tasks and pending approval counts, Records, and Settings. Connection, startup, and approval switches share main-window state and APIs. Cloud requests can still approve or bypass optional confirmation according to user intent. Tray labels follow the UI locale on the next status refresh.
 

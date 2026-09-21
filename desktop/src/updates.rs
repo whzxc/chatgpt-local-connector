@@ -26,14 +26,20 @@ impl Default for UpdateState {
 fn resume_path() -> std::path::PathBuf {
     connector_core::root().join("update-resume.json")
 }
-pub fn take_resume() -> Option<bool> {
+pub fn take_resume() -> Option<Vec<String>> {
     let path = resume_path();
     let Ok(value) = connector_core::load(&path) else {
         return None;
     };
     // A marker from a failed/interrupted install must not alter ordinary startup.
-    let resume =
-        (value["version"] == env!("CARGO_PKG_VERSION")).then(|| value["connected"] == true);
+    let resume = (value["version"] == env!("CARGO_PKG_VERSION")).then(|| {
+        value["ingresses"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect()
+    });
     let _ = std::fs::remove_file(path);
     resume
 }
@@ -116,23 +122,33 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         .clone();
     // Download and signature verification finish before any connection is stopped.
     let current = request(&app, "status", "GET", json!({})).await?;
-    let connected = current["connection"]["running"].as_bool().unwrap_or(false);
+    let running: Vec<_> = current["ingresses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|i| i["running"] == true)
+        .filter_map(|i| i["id"].as_str().map(str::to_owned))
+        .collect();
     connector_core::save(
         &resume_path(),
-        &json!({"version":version,"connected":connected}),
+        &json!({"version":version,"ingresses":running}),
     )?;
     // Drain auxiliary work even when the tunnel is already disconnected.
-    if let Err(error) = service.request("stop", "POST", json!({})).await {
+    if let Err(error) = service.request("ingress/stop-all", "POST", json!({})).await {
         let _ = std::fs::remove_file(resume_path());
         return Err(error);
     }
     if let Err(error) = update.install(bytes) {
         let _ = std::fs::remove_file(resume_path());
-        let restored = if connected {
-            service.request("start", "POST", json!({})).await
-        } else {
-            Ok(json!({}))
-        };
+        let restored = async {
+            for id in &running {
+                service
+                    .request(&format!("ingress/{id}/start"), "POST", json!({}))
+                    .await?;
+            }
+            Ok::<_, String>(json!({}))
+        }
+        .await;
         return Err(match restored {
             Ok(_) => format!("安装失败：{error}。可重试或手动下载。"),
             Err(restore) => format!("安装失败：{error}；恢复连接失败：{restore}"),
