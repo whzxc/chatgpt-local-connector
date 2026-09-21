@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Monitor, Sun, Moon } from '@lucide/vue';
+import { Monitor, Sun, Moon, Pencil, LoaderCircle } from '@lucide/vue';
 import { useIntervalFn } from '@vueuse/core';
 import { computed, onMounted, ref } from 'vue';
 import { api, useConnector, type Service } from '../composables/useConnector';
@@ -10,12 +10,22 @@ import SettingsGroup from './SettingsGroup.vue';
 import SettingsRow from './SettingsRow.vue';
 import '../settings.css';
 import ConnectionFields from './ConnectionFields.vue';
+import CopyField from './CopyField.vue';
 import { useConnectionForm } from '../composables/useConnectionForm';
-const { status, busy, editable, run, refresh, notify } = useConnector();
-const { form, save: saveConnection } = useConnectionForm();
-const managedHttps = computed(() => form.connectionMode === 'https' && form.httpsProvider !== 'custom');
-const saveLabel = computed(() => busy.value === 'config' ? (managedHttps.value ? '连接中…' : '保存中…') : editable.value ? (managedHttps.value ? '保存并连接' : '保存') : status.value?.tunnel.state === 'ready' ? '已连接' : status.value?.tunnel.state === 'starting' ? '连接中…' : '暂不可编辑');
-const saveHint = computed(() => !editable.value ? '关闭连接后可保存' : managedHttps.value ? '保存并启动本机隧道' : '保存连接信息');
+const { status, busy, run, refresh, notify } = useConnector();
+const { form, save: saveConnection, reset: resetConnection } = useConnectionForm();
+const editingConnection = ref(false);
+const connectionConfig = computed(() => status.value!.config);
+const accessProvider = computed(() => ({ cloudflare: 'Cloudflare', ngrok: 'ngrok', custom: '自定义域名' })[connectionConfig.value.httpsProvider || 'custom']);
+const accessUrl = computed(() => status.value?.connection?.mcpUrl || (connectionConfig.value.httpsProvider === 'custom' || (connectionConfig.value.httpsProvider === 'cloudflare' && connectionConfig.value.cloudflareMode === 'named') ? connectionConfig.value.httpsUrl : '') || '');
+function editConnection() {
+  resetConnection();
+  editingConnection.value = true;
+}
+function cancelConnection() {
+  editingConnection.value = false;
+  resetConnection();
+}
 const proxyMode = ref(status.value?.config.proxyMode || 'system');
 const proxyUrl = ref(status.value?.config.proxyUrl || '');
 async function saveProxy() {
@@ -54,14 +64,22 @@ onMounted(refreshService);
 useIntervalFn(refreshService, 5000);
 async function save() {
   if (!status.value) return;
-  await saveConnection();
-  await refresh();
-  if (managedHttps.value) {
-    try { await api('start', 'POST'); } finally { await refresh(); }
-    notify(form.httpsProvider === 'cloudflare' && form.cloudflareMode === 'named'
-      ? '本机隧道已连接，请确认 Cloudflare 公开路由后，在 ChatGPT 添加接入地址。'
-      : '接入地址已生成，复制地址并在 ChatGPT 添加连接。');
-  } else notify('连接信息已保存。');
+  let saved = false;
+  try {
+    await api('stop', 'POST');
+    await saveConnection();
+    saved = true;
+    await api('start', 'POST');
+    await refresh();
+    editingConnection.value = false;
+    resetConnection();
+    notify('连接信息已保存，已按新参数重新连接。');
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(saved ? `连接信息已保存，但重新连接失败：${reason}` : `未能保存连接信息：${reason}`);
+  } finally {
+    await refresh().catch(() => {});
+  }
 }
 async function startup(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -89,11 +107,22 @@ async function setApproval(enabled: boolean) {
   <div class="settings-preferences">
     <SettingsGroup title="连接">
       <SettingsRow title="连接信息" description="通道身份与密钥只保存在这台电脑上。">
-        <button form="connection-settings" type="submit" :disabled="!!busy || !editable || !status" :title="saveHint" class="primary">{{saveLabel}}</button>
+        <div v-if="editingConnection" class="connection-edit-actions">
+          <button type="button" :disabled="!!busy" @click="cancelConnection">取消</button>
+          <button form="connection-settings" type="submit" :disabled="!!busy || !status" class="primary"><LoaderCircle v-if="busy==='config'" class="save-spinner" aria-hidden="true"/>{{busy==='config' ? '重连中…' : '保存并重连'}}</button>
+        </div>
+        <button v-else type="button" :disabled="!!busy || !status" aria-label="编辑连接信息" @click="editConnection"><Pencil aria-hidden="true"/>编辑</button>
       </SettingsRow>
-      <form id="connection-settings" class="settings-connection-form" @submit.prevent="run('config', save)">
-        <ConnectionFields :form="form" :disabled="!!busy || !editable" />
+      <form v-if="editingConnection" id="connection-settings" class="settings-connection-form" @submit.prevent="run('config', save)">
+        <ConnectionFields :form="form" :disabled="!!busy" />
       </form>
+      <dl v-else class="connection-summary">
+        <div><dt>连接方式</dt><dd>{{connectionConfig.connectionMode === 'https' ? 'HTTPS MCP' : 'OpenAI Tunnel'}}</dd></div>
+        <template v-if="connectionConfig.connectionMode === 'https'">
+          <div><dt>接入方式</dt><dd>{{accessProvider}}</dd></div>
+          <div class="connection-summary-address"><dt>接入地址</dt><dd><CopyField v-if="accessUrl" :value="accessUrl" label="ChatGPT 接入地址"/><span v-else class="hint">连接后生成</span></dd></div>
+        </template>
+      </dl>
     </SettingsGroup>
 
     <AgentsSettings />

@@ -102,7 +102,7 @@ async function reveal() {
           </div>
         </details>
       </template>
-      <p v-if="https" class="hint full-field connection-help"><template v-if="!managed">将公网 URL 转发到上述代理目标。</template>在 ChatGPT 选择 No authentication。</p>
+      <p v-if="https && !managed" class="hint full-field connection-help">将公网 URL 转发到上述代理目标。</p>
     </div>
   </div>
 </template>

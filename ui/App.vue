@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
-import { LayoutDashboard, Logs, Settings, Pause, Play, ArrowLeft, RefreshCw, Download, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
+import { LayoutDashboard, Logs, Settings, Power, ArrowLeft, RefreshCw, Download, Info, TriangleAlert, CircleCheck, CircleDashed, CircleAlert, LoaderCircle, Minus, Square, X } from '@lucide/vue';
 import { provideConnector, api } from './composables/useConnector';
 import { isDesktop, notifyNative, openUrl } from './platform';
 import logo from './assets/local-connector.png';
@@ -109,8 +109,12 @@ async function reconnect() {
           <section class="connection-panel" :class="{connected,progressing}">
             <div class="connection-content"><h2>{{title}}</h2>
               <p v-if="needsConfiguration">前往设置，填写连接信息后即可开启连接。</p>
-              <button v-if="needsConfiguration" class="primary connection-action" @click="navigate('settings')"><Settings aria-hidden="true" />前往设置</button>
-              <button v-else class="primary connection-action" :disabled="progressing || loading || !status" @click="toggle"><Pause v-if="tunnelRunning" aria-hidden="true" /><Play v-else aria-hidden="true" />{{progressing?'请稍候…':tunnelRunning?'关闭连接':'开启连接'}}</button>
+              <button v-if="needsConfiguration" class="connection-action" @click="navigate('settings')"><span class="connection-knob"><Settings aria-hidden="true"/></span><span class="connection-action-label">前往设置</span></button>
+              <button v-else class="connection-action" :class="{'is-on':tunnelRunning,'is-busy':progressing}" :aria-label="progressing?'连接切换中':tunnelRunning?'关闭连接':'开启连接'" :aria-busy="progressing" :disabled="!!busy || progressing || loading || !status" @click="toggle">
+                <span class="connection-switch-track" aria-hidden="true"><span class="connection-knob"><LoaderCircle v-if="progressing"/><Power v-else/></span></span>
+                <span class="connection-action-label">{{progressing?'请稍候…':tunnelRunning?'关闭连接':'开启连接'}}</span>
+                <span class="connection-action-light" aria-hidden="true"></span>
+              </button>
             </div>
             <div class="connection-art"><PlayfulMascot/><span class="art-orbit" aria-hidden="true"></span><span class="art-orbit second" aria-hidden="true"></span></div>
             <section class="connection-path" aria-label="连接状态">
