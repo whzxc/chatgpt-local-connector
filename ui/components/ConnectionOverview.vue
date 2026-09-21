@@ -85,7 +85,7 @@ const unfold = (index: number, count: number) => ({ '--unfold-y': `${((count-1)/
 @keyframes status-spin{to{rotate:360deg}}
 @media(prefers-reduced-motion:reduce){.agents .graph-node,.agent-marker,.agent-wire,.spinning{animation:none}}
 
-.sources .source-icon{width:44px;height:44px}.sources :deep(.platform-icon){transform:scale(1.14)}.sources .graph-node:hover :deep(.platform-icon){transform:scale(1.25)}.source-brand :deep(svg){width:40px;height:40px}.sources .source-icon>svg{width:30px;height:30px}
+.sources .source-icon{width:44px;height:44px}.sources :deep(.platform-icon){transform:scale(1.25)}.sources .graph-node:hover :deep(.platform-icon){transform:scale(1.35)}.sources .add-source .source-icon{width:34px;height:34px}.sources .add-source .source-icon>svg{width:20px;height:20px}.source-brand :deep(svg){width:40px;height:40px}.sources .source-icon>svg{width:30px;height:30px}
 .wire-status:hover,.wire-status:focus-visible{z-index:5;background:var(--graph-bg)}
 .status-hint{font-size:11px;opacity:.7}
 @media(prefers-reduced-motion:reduce){.graph-node>:first-child{transition:none}}
