@@ -427,5 +427,10 @@
   "choosePresetSource": "请从控制源列表选择此预置客户端。",
   "officialSetup": "官方接入说明",
   "presetAuthMismatch": "此客户端接入方式不支持静态 Bearer；连接前请让 Codex 核对可用认证路径。",
-  "close": "关闭"
+  "close": "关闭",
+  "recommended": "推荐",
+  "secureTunnelRecommendation": "Secure Tunnel 可直接连接 ChatGPT，无需配置公网 HTTPS 域名或反向代理。Tunnel 使用权限与 ChatGPT 开发者模式权限需分别开通。",
+  "manageAgents": "管理 Agents",
+  "expandPanelWidth": "展开面板宽度",
+  "restorePanelWidth": "恢复面板宽度"
 }

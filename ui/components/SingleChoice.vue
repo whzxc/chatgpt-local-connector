@@ -6,7 +6,7 @@ const emit = defineEmits<{ 'update:value':[value:T] }>();
 </script>
 <template>
   <NRadioGroup class="choice-track" v-if="options.length <= 4" :value="value" :disabled="disabled" :aria-label="label" @update:value="emit('update:value',$event as T)">
-    <NRadioButton class="choice-option" :class="{selected:value===option.value,'is-disabled':disabled || option.disabled}" v-for="option in options" :key="option.value" :value="option.value" :disabled="disabled || option.disabled"><component :is="option.icon" v-if="option.icon" class="choice-icon" aria-hidden="true"/>{{option.label}}</NRadioButton>
+    <NRadioButton class="choice-option" :class="{selected:value===option.value,'is-disabled':disabled || option.disabled}" v-for="option in options" :key="option.value" :value="option.value" :disabled="disabled || option.disabled"><component :is="option.icon" v-if="option.icon" class="choice-icon" aria-hidden="true"/><slot name="option" :option="option">{{option.label}}</slot></NRadioButton>
   </NRadioGroup>
   <NSelect v-else :value="value" :options="[...options]" :disabled="disabled" :input-props="{'aria-label':label}" @update:value="emit('update:value',$event as T)"/>
 </template>

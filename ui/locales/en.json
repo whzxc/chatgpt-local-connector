@@ -427,5 +427,10 @@
   "choosePresetSource": "Choose this built-in client from the source picker.",
   "officialSetup": "Official setup",
   "presetAuthMismatch": "This client flow does not support static Bearer authentication. Ask Codex to check the supported auth path before connecting.",
-  "close": "Close"
+  "close": "Close",
+  "recommended": "Recommended",
+  "secureTunnelRecommendation": "Secure Tunnel connects ChatGPT directly without configuring a public HTTPS domain or reverse proxy. Tunnel access and ChatGPT developer-mode permissions are separate.",
+  "manageAgents": "Manage Agents",
+  "expandPanelWidth": "Expand panel width",
+  "restorePanelWidth": "Restore panel width"
 }

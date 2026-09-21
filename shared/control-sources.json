@@ -132,8 +132,8 @@
     "customHeaders": "Header-based API keys / bearer tokens.",
     "capability": "Remote MCP over Streamable HTTP",
     "caveat": {
-      "en": "Custom Agents support header authentication. Use Authorization: Bearer <token>; workspace permission and plan availability apply.",
-      "zh-CN": "Custom Agents 支持请求头认证；使用 Authorization: Bearer，需有工作区权限及相应套餐。"
+      "en": "Notion Custom Agents support header authentication via Authorization: Bearer <token>. Notion requires an eligible plan and workspace permissions.",
+      "zh-CN": "Notion Custom Agents 支持通过 Authorization: Bearer 请求头认证。使用此功能需满足 Notion 的套餐和工作区权限要求。"
     },
     "badge": {
       "en": "",

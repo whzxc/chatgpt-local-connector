@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
-import { NForm, NFormItem, NInput, NButton, NAlert, type FormInst } from 'naive-ui';
+import { NForm, NFormItem, NInput, NButton, NAlert, NText, type FormInst } from 'naive-ui';
 import FormDialog from './FormDialog.vue';
 import SourceIcon from './SourceIcon.vue';
 import { required, validMcpUrl } from '../formRules';
@@ -147,24 +147,24 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
 </script>
 <template>
   <FormDialog :show="true" :title="(entry ? t('editControlSource') : t('addControlSource')) + (selected ? ' · ' + (presetNames[selected] || t('customControlSource')) : '')" :busy="working" @close="emit('close')">
-    <div v-if="deliveredToken" class="token-field"><NInput :value="deliveredToken" readonly type="password" show-password-on="click" :input-props="{'aria-label':'Bearer token'}"/><NButton @click="copyToken(deliveredToken)">{{tokenCopied ? t('copied') : t('copy')}}</NButton><p class="token-help">{{t('savedBearerHelp')}}</p><NAlert v-if="error" type="error">{{displayMessage(error)}}</NAlert></div>
-    <div v-else-if="!selected" class="source-choices"><NButton v-for="option in [...curatedSources.map(p=>p.id),'custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option)"><span class="source-choice"><SourceIcon :platform="option" :add="option==='custom'"/><span>{{presetNames[option] || t('customControlSource')}}</span><small v-if="controlSource(option)?.badge.en">{{localized(controlSource(option)!.badge)}}</small></span></NButton></div>
+    <div v-if="deliveredToken" class="token-field"><NInput :value="deliveredToken" readonly type="password" show-password-on="click" :input-props="{'aria-label':'Bearer token'}"/><NButton @click="copyToken(deliveredToken)">{{tokenCopied ? t('copied') : t('copy')}}</NButton><p class="token-help">{{t('savedBearerHelp')}}</p><NAlert :show-icon="false" v-if="error" type="error">{{displayMessage(error)}}</NAlert></div>
+    <div v-else-if="!selected" class="source-choices"><NButton v-for="option in [...curatedSources.map(p=>p.id),'custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option)"><span class="source-choice"><SourceIcon :platform="option" :add="option==='custom'"/><span>{{presetNames[option] || t('customControlSource')}}</span></span></NButton></div>
     <NForm v-else ref="formRef" :model="model" :disabled="working || readingKey" label-placement="top" @submit.prevent="save()">
-      <NAlert v-if="preset" :type="preset.status==='supported' ? 'info' : 'warning'" class="preset-help">{{localized(preset.caveat)}} <NButton text type="primary" @click="openUrl(preset.docs[0]!)">{{t('officialSetup')}}</NButton></NAlert>
-      <NAlert v-if="form.connectionMode==='https' && auth==='bearer' && preset && !preset.supportedAuth.includes('bearer')" type="warning">{{t('presetAuthMismatch')}}</NAlert>
+      <NAlert :show-icon="false" v-if="preset && selected!=='chatgpt'" :type="preset.status==='supported' ? 'info' : 'warning'" class="preset-help">{{localized(preset.caveat)}} <NButton text type="primary" @click="openUrl(preset.docs[0]!)">{{t('officialSetup')}}</NButton></NAlert>
+      <NAlert :show-icon="false" v-if="form.connectionMode==='https' && auth==='bearer' && preset && !preset.supportedAuth.includes('bearer')" type="warning">{{t('presetAuthMismatch')}}</NAlert>
       <NFormItem :label="t('sourceName')" path="name" :rule="required()"><NInput v-model:value="name" :input-props="{'aria-label':t('sourceName')}"/></NFormItem>
       <NFormItem v-if="selected==='custom'" :label="t('controlSourceId')" path="source" :rule="[{...required()}, {pattern:/^[a-zA-Z0-9_-]+$/,message:t('validClientId'),trigger:'input'}]"><NInput :input-props="{'aria-label':t('controlSourceId')}" v-model:value="source" placeholder="my-client"/></NFormItem>
-      <ConnectionFields :form="form" :config="entry?.config" :disabled="working || readingKey" :allow-tunnel="preset?.recommendedTransport==='openai-tunnel' || selected==='custom'">
+      <ConnectionFields :recommend-tunnel="selected==='chatgpt'" :form="form" :config="entry?.config" :disabled="working || readingKey" :allow-tunnel="preset?.recommendedTransport==='openai-tunnel' || selected==='custom'">
         <template #mcp-url>
-          <NFormItem label="MCP URL" path="httpsUrl" :validation-status="form.httpsUrl && !urlReady ? 'error' : undefined" :feedback="form.httpsUrl && !urlReady ? t('validHttpsUrl') : undefined">
+          <NFormItem v-if="providerReady || urlReady || acquiring" label="MCP URL" path="httpsUrl" :validation-status="form.httpsUrl && !urlReady ? 'error' : undefined" :feedback="form.httpsUrl && !urlReady ? t('validHttpsUrl') : undefined">
             <NInput v-if="form.httpsProvider==='custom'" v-model:value="form.httpsUrl" :input-props="{'aria-label':'MCP URL'}" placeholder="https://connector.example.com/mcp"/>
             <div v-else class="url-field">
               <SingleChoice v-if="(liveEntry?.discoveredUrls?.length || 0)>1" v-model:value="form.httpsUrl" label="MCP URL" :disabled="working" :options="(liveEntry?.discoveredUrls || []).map(value=>({value,label:value}))"/>
               <CopyField v-else-if="urlReady" :value="form.httpsUrl" label="MCP URL"/>
               <NButton v-else :disabled="!providerReady || working" :loading="working || liveEntry?.state==='starting'" @click="obtainUrl">{{t('obtainMcpUrl')}}</NButton>
-              <NAlert v-if="liveEntry?.routeNotice" type="info">{{liveEntry.routeNotice}}</NAlert>
+              <NAlert :show-icon="false" v-if="liveEntry?.routeNotice" type="info">{{liveEntry.routeNotice}}</NAlert>
               <CopyField v-if="draft && form.cloudflareMode==='named' && !urlReady" :value="`http://127.0.0.1:${draft.config.httpsPort}`" :label="t('httpReverseProxyTarget')"/>
-              <NAlert v-if="liveEntry?.error" type="error">{{displayMessage(liveEntry.error)}}</NAlert>
+              <NAlert :show-icon="false" v-if="liveEntry?.error" type="error">{{displayMessage(liveEntry.error)}}</NAlert>
             </div>
           </NFormItem>
         </template>
@@ -172,12 +172,12 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
       <template v-if="form.connectionMode==='https' && urlReady">
         <NFormItem :label="t('authentication')" path="auth"><SingleChoice v-model:value="auth" :label="t('authentication')" :disabled="working || readingKey" :options="[{label:t('authNone'),value:'none'},{label:'Bearer',value:'bearer'}]"/></NFormItem>
         <NFormItem v-if="auth==='bearer'" path="token" :show-require-mark="false" :rule="entry?.auth==='bearer' ? undefined : required()" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
-          <template #label><span class="token-heading"><span>Bearer token<span v-if="entry?.auth!=='bearer'"> *</span></span><NButton text type="primary" size="tiny" :aria-label="t('generateNewToken')" :disabled="working || readingKey" @click="generateToken">{{t('generateNewToken')}}</NButton></span></template>
+          <template #label><span class="token-heading"><span>Bearer token<NText type="error"> *</NText></span><NButton text type="primary" size="tiny" :aria-label="t('generateNewToken')" :disabled="working || readingKey" @click="generateToken">{{t('generateNewToken')}}</NButton></span></template>
           <div class="token-field"><NInput :value="token" readonly type="password" show-password-on="click" :input-props="{autocomplete:'off','aria-label':'Bearer token'}" :placeholder="t('existingBearerPreserved')"/><NButton :disabled="!token || working" @click="copyToken(token)">{{tokenCopied ? t('copied') : t('copy')}}</NButton><p class="token-help">{{token ? t('generatedBearerHelp') : t('existingBearerHelp')}}</p></div>
         </NFormItem>
       </template>
 
-      <NAlert v-if="error" type="error" role="alert">{{displayMessage(error)}}</NAlert>
+      <NAlert :show-icon="false" v-if="error" type="error" role="alert">{{displayMessage(error)}}</NAlert>
     </NForm>
     <template v-if="selected" #footer>
       <NButton v-if="deliveredToken" type="primary" :disabled="working" @click="emit('close')">{{t('close')}}</NButton>
@@ -190,4 +190,4 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
     </template>
   </FormDialog>
 </template>
-<style scoped>.url-field{width:100%;display:grid;gap:10px}.token-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}.token-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.token-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px;line-height:1.5}.source-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px 0}.source-choices .n-button{height:116px;white-space:normal}.source-choice{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}.source-choice small{font-size:10px;color:var(--muted);max-width:150px;line-height:1.3}.preset-help{margin-bottom:16px}</style>
+<style scoped>.url-field{width:100%;display:grid;gap:10px}.token-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}.token-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.token-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px;line-height:1.5}.source-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px 0}.source-choices .n-button{height:116px;white-space:normal}.source-choice{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}.preset-help{margin-bottom:16px}</style>

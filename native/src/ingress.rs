@@ -321,7 +321,7 @@ impl Ingress {
                 .ready_logged
                 .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            self.log("INFO", "本机入口已启动，请从控制源验证入站").await;
+            self.log("INFO", "Local ingress started; verify inbound access from the control source").await;
         }
         let core = json!({"chatgpt":chat,"transport":{"state":state,"error":error}});
         Ok(
@@ -377,7 +377,7 @@ impl Ingress {
         }
         *self.failure.lock().await = String::new();
         if was_connected {
-            self.log("INFO", "连接已关闭").await;
+            self.log("INFO", "Connection closed").await;
         }
         Ok(())
     }
@@ -399,7 +399,7 @@ impl Ingress {
             let url = if settings["httpsProvider"] == "custom" {
                 string(&settings, "httpsUrl").to_owned()
             } else {
-                self.log("INFO", "正在准备 HTTPS 隧道，首次使用需要下载组件")
+                self.log("INFO", "Preparing HTTPS tunnel; first use requires downloading components")
                     .await;
                 let proxy = crate::proxy::NetworkProxy::resolve(&settings).await?;
                 let tunnel =
@@ -431,7 +431,7 @@ impl Ingress {
                 .store(false, std::sync::atomic::Ordering::SeqCst);
             self.connected
                 .store(true, std::sync::atomic::Ordering::SeqCst);
-            self.log("INFO", "MCP 本机监听已开启，请从控制源验证公网入站")
+            self.log("INFO", "Local MCP listener started; verify public inbound access from the control source")
                 .await;
             return Ok(());
         }
@@ -440,7 +440,7 @@ impl Ingress {
         let binary = match executable(string(&settings, "tunnelBinary")) {
             Some(binary) => binary,
             None => {
-                self.log("INFO", "正在准备连接组件，首次使用需要下载").await;
+                self.log("INFO", "Preparing connection components; first use requires a download").await;
                 let binary = install_tunnel(&proxy)
                     .await
                     .map_err(|e| format!("准备连接组件失败，请检查网络后重试：{e}"))?;
@@ -574,7 +574,7 @@ impl Ingress {
         *self.started.lock().await = Some(Instant::now());
         self.connected
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        self.log("INFO", "正在开启连接").await;
+        self.log("INFO", "Starting connection").await;
         Ok(())
     }
     pub async fn request(
@@ -733,7 +733,7 @@ impl Ingress {
     }
     pub async fn call(self: &Arc<Self>, name: &str, args: Value) -> Result<Value> {
         if !self.connected.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err("连接已关闭".into());
+            return Err("Connection closed".into());
         }
         let result = if name == "connector_verify" {
             let mut v = self.verification.lock().await;
@@ -761,11 +761,11 @@ impl Ingress {
         self.log(
             if result.is_ok() { "INFO" } else { "ERROR" },
             &format!(
-                "{}：{name}",
+                "{}: {name}",
                 if result.is_ok() {
-                    "请求已处理"
+                    "Request processed"
                 } else {
-                    "请求处理失败"
+                    "Request failed"
                 }
             ),
         )

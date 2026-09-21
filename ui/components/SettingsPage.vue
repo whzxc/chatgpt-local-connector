@@ -9,7 +9,6 @@ import { computed, onMounted, ref } from 'vue';
 import { api, useConnector, type Service } from '../composables/useConnector';
 import { isDesktop } from '../platform';
 import AppUpdate from './AppUpdate.vue';
-import AgentsSettings from './AgentsSettings.vue';
 import SettingsGroup from './SettingsGroup.vue';
 import SettingsRow from './SettingsRow.vue';
 import '../settings.css';
@@ -68,7 +67,7 @@ async function setApproval(enabled: boolean) {
 </script>
 <template>
   <div class="settings-preferences">
-    <AgentsSettings />
+
 
     <SettingsGroup :title="t('tasks')">
       <SettingsRow :title="t('automaticallyOpenCodexTasks')" :description="t('whenDisabledNewTasksRunInTheBackground')" control-id="settings-auto-open">

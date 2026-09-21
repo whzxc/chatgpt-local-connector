@@ -68,23 +68,23 @@ impl NetworkProxy {
             http: None,
             https: None,
             bypass: bypass.join(","),
-            message: "不使用代理，直接连接",
+            message: "Proxy disabled; connecting directly",
         };
         match mode {
             "custom" => {
                 let url = parse_url(address)?;
                 proxy.http = Some(url.clone());
                 proxy.https = Some(url);
-                proxy.message = "使用自定义代理";
+                proxy.message = "Using custom proxy";
             }
             "system" => {
-                proxy.message = "系统未设置 HTTP/HTTPS 代理，直接连接";
+                proxy.message = "No system HTTP/HTTPS proxy configured; connecting directly";
                 #[cfg(target_os = "macos")]
                 proxy.detect_macos().await?;
                 #[cfg(windows)]
                 proxy.detect_windows().await?;
                 if proxy.http.is_some() || proxy.https.is_some() {
-                    proxy.message = "使用系统 HTTP/HTTPS 代理";
+                    proxy.message = "Using system HTTP/HTTPS proxy";
                 }
             }
             _ => {}
