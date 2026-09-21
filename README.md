@@ -2,7 +2,7 @@
 
 **在 ChatGPT 里聊想法，让本机的 coding agent 接着干。**
 
-Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，支持 Codex Native、Pi 和 OpenCode（ACP）。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
+Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，支持 Codex Native、Pi，以及 Gemini、Claude adapter、Cursor、Grok 等内置 ACP Agent。它通过 OpenAI Secure MCP Tunnel 或 HTTPS MCP，把对话接到你的电脑上：查项目、读代码、看 Git 状态，再把任务交给 Codex，回来接着聊进展。
 
 ![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.png)
 
@@ -13,7 +13,7 @@ Local Connector 是 ChatGPT 和本机 coding agent 之间的小小联络员，�
 
 CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使用各自所需的运行环境。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
 
-Codex 保持默认，原生能力完整保留。Pi/OpenCode 沿用本机配置和登录；设置中的 Agents 区域自动发现安装。公共任务使用 `agent_*` 工具，差异与使用方法见[本地 Agents](docs/agents.md)。
+Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；设置中的 Agents 区域显示全部内置项、安装状态、版本及 native/adapter 类型。内置 ACP 还包括 Copilot、Kimi、Qwen、Kiro、Devin、Cline、Junie、Hermes 和 OpenCode。公共任务使用 `agent_*` 工具，差异与使用方法见[本地 Agents](docs/agents.md)。
 
 ## 安装
 
@@ -38,7 +38,7 @@ Codex 保持默认，原生能力完整保留。Pi/OpenCode 沿用本机配置�
 
 首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口后连接继续运行，退出应用则关闭连接。macOS 可在「设置 → 通用 → 显示位置」选择「全部」「仅菜单栏」或「仅 Dock 栏」，修改立即生效并自动保存。
 
-`agent_wait` 支持 Codex、Pi、OpenCode 与 Custom ACP，在本机连接期间等待；`codex_wait` 保留原生语义。历史读取和事件查询继续使用相应的 read/events 工具。普通 Chat 回复结束后不会继续后台等待；它不提供定时唤醒或主动推送。详见[等待工具](docs/tools.md#任务等待)。
+`agent_wait` 支持 Codex、Pi、全部内置 ACP 与 Custom ACP，在本机连接期间等待；`codex_wait` 保留原生语义。历史读取和事件查询继续使用相应的 read/events 工具。普通 Chat 回复结束后不会继续后台等待；它不提供定时唤醒或主动推送。详见[等待工具](docs/tools.md#任务等待)。
 
 ### 分工与边界
 

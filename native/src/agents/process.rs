@@ -305,13 +305,27 @@ fn launch_command(binary: &Path, args: &[String]) -> Result<tokio::process::Comm
     );
     Ok(c)
 }
-pub(super) async fn version(binary: &Path) -> Result<String> {
-    let out = launch_command(binary, &["--version".into()])?
-        .output()
+pub(super) async fn probe(binary: &Path, args: &[String]) -> Result<String> {
+    let mut command = launch_command(binary, args)?;
+    command
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let out = tokio::time::timeout(std::time::Duration::from_secs(8), command.output())
         .await
+        .map_err(|_| "AGENT_PROBE_TIMEOUT")?
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
-        return Err("VERSION_PROBE_FAILED".into());
+        return Err("AGENT_PROBE_FAILED".into());
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().into())
+    let text = String::from_utf8_lossy(if out.stdout.is_empty() {
+        &out.stderr
+    } else {
+        &out.stdout
+    })
+    .trim()
+    .to_owned();
+    if text.is_empty() {
+        return Err("AGENT_PROBE_EMPTY".into());
+    }
+    Ok(text)
 }

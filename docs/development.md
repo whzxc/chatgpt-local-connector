@@ -25,6 +25,12 @@ MCP stdio 由同一个原生可执行文件的 `stdio` 子命令承担，仅向�
 
 同一可执行文件的 `cli` 子命令提供配置和诊断入口，通过已有本机认证传输调用后台，不启动第二个服务。`cli guide` 内嵌 `docs/codex-setup.md`，与应用版本一起分发；命令约定见该指南。
 
+## 扩展 ACP Agent
+
+在 `native/src/agents/builtins.json` 增加描述，先核实官方当前入口、版本要求、认证归属及能力限制。与 Custom manifest 共用 `manifest.rs`，不得把静态说明当成握手能力或为品牌复制 Driver/wait。发现规则可描述同参数别名、安装路径、版本探测和 CLI help 条件；不同参数的入口使用独立 Custom manifest。保持内置 ID 唯一，更新 agents 支持矩阵及现有工具/列表预期，不新增测试文件或测试用例。
+
+真实调用使用隔离的 `CLC_STATE_DIR` 和临时工作目录，调用当前编译的 AgentHost/传输层；不要用已安装旧后端代表源代码验收。只对已有认证做无害任务，不自动登录或改 provider；保留回执并通过 agent_wait 确认输出、续聊/恢复、取消与安全可触发的权限交互。缺少安装或认证时明确记录验证边界。临时证据放仓库外，文档仅保留当前支持事实与覆盖范围。
+
 ## 界面控件
 
 `ui/tokens.css` 定义桌面控件尺寸；`ui/style.css` 的原生按钮、单行输入框和选择框默认使用这些 token：高度 28px、字号 12px、行高 18px、圆角 6px、水平内边距 10px。多行文本框使用相同字号与圆角，高度按内容用途设置；开关保留独立形态。
@@ -37,6 +43,8 @@ MCP stdio 由同一个原生可执行文件的 `stdio` 子命令承担，仅向�
 npm run check
 npm test
 npm run check:native
+npm run build
+cargo build --manifest-path desktop/Cargo.toml
 cargo fmt --manifest-path native/Cargo.toml -- --check
 cargo fmt --manifest-path desktop/Cargo.toml -- --check
 ```

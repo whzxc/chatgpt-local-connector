@@ -19,4 +19,4 @@ npx tauri icon ui/assets/local-connector.png --output desktop/icons
 
 ## Agent 单色图标
 
-`agents/openai.svg`、`agents/pi.svg`、`agents/opencode.svg` 来源于 [Lobe Icons](https://github.com/lobehub/lobe-icons)，按 MIT 授权使用，许可证见 `agents/LICENSE`。相关商标归各自权利人所有。
+`agents/` 中的内置 Agent 品牌 SVG（包括 Claude、Cursor、Gemini、Grok、GitHub、Kimi、Qwen、Kiro、Devin、Cline、Junie、Hermes、OpenAI、Pi 和 OpenCode）来源于 [Lobe Icons](https://github.com/lobehub/lobe-icons)，按 MIT 授权使用，许可证见 `agents/LICENSE`。相关商标归各自权利人所有。

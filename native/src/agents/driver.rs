@@ -1,13 +1,6 @@
 use super::{process::Process, *};
 
-#[derive(Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Manifest {
-    pub id: String,
-    pub command: String,
-    #[serde(default)]
-    pub args: Vec<String>,
-}
+pub use super::manifest::Manifest;
 #[derive(Clone)]
 pub enum AgentDriver {
     CodexNative,
@@ -26,8 +19,70 @@ impl AgentDriver {
         match self {
             Self::CodexNative => crate::desktop::installation().map(|i| i.binary),
             Self::Pi => discover("pi"),
-            Self::Acp(m) => discover(&m.command),
+            Self::Acp(m) => m.candidates().into_iter().next(),
         }
+    }
+    pub fn descriptor(&self) -> Value {
+        match self {
+            Self::Acp(m) => serde_json::to_value(m).unwrap(),
+            Self::CodexNative => json!({"displayName":"Codex","integration":"native"}),
+            Self::Pi => json!({"displayName":"Pi","integration":"native"}),
+        }
+    }
+    /// Verify launch conditions without starting ACP, logging in, or fetching packages.
+    pub async fn discover(&self) -> (Option<PathBuf>, Option<String>, Option<String>) {
+        let candidates = match self {
+            Self::Acp(m) => m.candidates(),
+            _ => self.binary().into_iter().collect(),
+        };
+        let mut observed = (None, None, Some("AGENT_NOT_INSTALLED".into()));
+        for binary in candidates {
+            let version_args = match self {
+                Self::Acp(m) => m.version_args.clone(),
+                _ => vec!["--version".into()],
+            };
+            let version = if version_args.is_empty() {
+                Ok(String::new()) // Explicitly disabled for custom launchers without a version flag.
+            } else {
+                process::probe(&binary, &version_args).await
+            };
+            let mut error = version.as_ref().err().cloned();
+            if error.is_none() {
+                if let Self::Acp(m) = self {
+                    if !m.compatibility.help_args.is_empty() {
+                        match process::probe(&binary, &m.compatibility.help_args).await {
+                            Ok(help)
+                                if !m
+                                    .compatibility
+                                    .identity_contains
+                                    .iter()
+                                    .all(|text| help.contains(text)) =>
+                            {
+                                if observed.0.is_none() {
+                                    observed.2 = Some("AGENT_IDENTITY_MISMATCH".into());
+                                }
+                                continue;
+                            }
+                            Ok(help)
+                                if m.compatibility
+                                    .help_contains
+                                    .iter()
+                                    .all(|text| help.contains(text)) => {}
+                            Ok(_) => error = Some("ACP_ENTRY_OR_IDENTITY_UNSUPPORTED".into()),
+                            Err(e) => error = Some(e),
+                        }
+                    }
+                }
+            }
+            let result = (Some(binary), version.ok().filter(|v| !v.is_empty()), error);
+            if result.2.is_none() {
+                return result;
+            }
+            if observed.0.is_none() {
+                observed = result;
+            }
+        }
+        observed
     }
     pub async fn start(
         &self,
@@ -35,7 +90,10 @@ impl AgentDriver {
         resume: bool,
         wake: Arc<tokio::sync::Notify>,
     ) -> Result<Arc<Process>> {
-        let binary = self.binary().ok_or("AGENT_NOT_INSTALLED")?;
+        let (binary, _, error) = self.discover().await;
+        let binary = binary
+            .filter(|_| error.is_none())
+            .ok_or_else(|| error.unwrap_or_else(|| "AGENT_NOT_INSTALLED".into()))?;
         let cwd = PathBuf::from(string(&task, "cwd"));
         let args = match self {
             Self::Pi => {
@@ -75,6 +133,7 @@ impl AgentDriver {
                 let mut params=json!({"cwd":cwd,"mcpServers":[]});
                 if resume {params["sessionId"]=t["sessionId"].clone();}
                 let result=p.call(if resume {"session/load"}else{"session/new"},params,60000).await?;
+                p.capabilities.lock().await["session"]=result.clone();
                 let mut t=p.state.lock().await;
                 if !resume {if string(&result,"sessionId").is_empty(){return Err("MISSING_SESSION_ID".into());}t["sessionId"]=result["sessionId"].clone();}
                 t["metadata"]=result;
@@ -257,21 +316,43 @@ pub(super) fn search_paths() -> Vec<PathBuf> {
     paths
 }
 pub fn discover(name: &str) -> Option<PathBuf> {
-    let p = Path::new(name);
-    if p.is_absolute() {
-        return p.is_file().then(|| p.into());
-    }
-    for path in search_paths() {
-        for suffix in if cfg!(windows) {
-            vec![".exe", ".cmd", ""]
-        } else {
-            vec![""]
-        } {
-            let p = path.join(format!("{name}{suffix}"));
-            if p.is_file() {
-                return Some(p);
-            }
+    discover_in(name, &search_paths()).into_iter().next()
+}
+pub(super) fn discover_in(name: &str, paths: &[PathBuf]) -> Vec<PathBuf> {
+    fn executable(p: &Path) -> bool {
+        if !p.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            return p
+                .metadata()
+                .is_ok_and(|m| m.permissions().mode() & 0o111 != 0);
+        }
+        #[cfg(not(unix))]
+        {
+            true
         }
     }
-    None
+    let p = Path::new(name);
+    if p.is_absolute() {
+        return executable(p).then(|| p.into()).into_iter().collect();
+    }
+    if name.contains('/') || name.contains('\\') {
+        return vec![];
+    }
+    paths
+        .iter()
+        .flat_map(|path| {
+            (if cfg!(windows) {
+                vec![".exe", ".cmd", ".bat", ""]
+            } else {
+                vec![""]
+            })
+            .into_iter()
+            .map(move |suffix| path.join(format!("{name}{suffix}")))
+        })
+        .filter(|p| executable(p))
+        .collect()
 }

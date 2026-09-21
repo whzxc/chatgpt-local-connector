@@ -264,3 +264,5 @@ codex_request {"requestId":"<原请求 UUID>","action":"reject"}
 MCP notifications/cancelled 可取消对应 wait，返回 unconfirmed / wait-cancelled（若客户端仍接受响应），不会发送 turn/interrupt。当前无会话 MCP 入口要求并发等待使用唯一 JSON-RPC request ID，重复活跃 ID 会被拒绝。客户端关闭 HTTP/stdio 连接后释放等待；Connector shutdown 通知等待者退出。连接已经关闭时无法向原调用方交付响应，调用方应把结果视为未知并重新读取任务。客户端、Tunnel 或反向代理可能有更短的请求期限；本机 stdio 转发支持五分钟等待，但不能保证外部入口接受同样时长。
 
 这是有界同步等待，不是持久化监控订阅、定时任务或后台推送。普通 Chat 结束当前回复后不会继续执行等待。
+
+所有内置 ACP 与 Custom ACP 自动进入相同的 `agent_*` 和 `agent_wait` 路径，不提供品牌化工具。`agents` 返回 displayName、integration、installed、available、status、version、discoveryError 和 descriptor；静态 `agent_capabilities` 不承诺会话能力，传 taskId 才读取 initialize 及 session 协商快照。完整启动和支持边界见[内置 ACP 矩阵](agents.md#内置-acp-支持矩阵)。

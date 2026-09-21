@@ -100,6 +100,12 @@ test('MCP lists all existing native and generic agent tools and seven discoverab
     assert.equal(tool.inputSchema.type, 'object');
     new AjvJsonSchemaValidator().getValidator(tool.inputSchema);
   }
+  const agents = (await call('agents')).result.agents;
+  assert.deepEqual(agents.map((agent: { agent: string }) => agent.agent).sort(), ['claude', 'cline', 'codex', 'copilot', 'cursor', 'devin', 'gemini', 'grok', 'hermes', 'junie', 'kimi', 'kiro', 'opencode', 'pi', 'qwen']);
+  for (const agent of agents.filter((agent: { protocol: string }) => agent.protocol === 'acp-v1')) {
+    assert.equal(agent.descriptor.protocol, 'acp-v1');
+    assert.ok(['native', 'adapter'].includes(agent.integration));
+  }
   const command = inventory.tools.find(tool => tool.name === 'command')!;
   assert.match(command.description!, /sandbox\/permission/);
   assert.match(inventory.tools.find(tool => tool.name === 'process')!.description!, /非 Codex sandbox/);

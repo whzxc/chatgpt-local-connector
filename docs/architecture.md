@@ -16,6 +16,6 @@ Desktop 接入不按应用版本号设白名单，保留实际协议和任务 ow
 
 `Service` 将 `agent_*` 路由交给 `AgentHost`，现有 `codex_*` 仍直接交给 `Control`。Host 负责公共任务身份、持久化回执、确认流程与生命周期；`AgentDriver::CodexNative` 只适配公共参数和返回值，复用原有 Control，不改变 Desktop owner、schema、events、account、plugin 或 skills 语义。
 
-`AgentDriver::Acp` 使用可配置 command/args，初始化协商 ACP v1；`AgentDriver::Pi` 使用官方 RPC。两者复用有界 JSONL 传输，但分别处理响应与完成语义。每个任务独立子进程，原始会话与 CLC 身份分别持久化。进程重启不自动重放未知写操作。能力和限制见[本地 Agents](agents.md)。
+`agents/builtins.json` 和用户 manifest 共用严格的 Manifest 类型，描述启动参数、发现规则、版本探测及兼容性说明；静态描述不宣称协商能力。`AgentDriver::Acp` 共用描述驱动的发现和启动流程，初始化协商 ACP v1；`AgentDriver::Pi` 使用官方 RPC。两者复用有界 JSONL 传输，但分别处理响应与完成语义。每个任务独立子进程，原始会话与 CLC 身份分别持久化。进程重启不自动重放未知写操作。能力和限制见[本地 Agents](agents.md)。
 
 `agent_wait` 与 `codex_wait` 共用 `waiter` 的超时、事件唤醒、周期复核、快照 hash 和条件判定。Codex 直接委托原生等待入口；Pi/ACP 通过轻量 `WaitSource` 适配进程观察，复用已有 Host/Driver，不启动或恢复任务。Pi 使用 `get_state` 复核，ACP 使用存活子进程的协议状态与 prompt 最终响应；等待不持有全局锁。MCP 取消和连接断开只释放该次等待。

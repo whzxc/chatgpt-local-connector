@@ -2,6 +2,7 @@
 use crate::*;
 use std::collections::{HashMap, HashSet};
 mod driver;
+mod manifest;
 mod process;
 mod wait;
 
@@ -40,27 +41,20 @@ impl AgentHost {
         let mut drivers = HashMap::from([
             ("codex".into(), AgentDriver::CodexNative),
             ("pi".into(), AgentDriver::Pi),
-            (
-                "opencode".into(),
-                AgentDriver::Acp(Manifest {
-                    id: "opencode".into(),
-                    command: "opencode".into(),
-                    args: vec!["acp".into()],
-                }),
-            ),
         ]);
+        for m in manifest::builtins()? {
+            m.validate()?;
+            if drivers.insert(m.id.clone(), AgentDriver::Acp(m)).is_some() {
+                return Err("INVALID_OR_DUPLICATE_AGENT_ID".into());
+            }
+        }
         let path = root().join("agents/manifests.json");
         if path.exists() {
             let manifests: Vec<Manifest> =
                 serde_json::from_value(load(&path)?).map_err(|e| e.to_string())?;
             for m in manifests {
-                if m.id.is_empty()
-                    || !m
-                        .id
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
-                    || drivers.contains_key(&m.id)
-                {
+                m.validate()?;
+                if drivers.contains_key(&m.id) {
                     return Err("INVALID_OR_DUPLICATE_AGENT_ID".into());
                 }
                 drivers.insert(m.id.clone(), AgentDriver::Acp(m));
@@ -112,25 +106,28 @@ impl AgentHost {
     }
     pub async fn inventory(&self) -> Value {
         let mut rows = Vec::new();
-        let mut ids = self.drivers.keys().collect::<Vec<_>>();
-        ids.sort();
-        for agent in ids {
-            let driver = &self.drivers[agent];
-            let binary = driver.binary();
-            let version = if let Some(p) = &binary {
-                tokio::time::timeout(std::time::Duration::from_secs(4), process::version(p))
-                    .await
-                    .ok()
-                    .and_then(Result::ok)
-            } else {
-                None
+        let mut probes = tokio::task::JoinSet::new();
+        for (agent, driver) in &self.drivers {
+            let agent = agent.clone();
+            let driver = driver.clone();
+            probes.spawn(async move {
+                let discovery = driver.discover().await;
+                (agent, driver, discovery)
+            });
+        }
+        while let Some(result) = probes.join_next().await {
+            let Ok((agent, driver, (binary, version, discovery_error))) = result else {
+                continue;
             };
+            let available = discovery_error.is_none();
+            let descriptor = driver.descriptor();
             let ready = self.processes.lock().await.values().any(|p| {
                 p.alive.load(std::sync::atomic::Ordering::SeqCst)
-                    && p.state.try_lock().is_ok_and(|s| s["agent"] == *agent)
+                    && p.state.try_lock().is_ok_and(|s| s["agent"] == agent)
             });
-            rows.push(json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"enabled":self.ensure_enabled(agent).await.is_ok(),"status":if ready {"ready"}else if binary.is_some() && version.is_some(){"installed"}else{"unavailable"},"version":version.as_deref().map(str::trim),"path":binary,"configuration":"inherited","readiness":"ready means a live initialized session, not provider authentication"}));
+            rows.push(json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"available":available,"discoveryError":discovery_error,"descriptor":descriptor,"displayName":descriptor["displayName"],"integration":descriptor["integration"],"enabled":self.ensure_enabled(&agent).await.is_ok(),"status":if ready {"ready"}else if available{"installed"}else{"unavailable"},"version":version.as_deref().map(str::trim),"path":binary,"configuration":"inherited","readiness":"ready means a live initialized session, not provider authentication"}));
         }
+        rows.sort_by(|a, b| string(a, "agent").cmp(string(b, "agent")));
         json!({"agents":rows,"defaultAgent":"codex","observedAt":now()})
     }
     async fn task(&self, agent: &str, task: &str) -> Result<Value> {
@@ -291,8 +288,9 @@ impl AgentHost {
                 let p = self.process(agent, task, false).await?;
                 return Ok(p.capabilities.lock().await.clone());
             }
+            let (binary, _, error) = driver.discover().await;
             return Ok(
-                json!({"agent":agent,"protocol":driver.protocol(),"installed":driver.binary().is_some(),"create":true,"prompt":"text","cancel":true,"resume":if matches!(driver,AgentDriver::Pi){json!(true)}else{json!("negotiated per session")},"permission":if matches!(driver,AgentDriver::Pi){"Pi extension dialogs; not a sandbox or universal tool approval"}else{"ACP session/request_permission"},"negotiated":false,"nextAction":"agent_create then agent_capabilities(taskId)"}),
+                json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"available":error.is_none(),"discoveryError":error,"descriptor":driver.descriptor(),"negotiated":false,"capabilities":null,"nextAction":"agent_create then agent_capabilities(taskId)"}),
             );
         }
         if name == "agent_read" {
