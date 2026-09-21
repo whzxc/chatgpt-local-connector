@@ -321,7 +321,11 @@ impl Ingress {
                 .ready_logged
                 .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            self.log("INFO", "Local ingress started; verify inbound access from the control source").await;
+            self.log(
+                "INFO",
+                "Local ingress started; verify inbound access from the control source",
+            )
+            .await;
         }
         let core = json!({"chatgpt":chat,"transport":{"state":state,"error":error}});
         Ok(
@@ -399,8 +403,11 @@ impl Ingress {
             let url = if settings["httpsProvider"] == "custom" {
                 string(&settings, "httpsUrl").to_owned()
             } else {
-                self.log("INFO", "Preparing HTTPS tunnel; first use requires downloading components")
-                    .await;
+                self.log(
+                    "INFO",
+                    "Preparing HTTPS tunnel; first use requires downloading components",
+                )
+                .await;
                 let proxy = crate::proxy::NetworkProxy::resolve(&settings).await?;
                 let tunnel =
                     crate::https_tunnel::start(&settings, &format!("http://{address}"), &proxy)
@@ -431,8 +438,11 @@ impl Ingress {
                 .store(false, std::sync::atomic::Ordering::SeqCst);
             self.connected
                 .store(true, std::sync::atomic::Ordering::SeqCst);
-            self.log("INFO", "Local MCP listener started; verify public inbound access from the control source")
-                .await;
+            self.log(
+                "INFO",
+                "Local MCP listener started; verify public inbound access from the control source",
+            )
+            .await;
             return Ok(());
         }
         let proxy = crate::proxy::NetworkProxy::resolve(&settings).await?;
@@ -440,7 +450,11 @@ impl Ingress {
         let binary = match executable(string(&settings, "tunnelBinary")) {
             Some(binary) => binary,
             None => {
-                self.log("INFO", "Preparing connection components; first use requires a download").await;
+                self.log(
+                    "INFO",
+                    "Preparing connection components; first use requires a download",
+                )
+                .await;
                 let binary = install_tunnel(&proxy)
                     .await
                     .map_err(|e| format!("准备连接组件失败，请检查网络后重试：{e}"))?;
