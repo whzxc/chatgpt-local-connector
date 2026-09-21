@@ -30,7 +30,7 @@ xattr -rd com.apple.quarantine "/Applications/Local Connector.app"
 核对下载文件：
 
 ```sh
-shasum -a 256 Local.Connector_0.6.1_aarch64.dmg
+shasum -a 256 Local.Connector_0.6.2_aarch64.dmg
 ```
 
 将结果与同版本 `SHA256SUMS.txt` 的对应行比较。
@@ -60,7 +60,7 @@ brew upgrade --cask --greedy local-connector
 PowerShell 校验示例：
 
 ```powershell
-Get-FileHash .\Local.Connector_0.6.1_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Local.Connector_0.6.2_x64-setup.exe -Algorithm SHA256
 ```
 
 升级时退出 App，使用同一种安装器覆盖安装。配置默认保留，不要求用户先卸载。

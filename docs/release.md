@@ -70,8 +70,8 @@ cp <临时目录>/Casks/local-connector.rb Casks/local-connector.rb
 ```sh
 gh workflow run check.yml --ref main
 # 等待最终提交的 Check 成功后：
-git tag v0.6.1
-git push origin v0.6.1
+git tag v0.6.2
+git push origin v0.6.2
 ```
 
 推送前确认目标 remote 为公开源码仓库；仅推送选定分支和版本标签，不使用 `--mirror` 或 `--all`。

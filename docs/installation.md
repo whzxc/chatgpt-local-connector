@@ -28,7 +28,7 @@ If permission is denied, use an administrator account to handle this app's permi
 Verify a download:
 
 ```sh
-shasum -a 256 Local.Connector_0.6.1_aarch64.dmg
+shasum -a 256 Local.Connector_0.6.2_aarch64.dmg
 ```
 
 Compare the result with the corresponding entry in `SHA256SUMS.txt` for the same release.
@@ -58,7 +58,7 @@ Run the x64 NSIS `.exe` or MSI installer. Install and sign in to Microsoft Store
 PowerShell verification example:
 
 ```powershell
-Get-FileHash .\Local.Connector_0.6.1_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Local.Connector_0.6.2_x64-setup.exe -Algorithm SHA256
 ```
 
 To upgrade, quit the app and install over it using the same installer type. Configuration is preserved by default; uninstalling first is unnecessary.
