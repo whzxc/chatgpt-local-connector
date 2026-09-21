@@ -1,6 +1,6 @@
 cask "local-connector" do
-  version "0.6.2"
-  sha256 "333ff28dfcea0037e50cd1490c868556c89cdb6330424aeed7030ce12eda4384"
+  version "0.7.0"
+  sha256 "0829fb3fde0fcc8de5f15681ddfa8b889f3129e2916cec07f32a730fafd2c258"
 
   url "https://github.com/whzxc/chatgpt-local-connector/releases/download/v#{version}/Local.Connector_#{version}_aarch64.dmg"
   name "Local Connector"
