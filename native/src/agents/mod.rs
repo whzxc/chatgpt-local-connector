@@ -104,6 +104,67 @@ impl AgentHost {
         *disabled = next;
         Ok(json!({"agent":agent,"enabled":enabled}))
     }
+    /// Local UI action; interactive launches are owned by the user's app/terminal.
+    pub async fn open_interactive(&self, agent: &str) -> Result<Value> {
+        let driver = self.drivers.get(agent).ok_or("UNKNOWN_AGENT")?;
+        if matches!(driver, AgentDriver::CodexNative) {
+            crate::desktop::open_app().await?;
+            return Ok(json!({"opened":true,"target":"desktop"}));
+        }
+        let binary = if agent == "claude" {
+            driver::discover("claude")
+        } else {
+            driver.binary()
+        }
+        .ok_or("AGENT_NOT_INSTALLED")?;
+        let home = dirs::home_dir().ok_or("HOME_NOT_FOUND")?;
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = root().join("agents/launchers");
+            private_dir(&dir)?;
+            let script = dir.join(format!("{}.command", id()));
+            let quote =
+                |p: &std::path::Path| format!("'{}'", p.to_string_lossy().replace('\'', "'\"'\"'"));
+            let content = format!(
+                "#!/bin/zsh -l\n/bin/rm -f -- {}\ncd -- {} || exit 1\n{}\n",
+                quote(&script),
+                quote(&home),
+                quote(&binary)
+            );
+            std::fs::write(&script, content).map_err(|e| e.to_string())?;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+            if let Err(error) =
+                crate::output("/usr/bin/open", &[script.to_str().ok_or("INVALID_PATH")?]).await
+            {
+                let _ = std::fs::remove_file(script);
+                return Err(error);
+            }
+        }
+        #[cfg(windows)]
+        {
+            use base64::Engine;
+            use std::os::windows::process::CommandExt;
+            let quote =
+                |p: &std::path::Path| format!("'{}'", p.to_string_lossy().replace('\'', "''"));
+            let script = format!(
+                "Set-Location -LiteralPath {}; & {}",
+                quote(&home),
+                quote(&binary)
+            );
+            let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            std::process::Command::new("powershell.exe")
+                .args(["-NoLogo", "-NoExit", "-EncodedCommand", &encoded])
+                .creation_flags(0x00000010)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        return Err("UNSUPPORTED_PLATFORM".into());
+        Ok(json!({"opened":true,"target":"terminal"}))
+    }
     pub async fn inventory(&self) -> Value {
         let mut rows = Vec::new();
         let mut probes = tokio::task::JoinSet::new();
@@ -356,7 +417,7 @@ impl AgentHost {
         } else {
             self.task(agent, &task).await?["turnId"].clone()
         };
-        let receipt = json!({"requestId":request,"agent":agent,"taskId":task,"previousTurnId":previous_turn,"operation":name,"arguments":args,"digest":digest,"state":if needs_approval{"awaiting-approval"}else{"pending"},"backendSession":self.session,"createdAt":now(),"nextAction":"agent_request"});
+        let receipt = json!({"origin":crate::ingress::current_origin(),"requestId":request,"agent":agent,"taskId":task,"previousTurnId":previous_turn,"operation":name,"arguments":args,"digest":digest,"state":if needs_approval{"awaiting-approval"}else{"pending"},"backendSession":self.session,"createdAt":now(),"nextAction":"agent_request"});
         private_dir(path.parent().ok_or("INVALID_RECEIPT_PATH")?)?;
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -382,7 +443,8 @@ impl AgentHost {
         let host = self.clone();
         let task = string(&r, "taskId").to_owned();
         let previous_turn = r["previousTurnId"].clone();
-        let job = tokio::spawn(async move {
+        let origin = r["origin"].clone();
+        let job = tokio::spawn(crate::ingress::ORIGIN.scope(origin, async move {
             let result = host
                 .perform(
                     &driver,
@@ -413,7 +475,7 @@ impl AgentHost {
             let _ = save(&path, &r);
             host.operations.lock().await.remove(string(&r, "requestId"));
             host.wake.notify_waiters();
-        });
+        }));
         Operation {
             task,
             previous_turn,
@@ -431,7 +493,7 @@ impl AgentHost {
         self.ensure_enabled(agent).await?;
         let p = if name == "agent_create" {
             let _guard = self.lifecycle.lock().await;
-            let t = json!({"taskId":task,"agent":agent,"runtimeSource":driver.protocol(),"sessionId":null,"threadId":null,"cwd":args["cwd"],"title":args["title"],"status":"starting","createdAt":now(),"updatedAt":now(),"metadata":{},"output":""});
+            let t = json!({"origin":crate::ingress::current_origin(),"taskId":task,"agent":agent,"runtimeSource":driver.protocol(),"sessionId":null,"threadId":null,"cwd":args["cwd"],"title":args["title"],"status":"starting","createdAt":now(),"updatedAt":now(),"metadata":{},"output":""});
             save_task(&t)?;
             let p = match driver.start(t, false, self.wake.clone()).await {
                 Ok(p) => p,

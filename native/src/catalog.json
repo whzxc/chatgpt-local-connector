@@ -1,9 +1,9 @@
 {
-  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。 创建或发送任务后优先调用 codex_wait 等待终态或交互，不要高频 codex_read + sleep 轮询。 通用 agent_* 支持 Codex Native、Pi RPC 和 OpenCode ACP。先 agents 发现；agent_create/send 使用 UUID requestId，agent_request 回读回执，取得 taskId 后优先 agent_wait 等待终态或交互，避免高频 agent_read / agent_events 轮询。Pi/ACP 的运行进程由 CLC 管理，关闭连接会终止进程。",
+  "instructions": "ChatGPT Local Connector 提供本机项目事实与 Codex App Server 原生领域工具。codex_schema 和 codex_call 提供完整协议入口；mutation 使用 UUID requestId 幂等回执，异步结果位于 codex_request。原生通知位于 codex_events，回调位于 codex_pending/respond，大结果位于 control_output。 创建或发送任务后优先调用 codex_wait 等待终态或交互，不要高频 codex_read + sleep 轮询。 通用 agent_* 支持 Codex Native、Pi RPC 和 OpenCode ACP。先 agents 发现；agent_create/send 使用 UUID requestId，agent_request 回读回执，取得 taskId 后优先 agent_wait 等待终态或交互，避免高频 agent_read / agent_events 轮询。Pi/ACP 的运行进程由 CLC 管理，停止单个入口不终止 Agent 进程；退出 CLC Core 才统一关闭。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
   "tools": [
     {
       "name": "connector_verify",
-      "description": "验证 ChatGPT 到本机的连接。用户从 Local Connector 引导中提供 code 时调用；只回传验证码，不读取文件、不创建任务。",
+      "description": "验证当前控制源入口到本机的连接。用户从 Local Connector 引导中提供 code 时调用；只回传验证码，不读取文件、不创建任务。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -985,7 +985,7 @@
     },
     {
       "name": "codex_wait",
-      "description": "创建或发送任务后优先用 codex_wait 一次等待，避免 codex_read + sleep 高频轮询。只读等待 1–300000ms（默认 60000），事件唤醒并周期核实原生状态。固定首个观察到的当前/最近轮次；终态和交互均立即返回（即使 until 只选择另一类），timeout 不终止任务，unconfirmed 不代表任务停止。普通 Chat 结束后不会后台持续等待。",
+      "description": "创建或发送任务后优先用 codex_wait 分段等待，避免 codex_read + sleep 高频轮询。只读等待 1–300000ms（默认 30000），事件唤醒并周期核实原生状态。固定首个观察到的当前/最近轮次；终态和交互均立即返回（即使 until 只选择另一类），timeout 不终止任务，unconfirmed 不代表任务停止。普通 Chat 结束后不会后台持续等待。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1001,7 +1001,7 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 300000,
-            "default": 60000
+            "default": 30000
           },
           "until": {
             "type": "string",
@@ -1047,7 +1047,7 @@
     },
     {
       "name": "codex_create",
-      "description": "创建并执行持久任务。默认交给本机 Codex Desktop，Connector 断开不停止 Desktop 任务；关闭自动打开设置时新任务由 Connector App Server 后台执行，关闭 Connector 连接会停止后台执行，不保证 Desktop 可操作。任务归属固定，续接和中断沿用原执行方。仅支持文本输入；Desktop 兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。 从回执取得 threadId/turnId 后优先用 codex_wait 等待终态或交互。",
+      "description": "创建并执行持久任务。默认交给本机 Codex Desktop，Connector 断开不停止 Desktop 任务；关闭自动打开设置时新任务由 Connector App Server 后台执行，关闭 Connector 连接会停止后台执行，不保证 Desktop 可操作。任务归属固定，续接和中断沿用原执行方。仅支持文本输入；Desktop 兼容性由实际 IPC 握手与操作决定。submitted 仅表示执行已提交；desktop.state 表示打开请求结果，打开失败时使用已有 threadId，不要重复创建。配置省略时继承宿主；project 可省略，thread 可传完整 ThreadStartParams。正文用 prompt 或原生 input。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。 从回执取得 threadId/turnId 后优先用 codex_wait 等待终态或交互。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1153,7 +1153,7 @@
     },
     {
       "name": "codex_send",
-      "description": "续接任务或 steer 当前轮次。resume 和 turn 透传原生参数，权限和所有权由上游判定。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。 从回执取得 threadId/turnId 后优先用 codex_wait 等待终态或交互。",
+      "description": "续接任务或 steer 当前轮次。resume 和 turn 透传原生参数，权限和所有权由上游判定。 任务审批是可选确认流程；用户已确认或要求直接执行时传 approval=approved/bypass。awaiting-approval 可用 codex_request 的 approve/bypass 推进，不必重复创建。 从回执取得 threadId/turnId 后优先用 codex_wait 等待终态或交互。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1981,7 +1981,7 @@
     },
     {
       "name": "agent_create",
-      "description": "创建持久任务并可发送文本。写入返回回执，用 agent_request 回读，未知状态禁止换 requestId 重试。 确认原请求派发并取得 taskId 后优先用 agent_wait 等待终态或交互，不要高频 agent_read / agent_events 轮询。",
+      "description": "创建持久任务并可发送文本。写入返回回执，用 agent_request 回读，未知状态禁止换 requestId 重试。 确认原请求派发并取得 taskId 后优先用 agent_wait 等待终态或交互，不要高频 agent_read / agent_events 轮询。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2088,7 +2088,7 @@
     },
     {
       "name": "agent_wait",
-      "description": "agent_create / agent_send 后取得 taskId 并确认派发后优先调用 agent_wait，避免高频 agent_read / agent_events 轮询。只读等待 1–300000ms（默认 60000），复用 codex_wait 等待核心；固定当前轮次，事件唤醒并周期复核。终态和交互均立即返回，until 用于 conditionMet；timeout/取消等待不终止或重建任务，unconfirmed 不表示失败。Pi 用 RPC get_state，ACP 用存活进程的协议事件和 prompt 最终响应；无活动进程不自动恢复。",
+      "description": "agent_create / agent_send 后取得 taskId 并确认派发后优先调用 agent_wait，避免高频 agent_read / agent_events 轮询。只读等待 1–300000ms（默认 30000），复用 codex_wait 等待核心；固定当前轮次，事件唤醒并周期复核。终态和交互均立即返回，until 用于 conditionMet；timeout/取消等待不终止或重建任务，unconfirmed 不表示失败。Pi 用 RPC get_state，ACP 用存活进程的协议事件和 prompt 最终响应；无活动进程不自动恢复。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2100,7 +2100,7 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 300000,
-            "default": 60000
+            "default": 30000
           },
           "until": {
             "type": "string",
@@ -2157,7 +2157,7 @@
     },
     {
       "name": "agent_send",
-      "description": "继续任务；停止的已确认会话按协商能力恢复。 确认原请求派发并取得 taskId 后优先用 agent_wait 等待终态或交互，不要高频 agent_read / agent_events 轮询。",
+      "description": "继续任务；停止的已确认会话按协商能力恢复。 确认原请求派发并取得 taskId 后优先用 agent_wait 等待终态或交互，不要高频 agent_read / agent_events 轮询。 默认约 30 秒，长任务推荐每次 20–30 秒的 bounded event-driven long poll；timeout 后沿用原 taskId/threadId 和 turnId，把上一轮 snapshotHash 作为 expectedHash 再次 wait，直到终态或需要交互。timeout/取消等待只结束本次 wait，不终止源任务，不要重新创建任务。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟；300000ms（300 秒）仅为显式可用上限，需确认上游支持。",
       "inputSchema": {
         "type": "object",
         "properties": {

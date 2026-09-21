@@ -20,7 +20,7 @@
 | codex_thread | 原生线程领域参数入口；Desktop 任务的扩展操作受接入范围限制；后台任务转发到 Connector app-server |
 | codex_account | 当前账号、用量、额度和工作区消息 |
 | codex_capabilities | 服务版本、安装版本、原生模型目录和连接边界 |
-| codex_wait | 一次等待原生轮次终态或交互，默认 60 秒、最长 5 分钟 |
+| codex_wait | 可续接的事件驱动长轮询，等待原生轮次终态或交互，默认 30 秒、最长 5 分钟 |
 | codex_tasks / codex_read / codex_items | 所有原生可访问任务、状态、历史与完整条目分页 |
 | codex_create / codex_send / codex_interrupt | 创建、续接、追加输入和中断 |
 | codex_schema | 搜索当前原生方法、获取完整参数 JSON Schema；server 方向含回调响应 Schema |
@@ -89,7 +89,7 @@ process/spawn 在 App Server 主机上运行，**不使用 Codex sandbox**，也
 退出状态位于 process/exited，spawn 回执 completed 只表示启动 RPC 完成。cwd 必须为绝对路径；
 timeoutMs/outputBytesCap 显式 null 禁用对应限制，省略时使用原生默认值。
 两类执行的 env 都支持 null 删除继承变量，stdin 使用 deltaBase64；权限和参数冲突由上游判定。
-领域工具顶层 timeoutMs 是 RPC 等待超时（写操作默认 24 小时、读操作默认 60 秒），与 params.timeoutMs 独立。
+领域工具顶层 timeoutMs 是 RPC 等待超时（写操作默认 24 小时、读操作默认 30 秒），与 params.timeoutMs 独立。
 
 fs/changed、command/exec/outputDelta、process/outputDelta/exited、MCP 订阅通知共用 codex_events 游标缓冲，
 无需另一个事件服务。流式字节按原生 base64 返回；流式输出不会自动补进原生最终结果。
@@ -174,7 +174,7 @@ completed 是控制操作完成，任务完成需要检查对应轮次终态。
 兼容性边界和支持的任务写操作见 [桌面说明](desktop.md)，未支持的方法明确拒绝；不使用受签名保护的 app-tools 管道、不绕过账号和系统权限。
 跨设备不是自动路由能力；可通过原生命令在用户已有 SSH 环境中执行明确的远端操作。
 
-关闭连接停止 Connector 的 Tunnel、转发与 App Server，包括 Connector 后台任务；界面保持可用，Desktop 自行管理其任务生命周期。
+停止入口只停止该入口的 Tunnel 和转发；退出 Core 才停止 App Server 和 Connector 后台任务；界面保持可用，Desktop 自行管理其任务生命周期。
 重启后旧提交中回执标记 unconfirmed，不自动重放；尚未提交的待审批请求继续保留。
 事件缓冲最多保留最近 2000 条或 8 MiB，gap/reset 明确报告缺口；完整已落盘结果应从原生任务/回执读取。
 Chat 页面不会因任务完成自动被唤醒，交互请求也需要调用方主动查询。
@@ -215,8 +215,22 @@ codex_request {"requestId":"<原请求 UUID>","action":"reject"}
 创建或发送任务后，先从原请求回执取得 threadId / turnId，再优先调用 `codex_wait`。不要重复创建任务，也无需用 `codex_read` 配合 sleep 高频轮询。`codex_read`、`codex_events`、`codex_request` 的用途和参数保持不变。
 
 ```json
-{"threadId":"<thread-id>","turnId":"<turn-id>","timeoutMs":60000,"until":"terminal-or-interaction"}
+{"threadId":"<thread-id>","turnId":"<turn-id>","timeoutMs":30000,"until":"terminal-or-interaction"}
 ```
+
+这是带 `snapshotHash` 的 bounded event-driven long poll：长任务推荐每次 20–30 秒的 wait slice，默认 30 秒。每个 slice 内仍由事件唤醒与真实 owner 状态复核驱动，不是 `read → sleep → read` 高频轮询。
+
+```text
+create / send → 取得原 taskId/threadId、turnId → wait(timeoutMs=30000)
+  → completed / failed / cancelled / interaction-required：处理结果或交互
+  → timeout + snapshotHash=A：沿用原 ID，wait(timeoutMs=30000, expectedHash=A)
+  → timeout + snapshotHash=B：沿用原 ID，wait(timeoutMs=30000, expectedHash=B)
+  → terminal / interaction
+```
+
+timeout 或取消 wait 只释放本次等待，不终止、中断或重建源任务，也不应重新 create/send。续接时保留已返回的 turnId，以固定同一轮次；`expectedHash` 仅比较快照，不要求状态变化后才返回。`unconfirmed` 不代表任务失败，应先核实原任务和回执。
+
+ChatGPT、Notion、Slack 及其他 MCP Client 的外层 Tool Call timeout 可能不同，因此统一使用有界 slice，不提供 per-client timeout 配置。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟。明确确认上游允许长调用时仍可显式传 `timeoutMs=300000`，这是能力上限而非推荐默认。OpenAI Tunnel stdio adapter 对两个 wait 工具的内部转发预算为 330 秒；HTTPS MCP 的请求头/请求体读取限时不限制等待执行时间。这些 CLC 预算无法延长外部客户端或代理的超时。
 
 输入是禁止额外属性的 object：
 
@@ -224,7 +238,7 @@ codex_request {"requestId":"<原请求 UUID>","action":"reject"}
 | --- | --- |
 | threadId | 必填、非空 string |
 | turnId | 可选、非空 string；省略时固定首个观察到的当前活跃轮次，否则最近一轮；不会跳到后续轮次 |
-| timeoutMs | integer，1–300000，默认 60000；包括建立读取连接和原生读取时间 |
+| timeoutMs | integer，1–300000，默认 30000；包括建立读取连接和原生读取时间 |
 | until | terminal / interaction-required / terminal-or-interaction（默认）；声明期望目标 |
 | expectedHash | 可选 string，上次返回的 snapshotHash，用于 changed 比较 |
 

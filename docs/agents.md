@@ -96,16 +96,18 @@ Pi/ACP 状态包含 starting、idle、running、waiting-permission、cancelling�
 
 超时、进程异常退出或写入结果不明会留下 `unconfirmed` 回执或 `unknown` 任务，不自动重放。存在未确认操作时不能通过新 prompt 自动恢复。停止后的已完成会话可由 agent_send 恢复：Pi 使用原 session 文件，ACP 使用协商后的 session/load。未发送 prompt 的 Pi 空会话可能尚未持久化，不能保证跨进程恢复。
 
-事件有有界内存窗口，完整 JSONL 存在 CLC 私有 outputs 目录，可通过 `control_output` 读取。ACP 最近文本输出超过 256 KiB 时仅保留末尾并标记 outputTruncated；完整输出在事件归档中。进程停止后的任务快照仍可读，实时 events/pending 需要存活进程。关闭连接或退出 CLC 会关闭其拥有的 Pi/ACP 子进程；Desktop 拥有的 Codex 任务继续沿用原生命周期。
+事件有有界内存窗口，完整 JSONL 存在 CLC 私有 outputs 目录，可通过 `control_output` 读取。ACP 最近文本输出超过 256 KiB 时仅保留末尾并标记 outputTruncated；完整输出在事件归档中。进程停止后的任务快照仍可读，实时 events/pending 需要存活进程。停止入口不关闭 Agent 进程；退出 CLC 才关闭其拥有的 Pi/ACP 子进程；Desktop 拥有的 Codex 任务继续沿用原生命周期。
 
 
 ## 等待语义
 
+Codex、Pi、ACP（包括 Custom ACP）统一采用[可续接的 bounded event-driven long poll](tools.md#任务等待)：默认 30 秒，长任务推荐每次 20–30 秒。timeout 后沿用原 taskId 和 turnId，将上一轮 snapshotHash 传为 expectedHash 继续 wait，直到终态或交互；不重新创建任务，也不重发 prompt。每个 slice 内仍由事件和真实状态复核驱动。300 秒仅为确认上游支持后显式可用的上限，普通 Chat / 通用 MCP Client 不推荐默认一次阻塞数分钟。
+
 ```json
-{"agent":"opencode","taskId":"创建回执中的 taskId","timeoutMs":60000,"until":"terminal-or-interaction"}
+{"agent":"opencode","taskId":"创建回执中的 taskId","timeoutMs":30000,"until":"terminal-or-interaction"}
 ```
 
-`timeoutMs` 为 1–300000，默认 60000；`until` 为 `terminal`、`interaction-required`、`terminal-or-interaction`（默认）。`turnId` 可固定轮次，否则固定首次观察到的当前/最近轮次；Pi/ACP 不保存历史轮次等待视图，轮次被替换返回 unconfirmed。`expectedHash` 可传上次的 snapshotHash，只影响 changed，不屏蔽已存在的终态或交互。
+`timeoutMs` 为 1–300000，默认 30000；`until` 为 `terminal`、`interaction-required`、`terminal-or-interaction`（默认）。`turnId` 可固定轮次，否则固定首次观察到的当前/最近轮次；Pi/ACP 不保存历史轮次等待视图，轮次被替换返回 unconfirmed。`expectedHash` 可传上次的 snapshotHash，只影响 changed，不屏蔽已存在的终态或交互。
 
 - `completed` / `failed` / `cancelled`：原生轮次已确认终止，finalResponse 返回最终输出。Codex 保留原生消息对象，Pi/ACP 返回文本，并保留 outputTruncated、stopReason、error。
 - `interaction-required`：即使 until=terminal 也立即退出等待；interaction 带 interactionId、backendSession 及原始选项，可用 agent_pending 回读、agent_respond 回答。Codex Desktop 仅暴露等待标志而没有回调 ID 时，按 interactionAction 在 Desktop 处理。

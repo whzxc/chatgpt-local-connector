@@ -24,7 +24,7 @@ pub(crate) async fn wait(
     args: &Value,
     started: Instant,
 ) -> Value {
-    let deadline = started + Duration::from_millis(args["timeoutMs"].as_u64().unwrap_or(60000));
+    let deadline = started + Duration::from_millis(args["timeoutMs"].as_u64().unwrap_or(30000));
     let mut last = json!({"threadId":args["threadId"],"turnId":args["turnId"],"recordedStatus":null,"runtimeStatus":"unknown","interaction":[],"finalResponse":null});
     let mut baseline = args["expectedHash"].as_str().map(str::to_owned);
     let mut selected = args["turnId"].as_str().map(str::to_owned);
@@ -274,7 +274,7 @@ pub async fn codex_wait(control: &Arc<Control>, args: &Value) -> Result<Value> {
     let source = tokio::select! {
         biased;
         _ = shutdown.changed() => Err("connector-shutdown".into()),
-        r = tokio::time::timeout(Duration::from_millis(args["timeoutMs"].as_u64().unwrap_or(60000).min(10000)), setup) => r.unwrap_or_else(|_| Err("native-connect-timeout".into())),
+        r = tokio::time::timeout(Duration::from_millis(args["timeoutMs"].as_u64().unwrap_or(30000).min(10000)), setup) => r.unwrap_or_else(|_| Err("native-connect-timeout".into())),
     };
     let mut result = match source {
         Ok(mut source) => {
