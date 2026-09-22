@@ -12,16 +12,27 @@ pub struct Tunnel {
     dir: PathBuf,
     health: String,
     provider: String,
+    discovered: tokio::sync::watch::Receiver<Option<Result<Vec<String>>>>,
+    pinggy: Option<PinggySession>,
+    fixed: bool,
     cloudflare_named: bool,
     upstream: String,
     pub url: String,
     pub urls: Vec<String>,
     pub(crate) selected_url: String,
-    pub notice: String,
 }
 impl Drop for Tunnel {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+        if let Some(session) = self.pinggy.take() {
+            // Cancellation also releases this foreground session. The daemon's orphan
+            // timeout is the fallback if the runtime is already shutting down.
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    session.stop().await;
+                });
+            }
+        }
         for reader in &self.error_readers {
             reader.abort();
         }
@@ -30,6 +41,9 @@ impl Drop for Tunnel {
 }
 impl Tunnel {
     pub async fn stop(mut self) {
+        if let Some(session) = self.pinggy.take() {
+            session.stop().await;
+        }
         let _ = self.child.kill().await;
     }
     pub async fn ready(&mut self) -> Result<bool> {
@@ -56,6 +70,25 @@ impl Tunnel {
                 self.provider
             ));
         }
+        if matches!(self.provider.as_str(), "pinggy" | "localxpose") {
+            let Some(discovered) = self.discovered.borrow().clone() else {
+                return Ok(false);
+            };
+            let urls = discovered?;
+            let url = if self.fixed {
+                urls.iter()
+                    .find(|url| *url == &self.selected_url)
+                    .ok_or_else(|| format!("{} 公网域名与配置不匹配", self.provider))?
+            } else {
+                urls.first().ok_or("未发现公网 HTTPS 地址")?
+            }
+            .clone();
+            if !self.url.is_empty() && self.url != url {
+                return Err(format!("{} 公网地址已变化，请重新连接", self.provider));
+            }
+            self.url = url;
+            return Ok(true);
+        }
         let client = reqwest::Client::builder()
             .no_proxy()
             .timeout(Duration::from_secs(2))
@@ -69,36 +102,7 @@ impl Tunnel {
         }
         if self.provider == "cloudflare" {
             if self.cloudflare_named {
-                let response = client
-                    .get(self.health.replace("/ready", "/config"))
-                    .send()
-                    .await
-                    .map_err(|_| "无法读取 Cloudflare 路由配置，请检查 cloudflared 版本")?;
-                if !response.status().is_success() {
-                    return Err("无法读取 Cloudflare 路由配置，请更新 cloudflared".into());
-                }
-                let value = response
-                    .json::<Value>()
-                    .await
-                    .map_err(|_| "Cloudflare 路由配置无效")?;
-                if value["version"].as_i64().unwrap_or(-1) < 0 {
-                    return Ok(false);
-                }
-                self.urls = matching_urls(&value, &self.upstream);
-                self.url = if self.urls.contains(&self.selected_url) {
-                    self.selected_url.clone()
-                } else if self.urls.len() == 1 {
-                    self.urls[0].clone()
-                } else {
-                    String::new()
-                };
-                self.notice = if self.urls.is_empty() {
-                    format!("未发现指向 {}/mcp 的公网路由，请在 Cloudflare 配置对应 HTTP 服务及明确的域名", self.upstream)
-                } else if self.url.is_empty() {
-                    "发现多个公网域名，请选择此入口使用的地址".into()
-                } else {
-                    String::new()
-                };
+                self.url = self.selected_url.clone();
                 return Ok(true);
             }
             let Ok(response) = client
@@ -142,60 +146,6 @@ impl Tunnel {
         }
         Ok(false)
     }
-}
-// Only unambiguous, exact public hosts routed to this ingress's HTTP origin.
-fn matching_urls(value: &Value, upstream: &str) -> Vec<String> {
-    let mut urls = Vec::new();
-    let mut previous: Vec<String> = Vec::new();
-    for rule in value["config"]["ingress"].as_array().into_iter().flatten() {
-        let host = string(rule, "hostname");
-        let path = string(rule, "path");
-        let path_matches = if path.is_empty() {
-            Some(true)
-        } else {
-            regex::Regex::new(path)
-                .ok()
-                .map(|path| path.is_match("/mcp"))
-        };
-        // Only rules matching /mcp can shadow this endpoint. Unknown expressions
-        // remain potential blockers, but cannot establish a discovered route.
-        if path_matches == Some(false) {
-            continue;
-        }
-        let shadowed = previous
-            .iter()
-            .any(|h| h.is_empty() || h.contains('*') || h == host);
-        previous.push(host.to_owned());
-        if shadowed || host.is_empty() || host.contains('*') || path_matches != Some(true) {
-            continue;
-        }
-        let Ok(origin) = reqwest::Url::parse(string(rule, "service")) else {
-            continue;
-        };
-        let Ok(target) = reqwest::Url::parse(upstream) else {
-            continue;
-        };
-        let local = |host: Option<&str>| matches!(host, Some("localhost" | "127.0.0.1"));
-        if origin.scheme() != target.scheme()
-            || origin.port_or_known_default() != target.port_or_known_default()
-            || !(origin.host_str() == target.host_str()
-                || local(origin.host_str()) && local(target.host_str()))
-            || origin.path() != "/"
-            || origin.query().is_some()
-            || origin.fragment().is_some()
-            || !origin.username().is_empty()
-            || origin.password().is_some()
-        {
-            continue;
-        }
-        if let Some(url) = public_url(&format!("https://{host}"), false) {
-            if !urls.contains(&url) {
-                urls.push(url);
-            }
-        }
-    }
-    urls.sort();
-    urls
 }
 fn public_url(text: &str, cloudflare: bool) -> Option<String> {
     let u = reqwest::Url::parse(text).ok()?;
@@ -249,6 +199,9 @@ async fn spawn(
         if name.starts_with("TUNNEL_")
             || name.starts_with("CLOUDFLARED_")
             || name.starts_with("NGROK_")
+            || name.starts_with("PINGGY_")
+            || name.starts_with("LX_")
+            || name == "ACCESS_TOKEN"
         {
             cmd.env_remove(name);
         }
@@ -256,47 +209,94 @@ async fn spawn(
     proxy.apply(&mut cmd);
     let cloudflare_named = provider == "cloudflare" && settings["cloudflareMode"] == "named";
     let health;
-    if provider == "cloudflare" {
-        save(&config, &json!({}))?;
-        cmd.args(["tunnel", "--config"]).arg(&config).args([
-            "--no-autoupdate",
-            "--protocol",
-            "http2",
-            "--metrics",
-            &admin,
-        ]);
-        if cloudflare_named {
-            let token_file = dir.join("tunnel-token");
-            crate::service::write_secret(&token_file, string(settings, "cloudflareToken"))?;
-            cmd.args(["run", "--token-file"]).arg(token_file);
-        } else {
-            cmd.args(["--url", upstream]);
+    let mut pinggy = None;
+    match provider {
+        "cloudflare" => {
+            save(&config, &json!({}))?;
+            cmd.args(["tunnel", "--config"]).arg(&config).args([
+                "--no-autoupdate",
+                "--protocol",
+                "http2",
+                "--metrics",
+                &admin,
+            ]);
+            if cloudflare_named {
+                let token_file = dir.join("tunnel-token");
+                crate::service::write_secret(&token_file, string(settings, "cloudflareToken"))?;
+                cmd.args(["run", "--token-file"]).arg(token_file);
+            } else {
+                cmd.args(["--url", upstream]);
+            }
+            health = format!("http://{admin}/ready");
         }
-        health = format!("http://{admin}/ready");
-    } else {
-        let mut agent = json!({"authtoken":settings["ngrokAuthtoken"],"web_addr":admin,
+        "ngrok" => {
+            let mut agent = json!({"authtoken":settings["ngrokAuthtoken"],"web_addr":admin,
             "console_ui":false,"inspect_db_size":-1,"log_format":"json","log":"stdout","update_check":false,"remote_management":false});
-        if let Some(url) = proxy.tunnel_proxy_url() {
-            agent["proxy_url"] = json!(url);
+            if let Some(url) = proxy.tunnel_proxy_url() {
+                agent["proxy_url"] = json!(url);
+            }
+            save(&config, &json!({"version":"3","agent":agent}))?;
+            // Request inspection is disabled through the agent configuration above.
+            cmd.args(["http", upstream, "--config"]).arg(&config);
+            if settings["ngrokMode"] == "named" {
+                let endpoint = ngrok_endpoint(string(settings, "ngrokEndpoint"))?;
+                cmd.args(["--url", &endpoint]);
+            }
+            // Temporary mode never reuses a discovered URL as a requested hostname.
+            health = format!("http://{admin}/api/endpoints");
         }
-        save(&config, &json!({"version":"3","agent":agent}))?;
-        // Request inspection is disabled through the agent configuration above.
-        cmd.args(["http", upstream, "--config"]).arg(&config);
-        if settings["ngrokMode"] == "named" {
-            let endpoint = ngrok_endpoint(string(settings, "ngrokEndpoint"))?;
-            cmd.args(["--url", &endpoint]);
+        "pinggy" => {
+            let state_dir = root().join("dependencies/pinggy/state");
+            private_dir(&state_dir)?;
+            let session = PinggySession {
+                binary: binary.into(),
+                config_id: id(),
+                state_dir,
+            };
+            session.environment(&mut cmd);
+            let config = dir.join("pinggy.json");
+            let named = settings["pinggyMode"] == "named";
+            let value = json!({"version":"1.0","configId":session.config_id,
+            "token":if named {string(settings, "pinggyToken")} else {""},
+            "serverAddress":if named {"pro.pinggy.io"} else {"free.pinggy.io"},
+            "forwarding":[{"type":"http","address":upstream.trim_start_matches("http://")}],
+            "autoReconnect":false,"optional":{"noTui":true}});
+            crate::service::write_secret(&config, &value.to_string())?;
+            cmd.arg("--conf").arg(config);
+            pinggy = Some(session);
+            health = String::new();
         }
-        // Temporary mode never reuses a discovered URL as a requested hostname.
-        health = format!("http://{admin}/api/endpoints");
+        "localxpose" => {
+            cmd.env("LX_ACCESS_TOKEN", string(settings, "localxposeAccessToken"));
+            cmd.args([
+                "tunnel",
+                "--raw-mode",
+                "http",
+                "--to",
+                upstream.trim_start_matches("http://"),
+            ]);
+            if settings["localxposeMode"] == "named" {
+                let url = reqwest::Url::parse(string(settings, "httpsUrl"))
+                    .map_err(|_| "LocalXpose 固定域名无效")?;
+                cmd.args([
+                    "--reserved-domain",
+                    url.host_str().ok_or("LocalXpose 固定域名无效")?,
+                ]);
+            } else {
+                cmd.args(["--region", string(settings, "localxposeRegion")]);
+            }
+            health = String::new();
+        }
+        _ => return Err("HTTPS 服务商无效".into()),
     }
     // Drain ngrok diagnostics, retaining only its public error code, never raw logs.
     cmd.stdin(Stdio::null())
-        .stdout(if provider == "ngrok" {
+        .stdout(if provider != "cloudflare" {
             Stdio::piped()
         } else {
             Stdio::null()
         })
-        .stderr(if provider == "ngrok" {
+        .stderr(if provider != "cloudflare" {
             Stdio::piped()
         } else {
             Stdio::null()
@@ -306,11 +306,24 @@ async fn spawn(
         .spawn()
         .map_err(|e| format!("无法启动 {provider}: {e}"))?;
     let mut error_readers = Vec::new();
+    let (discovery, discovered) = tokio::sync::watch::channel(None);
     if let Some(stdout) = child.stdout.take() {
-        error_readers.push(tokio::spawn(ngrok_error_code(stdout)));
+        error_readers.push(if provider == "ngrok" {
+            tokio::spawn(ngrok_error_code(stdout))
+        } else {
+            tokio::spawn(discover_output(
+                stdout,
+                provider.to_owned(),
+                discovery.clone(),
+            ))
+        });
     }
     if let Some(stderr) = child.stderr.take() {
-        error_readers.push(tokio::spawn(ngrok_error_code(stderr)));
+        error_readers.push(if provider == "ngrok" {
+            tokio::spawn(ngrok_error_code(stderr))
+        } else {
+            tokio::spawn(discover_output(stderr, provider.to_owned(), discovery))
+        });
     }
     let mut tunnel = Tunnel {
         child,
@@ -318,31 +331,128 @@ async fn spawn(
         dir: dir.into(),
         health,
         provider: provider.into(),
+        discovered,
+        pinggy,
+        fixed: (provider == "pinggy" && settings["pinggyMode"] == "named")
+            || (provider == "localxpose" && settings["localxposeMode"] == "named"),
         cloudflare_named,
         upstream: upstream.into(),
         url: String::new(),
         urls: Vec::new(),
         selected_url: string(settings, "httpsUrl").to_owned(),
-        notice: String::new(),
     };
     let deadline = Instant::now() + Duration::from_secs(90);
-    loop {
-        if tunnel.ready().await? {
-            return Ok(tunnel);
+    let result = loop {
+        match tunnel.ready().await {
+            Ok(true) => break Ok(()),
+            Err(error) => break Err(error),
+            Ok(false) => {}
         }
         if Instant::now() >= deadline {
-            return Err(format!(
+            break Err(format!(
                 "{provider} 连接超时，请检查网络{}",
-                if provider == "ngrok" {
-                    "、Authtoken 和账号的隧道额度"
-                } else {
-                    "；Cloudflare 需允许出站连接到 7844 端口"
+                match provider {
+                    "cloudflare" => "；Cloudflare 需允许出站连接到 7844 端口",
+                    "ngrok" => "、Authtoken 和账号的隧道额度",
+                    _ => "",
                 }
             ));
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
+    };
+    if let Err(error) = result {
+        tunnel.stop().await;
+        return Err(error);
+    }
+    Ok(tunnel)
+}
+
+struct PinggySession {
+    binary: PathBuf,
+    config_id: String,
+    state_dir: PathBuf,
+}
+impl PinggySession {
+    fn environment(&self, cmd: &mut tokio::process::Command) {
+        // CLI and stop must address the same CLC-owned daemon, never a user's daemon.
+        cmd.env("XDG_CONFIG_HOME", &self.state_dir)
+            .env("APPDATA", &self.state_dir)
+            .env("LOCALAPPDATA", &self.state_dir)
+            .env("PINGGY_LOG_LEVEL", "error")
+            .env("NO_COLOR", "1");
+    }
+    async fn stop(self) {
+        let mut cmd = command(&self.binary);
+        self.environment(&mut cmd);
+        cmd.args(["stop", &self.config_id])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let _ = tokio::time::timeout(Duration::from_secs(8), cmd.status()).await;
     }
 }
+
+async fn discover_output(
+    mut stream: impl tokio::io::AsyncRead + Unpin,
+    provider: String,
+    sender: tokio::sync::watch::Sender<Option<Result<Vec<String>>>>,
+) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let ansi = regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").unwrap();
+    let https = regex::Regex::new(r#"https://[^\s<>"']+"#).unwrap();
+    let localxpose =
+        regex::Regex::new(r"(?:^|\s)([A-Za-z0-9][A-Za-z0-9.-]*)\s*=>\s*\[running\]").unwrap();
+    let mut buffer = [0; 4096];
+    let mut line = Vec::new();
+    let mut remote_urls = None::<Vec<String>>;
+    while let Ok(count) = stream.read(&mut buffer).await {
+        if count == 0 {
+            break;
+        }
+        for byte in &buffer[..count] {
+            if matches!(*byte, b'\n' | b'\r') {
+                let text = String::from_utf8_lossy(&line);
+                let text = ansi.replace_all(&text, "");
+                if provider == "pinggy" {
+                    let text = text.trim();
+                    if text == "Remote URLs:" {
+                        remote_urls = Some(Vec::new());
+                    } else if let Some(urls) = remote_urls.as_mut() {
+                        if text.starts_with("https://") {
+                            if let Some(url) =
+                                https.find(text).and_then(|m| public_url(m.as_str(), false))
+                            {
+                                if urls.len() < 16 && !urls.contains(&url) {
+                                    urls.push(url);
+                                }
+                            }
+                        } else if text.starts_with('─') {
+                            if !urls.is_empty() {
+                                sender.send_replace(Some(Ok(urls.clone())));
+                            }
+                            remote_urls = None;
+                        }
+                    }
+                } else if let Some(url) = localxpose
+                    .captures(&text)
+                    .and_then(|c| public_url(&format!("https://{}", &c[1]), false))
+                {
+                    sender.send_replace(Some(Ok(vec![url])));
+                }
+                if provider == "pinggy"
+                    && (text.contains("Disconnected:") || text.contains("Tunnel stopped."))
+                {
+                    sender.send_replace(Some(Err("Pinggy 隧道已断开，请重新连接".into())));
+                }
+                line.clear();
+            } else if line.len() < 16384 {
+                line.push(*byte);
+            }
+        }
+    }
+    None
+}
+
 async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<PathBuf> {
     static INSTALL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = INSTALL.lock().await;
@@ -360,10 +470,12 @@ async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<P
     } else {
         return Err("不支持此 CPU 架构".into());
     };
-    let name = if provider == "cloudflare" {
-        "cloudflared"
-    } else {
-        "ngrok"
+    let name = match provider {
+        "cloudflare" => "cloudflared",
+        "ngrok" => "ngrok",
+        "pinggy" => "pinggy",
+        "localxpose" => "loclx",
+        _ => return Err("HTTPS 服务商无效".into()),
     };
     let executable = format!("{name}{}", if cfg!(windows) { ".exe" } else { "" });
     let dir = root()
@@ -384,39 +496,72 @@ async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<P
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;
-    let (url, digest, extension) = if provider == "cloudflare" {
-        let release: Value = client
-            .get("https://api.github.com/repos/cloudflare/cloudflared/releases/latest")
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
-        let extension = if cfg!(windows) { "exe" } else { "tgz" };
-        let asset_name = format!("cloudflared-{platform}-{arch}.{extension}");
-        let asset = release["assets"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|a| a["name"] == asset_name)
-            .ok_or("Cloudflare 未提供此平台的下载")?;
-        let url = string(asset, "browser_download_url");
-        if !url.starts_with("https://github.com/cloudflare/cloudflared/releases/download/") {
-            return Err("无效的 Cloudflare 下载地址".into());
+    let (url, digest, extension) = match provider {
+        "cloudflare" | "pinggy" => {
+            let (repo, version, asset_name, extension) = if provider == "cloudflare" {
+                let extension = if cfg!(windows) { "exe" } else { "tgz" };
+                (
+                    "cloudflare/cloudflared",
+                    "latest",
+                    format!("cloudflared-{platform}-{arch}.{extension}"),
+                    extension,
+                )
+            } else {
+                let os = if cfg!(windows) { "win" } else { "macos" };
+                let cpu = if arch == "amd64" { "x64" } else { "arm64" };
+                (
+                    "Pinggy-io/cli-js",
+                    "tags/v0.5.8",
+                    format!(
+                        "pinggy-{os}-{cpu}{}",
+                        if cfg!(windows) { ".exe" } else { "" }
+                    ),
+                    "binary",
+                )
+            };
+            let release: Value = client
+                .get(format!(
+                    "https://api.github.com/repos/{repo}/releases/{version}"
+                ))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?
+                .json()
+                .await
+                .map_err(|e| e.to_string())?;
+            let asset = release["assets"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|a| a["name"] == asset_name)
+                .ok_or_else(|| format!("{provider} 未提供此平台的下载"))?;
+            let url = string(asset, "browser_download_url");
+            if !url.starts_with(&format!("https://github.com/{repo}/releases/download/")) {
+                return Err(format!("无效的 {provider} 下载地址"));
+            }
+            let digest = string(asset, "digest")
+                .strip_prefix("sha256:")
+                .ok_or_else(|| format!("{provider} 官方校验和缺失"))?;
+            (url.to_owned(), Some(digest.to_owned()), extension)
         }
-        let digest = string(asset, "digest")
-            .strip_prefix("sha256:")
-            .ok_or("Cloudflare 官方校验和缺失")?;
-        (url.to_owned(), Some(digest.to_owned()), extension)
-    } else {
-        (
+        "ngrok" => (
             format!("https://bin.ngrok.com/c/bNyj1mQVY4c/ngrok-v3-stable-{platform}-{arch}.zip"),
             None,
             "zip",
-        )
+        ),
+        "localxpose" => {
+            if cfg!(windows) && arch != "amd64" {
+                return Err("LocalXpose 未提供此平台的下载".into());
+            }
+            (
+                format!("https://api.localxpose.io/api/v2/downloads/loclx-{platform}-{arch}.zip"),
+                None,
+                "zip",
+            )
+        }
+        _ => return Err("HTTPS 服务商无效".into()),
     };
     let mut response = client
         .get(&url)
@@ -433,7 +578,7 @@ async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<P
         bytes.extend_from_slice(&chunk);
     }
     if digest.is_some_and(|digest| hash(&bytes) != digest) {
-        return Err("隧道组件 SHA256 校验失败".into());
+        return Err(format!("{provider} 隧道组件 SHA256 校验失败"));
     }
     let staging = dir.join(id());
     private_dir(&staging)?;
@@ -441,7 +586,7 @@ async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<P
         let archive = staging.join(format!("download.{extension}"));
         std::fs::write(&archive, &bytes).map_err(|e| e.to_string())?;
         let extracted = staging.join(&executable);
-        if extension == "exe" {
+        if matches!(extension, "exe" | "binary") {
             std::fs::rename(&archive, &extracted).map_err(|e| e.to_string())?;
         } else {
             // Extract only the expected executable from the official archive.

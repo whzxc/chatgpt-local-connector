@@ -7,6 +7,7 @@ use tokio::sync::{watch, Mutex};
 
 pub struct UpdateState {
     install: Mutex<()>,
+    downloaded: Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>>,
     cancel: watch::Sender<bool>,
     downloading: AtomicBool,
     pub installing: AtomicBool,
@@ -16,6 +17,7 @@ impl Default for UpdateState {
     fn default() -> Self {
         Self {
             install: Mutex::new(()),
+            downloaded: Mutex::new(None),
             cancel: watch::channel(false).0,
             downloading: AtomicBool::new(false),
             installing: AtomicBool::new(false),
@@ -57,14 +59,19 @@ async fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater
 }
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<Value, String> {
+    let state = app.state::<UpdateState>();
     let update = updater(&app)
         .await?
         .check()
         .await
         .map_err(|e| e.to_string())?;
+    let mut cached = state.downloaded.lock().await;
+    if cached.as_ref().map(|(u, _)| &u.version) != update.as_ref().map(|u| &u.version) {
+        *cached = None;
+    }
     Ok(match update {
         Some(u) => {
-            json!({"available":true,"version":u.version,"notes":u.body,"date":u.date.map(|d|d.to_string())})
+            json!({"available":true,"version":u.version,"notes":u.body,"date":u.date.map(|d|d.to_string()),"ready":cached.is_some()})
         }
         None => json!({"available":false}),
     })
@@ -76,10 +83,17 @@ pub fn cancel_update(app: tauri::AppHandle) {
         state.cancel.send_replace(true);
     }
 }
-#[tauri::command]
-pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Value, String> {
+async fn download(
+    app: &tauri::AppHandle,
+    version: &str,
+) -> Result<Option<(tauri_plugin_updater::Update, Vec<u8>)>, String> {
     let state = app.state::<UpdateState>();
-    let _guard = state.install.try_lock().map_err(|_| "已有更新正在进行")?;
+    if let Some(cached) = state.downloaded.lock().await.take() {
+        if cached.0.version == version {
+            return Ok(Some(cached));
+        }
+    }
+    let state = app.state::<UpdateState>();
     let mut cancel = state.cancel.subscribe();
     state.cancel.send_replace(false);
     cancel.borrow_and_update();
@@ -102,7 +116,25 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         _ = cancel.changed() => Err("UPDATE_CANCELLED".into()),
     };
     state.downloading.store(false, Ordering::SeqCst);
-    let Some((update, bytes)) = result? else {
+    result
+}
+#[tauri::command]
+pub async fn download_update(app: tauri::AppHandle, version: String) -> Result<Value, String> {
+    let state = app.state::<UpdateState>();
+    let _guard = state.install.try_lock().map_err(|_| "已有更新正在进行")?;
+    let result = download(&app, &version).await?;
+    let response = match &result {
+        Some((u, _)) => json!({"available":true,"version":u.version,"notes":u.body,"ready":true}),
+        None => json!({"available":false}),
+    };
+    *state.downloaded.lock().await = result;
+    Ok(response)
+}
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Value, String> {
+    let state = app.state::<UpdateState>();
+    let _guard = state.install.try_lock().map_err(|_| "已有更新正在进行")?;
+    let Some((update, bytes)) = download(&app, &version).await? else {
         return Ok(json!({"available":false}));
     };
     state.installing.store(true, Ordering::SeqCst);

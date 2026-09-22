@@ -19,6 +19,7 @@ const endpoint = computed(() => {
   if (!https.value) return entry.value.config.tunnelId;
   if (entry.value.url) return entry.value.url;
   const config = entry.value.config;
+  if (config.httpsProvider === 'pinggy' && config.pinggyMode === 'named' || config.httpsProvider === 'localxpose' && config.localxposeMode === 'named') return config.httpsUrl;
   if (config.httpsProvider === 'custom' || config.httpsProvider === 'cloudflare' && config.cloudflareMode === 'named') return config.httpsUrl;
   if (config.httpsProvider === 'ngrok' && config.ngrokMode === 'named' && config.ngrokEndpoint) {
     const domain = config.ngrokEndpoint;
@@ -102,7 +103,6 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
       <NFormItem v-if="https && (entry.config.httpsProvider === 'custom' || entry.config.httpsProvider === 'cloudflare' && entry.config.cloudflareMode === 'named')" :label="t('httpReverseProxyTarget')">
         <CopyField :value="reverseProxy" :label="t('httpReverseProxyTarget')"/>
       </NFormItem>
-      <NAlert v-if="entry.routeNotice" :show-icon="false" type="info">{{entry.routeNotice}}</NAlert>
       <NAlert v-if="error || entry.error" :show-icon="false" type="error">{{displayMessage(error || entry.error)}}</NAlert>
     </NForm>
     <template #footer>

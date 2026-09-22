@@ -101,6 +101,7 @@ fn main() {
             i18n::set_ui_locale,
             updates::check_update,
             updates::install_update,
+            updates::download_update,
             updates::cancel_update,
             #[cfg(target_os = "windows")]
             windows_frame::set_windows_appearance

@@ -87,7 +87,7 @@ onUnmounted(()=>clearTimeout(toastTimer));
     <main class="home-workspace" :inert="page!=='overview' || panelOpen">
       <ConnectionOverview/>
     </main>
-    <div class="navigation-surface" :class="{expanded:page!=='overview'}" aria-hidden="true"/>
+    <div class="navigation-surface" :class="{expanded:page!=='overview','has-update':appUpdate.visible.value}" aria-hidden="true"/>
     <Transition :css="false" @enter="enterSheet" @leave="leaveSheet" @enter-cancelled="cancelSheetMotion" @leave-cancelled="cancelSheetMotion">
       <section v-if="page!=='overview'" class="page-sheet" :inert="panelOpen" :aria-label="page==='settings'?t('settings'):page==='tasks'?t('tasks'):t('records')">
         <main ref="workspace" class="workspace" :class="{'records-workspace':page==='logs'}">
@@ -99,15 +99,15 @@ onUnmounted(()=>clearTimeout(toastTimer));
         <NButton class="panel-width-toggle" quaternary circle :aria-label="t(sheetWide ? 'restorePanelWidth' : 'expandPanelWidth')" :title="t(sheetWide ? 'restorePanelWidth' : 'expandPanelWidth')" :aria-pressed="sheetWide" @click="sheetWide=!sheetWide"><template #icon><component :is="sheetWide ? Minimize2 : Maximize2" :size="20"/></template></NButton>
       </section>
     </Transition>
-    <nav :inert="panelOpen" class="navigation-capsule" :class="{expanded:page!=='overview'}" :aria-label="t('mainNavigation')">
+    <nav :inert="panelOpen" class="navigation-capsule" :class="{expanded:page!=='overview','has-update':appUpdate.visible.value}" :aria-label="t('mainNavigation')">
       <template v-if="page!=='overview'"><button class="capsule-close" :aria-label="t('backToHome')" :title="t('backToHome')" @click="navigate('overview')"><X aria-hidden="true"/></button><h1 class="capsule-title" tabindex="-1">{{page==='settings'?t('settings'):page==='tasks'?t('tasks'):page==='logs'?t('records'):t('home')}}</h1></template>
       <div class="capsule-icons" :inert="page!=='overview'" :aria-hidden="page!=='overview'">
+        <NButton v-if="appUpdate.visible.value" class="update-shortcut" quaternary circle type="success" :loading="appUpdate.active.value" :disabled="appUpdate.active.value || appUpdate.checking.value" :aria-label="t('updateToValue', { version: appUpdate.update.value?.version })" :title="t('updateToValue', { version: appUpdate.update.value?.version })" @click="appUpdate.installDirect()"><template #icon><Download aria-hidden="true"/></template></NButton>
         <button data-page="tasks" class="tasks-nav" :aria-label="t('tasks')" :title="t('tasks')" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
         <button data-page="logs" :aria-label="t('records')" :title="t('records')" @click="navigate('logs')"><Logs aria-hidden="true"/></button>
         <button data-page="settings" :aria-label="t('settings')" :title="t('settings')" @click="navigate('settings')"><Settings aria-hidden="true"/></button>
       </div>
     </nav>
-    <button v-if="appUpdate.available.value" class="update-shortcut" :aria-label="t('updateToValue', { version: appUpdate.update.value?.version })" :title="t('newVersionValueViewUpdate', { version: appUpdate.update.value?.version })" aria-haspopup="dialog" @click="appUpdate.showUpdate"><Download aria-hidden="true"/></button>
     <div v-if="feedback.text && feedback.error" class="status-banner warning app-feedback" role="alert"><span>{{displayMessage(feedback.text)}}</span><button class="ghost banner-dismiss" :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
     <AppUpdateDialog/>
     <div v-if="feedback.text && !feedback.error" class="message" role="status">{{displayMessage(feedback.text)}}<button :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>

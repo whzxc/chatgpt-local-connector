@@ -39,6 +39,20 @@ function openSource(source?: Ingress) {
 const agents = computed(() => inventory.orderedAgents.value.slice(0,4));
 const sources = computed(() => [...(status.value?.ingresses || [])].sort((a,b) => Number(b.controlSource==='chatgpt')-Number(a.controlSource==='chatgpt') || a.name.localeCompare(b.name)));
 const running = computed(() => sources.value.some(i => i.running));
+const connectionTransition = ref<'connecting' | 'stopping'>();
+const mascotState = computed(() => {
+  if (connectionError.value) return 'unavailable';
+  if (!status.value) return 'connecting';
+  const enabled = sources.value.filter(source => source.enabled);
+  // Only connection operations affect the mascot, not unrelated UI actions.
+  if (connectionTransition.value) return connectionTransition.value;
+  if (enabled.some(source => source.state === 'stopping')) return 'stopping';
+  if (enabled.some(source => source.state === 'starting')) return 'connecting';
+  if (enabled.some(source => ['error', 'degraded'].includes(source.state))) return running.value ? 'degraded' : 'error';
+  if (!running.value) return 'offline';
+  if (status.value.core.activeTurns > 0 || status.value.core.activeWrites > 0) return 'working';
+  return 'connected';
+});
 const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const progressing = computed(() => !!busy.value || sources.value.some(i => ['starting','stopping'].includes(i.state)));
 const switchOn = ref<boolean>();
@@ -117,8 +131,12 @@ function agentState(a: Agent) {
 }
 async function openAgent(agent: Agent) { await run('open-agent',()=>api('agents/open','POST',{agent:agent.agent})); }
 async function toggle() {
+  if (busy.value) return;
   if (!running.value && (!sources.value.length || sources.value.every(i => !i.config.configured))) { edit(sources.value[0],true); return; }
-  await run('ingress-all',async()=> { const result=await api<{results:{id:string;ok:boolean;error?:string}[]}>(`ingress/${running.value?'stop-all':'start-all'}`,'POST'); await refresh(); const errors=result.results.filter(r=>!r.ok); if(errors.length) throw new Error(errors.map(r=>`${sources.value.find(i=>i.id===r.id)?.name || r.id}: ${r.error}`).join('\n')); });
+  connectionTransition.value = running.value ? 'stopping' : 'connecting';
+  try {
+    await run('ingress-all',async()=> { const result=await api<{results:{id:string;ok:boolean;error?:string}[]}>(`ingress/${running.value?'stop-all':'start-all'}`,'POST'); await refresh(); const errors=result.results.filter(r=>!r.ok); if(errors.length) throw new Error(errors.map(r=>`${sources.value.find(i=>i.id===r.id)?.name || r.id}: ${r.error}`).join('\n')); });
+  } finally { connectionTransition.value = undefined; }
 }
 let timer: ReturnType<typeof setInterval>;
 onMounted(()=>{ void inventory.refresh(); timer=setInterval(()=>void inventory.refresh(),15000); });
@@ -209,7 +227,7 @@ const marker = (index: number, count: number, right = false) => {
         <NTooltip :show="!dialog && !agentsDialog && nodeTip==='add-source'" placement="top"><template #trigger><button class="graph-node add-source" :aria-label="t('addControlSource')" @mouseenter="nodeTip='add-source'" @mouseleave="nodeTip=''" @focus="nodeTip='add-source'" @blur="nodeTip=''" @keydown.esc="nodeTip=''" @click="edit()"><span class="source-icon"><Plus/></span></button></template>{{t('addControlSource')}}</NTooltip>
       </div>
       <div ref="leftWires" class="graph-wires left"><svg :viewBox="`0 0 ${wireWidth(false)} ${height}`" preserveAspectRatio="none" aria-hidden="true"><path v-for="(source,index) in sources" :key="source.id" :d="path(index,Math.max(1,sources.length)+1,false,true)" :class="{hovered:activeTip===source.id,live:source.running,failed:['error','degraded'].includes(source.state)}"/><path v-if="!sources.length" :d="path(0,2)"/><path :d="path(Math.max(1,sources.length),Math.max(1,sources.length)+1)" class="placeholder"/></svg><span v-for="(source,index) in sources" :key="'port:'+source.id" class="wire-port" :class="{live:source.running,failed:['error','degraded'].includes(source.state)}" :style="portStyle(index,Math.max(1,sources.length)+1)" aria-hidden="true"/><span v-if="!sources.length" class="wire-port" :style="portStyle(0,2)" aria-hidden="true"/><span class="wire-port utility-port" :style="portStyle(Math.max(1,sources.length),Math.max(1,sources.length)+1)" aria-hidden="true"/><NTooltip v-for="(source,index) in sources" :key="source.id" :show="!dialog && !agentsDialog && activeTip===source.id && stateIcon(sourceState(source))!==CircleCheck" placement="top"><template #trigger><button  type="button" class="wire-status" :class="{hovered:activeTip===source.id,live:source.running,failed:['error','degraded'].includes(source.state)}" :style="marker(index,Math.max(1,sources.length)+1)" :aria-label="`${source.name}: ${sourceState(source)} · ${t('viewConnectionDetails')}`" aria-haspopup="dialog" @click="view(source)" @mouseenter="activeTip=source.id" @mouseleave="activeTip=''" @focus="activeTip=source.id" @blur="activeTip=''" @keydown.esc="activeTip=''"><component :is="stateIcon(sourceState(source))" :class="{spinning:stateIcon(sourceState(source))===LoaderCircle}" aria-hidden="true"/></button></template><div>{{sourceState(source)}}<div class="status-hint">{{t('viewConnectionDetails')}}</div></div></NTooltip></div>
-      <div class="graph-brain"><PlayfulMascot/></div>
+      <div class="graph-brain"><PlayfulMascot :state="mascotState"/></div>
       <div class="agent-side">
       <div ref="rightWires" class="graph-wires right" :aria-busy="inventory.loading.value && !inventory.loaded.value"><svg v-if="inventory.loading.value && !inventory.loaded.value" class="search-wires" viewBox="0 0 200 120" preserveAspectRatio="none" aria-hidden="true"><path v-for="n in 3" :key="n" :style="{'--drift-delay':(n-1)*-.8+'s'}" d="M 0 60 C 90 60, 110 36, 200 36"/></svg><svg :viewBox="`0 0 ${wireWidth(true)} ${height}`" preserveAspectRatio="none" aria-hidden="true"><path class="agent-wire" v-for="(agent,index) in agents" :key="agent.agent" :d="path(index,agents.length+1,true,true)" :class="{hovered:activeTip===agent.agent,live:[t('connected'),t('agentAvailable')].includes(agentState(agent))}"/><path :d="path(agents.length,agents.length+1,true)" class="more-wire" :class="{hovered:nodeTip==='more-agents'}"/></svg><span v-for="(agent,index) in agents" :key="'port:'+agent.agent" class="wire-port" :class="{live:[t('connected'),t('agentAvailable')].includes(agentState(agent))}" :style="portStyle(index,agents.length+1,true)" aria-hidden="true"/><span class="wire-port utility-port" :style="portStyle(agents.length,agents.length+1,true)" aria-hidden="true"/><NTooltip v-for="(agent,index) in agents" :key="agent.agent" :show="!dialog && !agentsDialog && activeTip===agent.agent && stateIcon(agentState(agent))!==CircleCheck" placement="top"><template #trigger><button  type="button" class="wire-status agent-marker" :class="{hovered:activeTip===agent.agent,live:[t('connected'),t('agentAvailable')].includes(agentState(agent))}" :style="marker(index,agents.length+1,true)" :aria-label="`${name(agent)}: ${agentState(agent)} · ${t('manageAgents')}`" @click="showAgents" @mouseenter="activeTip=agent.agent" @mouseleave="activeTip=''" @focus="activeTip=agent.agent" @blur="activeTip=''" @keydown.esc="activeTip=''"><component :is="stateIcon(agentState(agent))" :class="{spinning:stateIcon(agentState(agent))===LoaderCircle}" aria-hidden="true"/></button></template><div>{{agentState(agent)}}<div class="status-hint">{{t('manageAgents')}}</div></div></NTooltip></div>
       <div class="graph-nodes agents"><NTooltip v-for="agent in agents" :key="agent.agent" :show="!dialog && !agentsDialog && nodeTip==='agent:'+agent.agent" placement="top"><template #trigger><button type="button" class="graph-node" @click="openAgent(agent)" :aria-label="name(agent)" tabindex="0" @mouseenter="nodeTip='agent:'+agent.agent" @mouseleave="nodeTip=''" @focus="nodeTip='agent:'+agent.agent" @blur="nodeTip=''" @keydown.esc="nodeTip=''"><span v-if="icons[agent.agent]" class="source-icon agent-brand" aria-hidden="true" v-html="icons[agent.agent]"/><Bot v-else aria-hidden="true"/></button></template><div>{{name(agent)}}<div v-if="agent.version" class="status-hint">{{agent.version}}</div></div></NTooltip><NTooltip placement="top"><template #trigger><button type="button" class="graph-node agents-more" data-page="agents" :aria-label="t('manageAgents')" @click="showAgents" @mouseenter="nodeTip='more-agents'" @mouseleave="nodeTip=''" @focus="nodeTip='more-agents'" @blur="nodeTip=''"><Ellipsis aria-hidden="true"/></button></template>{{t('manageAgents')}}</NTooltip></div>

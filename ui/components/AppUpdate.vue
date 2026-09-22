@@ -7,7 +7,7 @@ import { openUrl } from '../platform';
 import SettingsGroup from './SettingsGroup.vue';
 import SettingsRow from './SettingsRow.vue';
 import { useAppUpdate } from '../composables/useAppUpdate';
-const { update, checking, active, available, error, message, autoCheck, supported, dialogOpen, showUpdate, check, setAutoCheck, openDownloads } = useAppUpdate();
+const { update, checking, active, visible, autoDownload, setAutoDownload, error, message, autoCheck, supported, dialogOpen, showUpdate, check, setAutoCheck, openDownloads } = useAppUpdate();
 const { status, notify } = useConnector();
 const openRepository = () => openUrl('https://github.com/whzxc/chatgpt-local-connector').catch(cause => notify(String(cause), true));
 </script>
@@ -22,7 +22,10 @@ const openRepository = () => openUrl('https://github.com/whzxc/chatgpt-local-con
     <SettingsRow v-if="supported" :title="t('automaticallyCheckForUpdates')" :description="t('notifyMeOfNewVersionsIChooseWhen')" control-id="settings-auto-update">
       <NSwitch id="settings-auto-update" :aria-label="t('automaticallyCheckForUpdates')"  :value="autoCheck" @update:value="setAutoCheck" />
     </SettingsRow>
-    <SettingsRow v-if="available" :title="t('newVersionValue', { version: update?.version })">
+    <SettingsRow :title="t('automaticallyDownloadUpdates')" :description="t('automaticallyDownloadUpdatesHelp')" control-id="settings-auto-download">
+      <NSwitch id="settings-auto-download" :aria-label="t('automaticallyDownloadUpdates')" :value="autoDownload" @update:value="setAutoDownload" />
+    </SettingsRow>
+    <SettingsRow v-if="visible" :title="t('newVersionValue', { version: update?.version })">
       <NButton @click="showUpdate">{{ t('viewUpdate') }}</NButton>
     </SettingsRow>
     <div v-if="!dialogOpen && (error || message)" class="update-details">

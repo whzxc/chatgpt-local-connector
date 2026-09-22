@@ -9,12 +9,11 @@
 .home-workspace .connection-graph{margin-top:0}
 .home-workspace .graph-error{position:absolute;bottom:24px;left:100px;right:24px;text-align:center}
 .navigation-capsule{position:absolute;left:var(--dock-left);bottom:var(--dock-bottom);z-index:50;display:flex;flex-direction:column;gap:4px;padding:6px;border:1px solid color-mix(in srgb,var(--green) 15%,transparent);border-radius:32px;background:transparent;border-color:transparent}
-.navigation-capsule button,.update-shortcut{width:44px;height:44px;padding:11px;display:grid;place-items:center;background:transparent;border:0;box-shadow:none;border-radius:50%;position:relative;color:var(--ink)}
-.navigation-capsule button:hover{background:var(--soft);color:var(--green)}
+.navigation-capsule button:where(:not(.n-button)){width:44px;height:44px;padding:11px;display:grid;place-items:center;background:transparent;border:0;box-shadow:none;border-radius:50%;position:relative;color:var(--ink)}
+.navigation-capsule button:where(:not(.n-button)):hover{background:var(--soft);color:var(--green)}
 .navigation-capsule button svg,.update-shortcut svg{width:22px;height:22px;stroke-width:1.7}
 .navigation-capsule.expanded{flex-direction:row;align-items:center;gap:12px;border-color:transparent;background:transparent;box-shadow:none}
 .navigation-capsule .capsule-close{background:var(--soft)}
-.update-shortcut{position:absolute;right:24px;bottom:24px;z-index:50;background:var(--surface)}
 .page-sheet{position:absolute;inset:var(--sheet-top) auto var(--sheet-inset) var(--sheet-inset);width:var(--sheet-width);z-index:30;border:1px solid transparent;border-radius:28px;background:var(--surface);box-shadow:0 12px 48px #132a2418;display:flex;flex-direction:column;overflow:hidden;transform-origin:top left;transition:width var(--sheet-open-motion)}
 .page-sheet::after{content:"";position:absolute;inset:auto 0 0;height:72px;z-index:5;pointer-events:none;background:linear-gradient(to bottom,transparent,var(--surface) 28%)}
 .capsule-title{margin:0 12px 0 0;font-size:18px;font-weight:600;outline:none;animation:capsule-title-in 300ms ease both}
@@ -24,7 +23,7 @@
 .workspace>.settings-page{max-width:none;margin:0}
 .app-feedback{position:absolute;left:24px;right:24px;top:48px;z-index:70;margin:0 auto;max-width:760px}
 
-@media(max-width:600px){.app-scene{--sheet-width:min(960px,calc(100% - 2 * var(--sheet-inset)));--sheet-inset:12px;--sheet-top:12px;--dock-left:16px;--dock-bottom:16px}.workspace{padding:24px 26.5px 80px}.home-workspace .connection-core{padding:0 20px}.update-shortcut{right:16px;bottom:16px}}
+@media(max-width:600px){.app-scene{--sheet-width:min(960px,calc(100% - 2 * var(--sheet-inset)));--sheet-inset:12px;--sheet-top:12px;--dock-left:16px;--dock-bottom:16px}.workspace{padding:24px 26.5px 80px}.home-workspace .connection-core{padding:0 20px}}
 @media(prefers-reduced-motion:reduce){.page-sheet{transition:none}}
 
 .navigation-surface{position:absolute;z-index:29;pointer-events:none;left:var(--dock-left);bottom:var(--dock-bottom);width:58px;height:154px;border:1px solid color-mix(in srgb,var(--green) 15%,transparent);border-radius:32px;background:var(--surface);box-shadow:0 6px 24px #15342a12;transition:opacity 180ms ease}
@@ -47,3 +46,7 @@
 
 .page-sheet>.panel-width-toggle{position:absolute;right:16px;bottom:14px;z-index:6;display:none}
 @media(min-width:1000px){.page-sheet>.panel-width-toggle{display:inline-flex}}
+
+.navigation-surface.has-update,.navigation-capsule.has-update:not(.expanded){height:202px}
+.capsule-icons .update-shortcut{bottom:150px;width:44px;height:44px}
+.expanded .capsule-icons .update-shortcut{transform:translateY(144px) scale(.4);opacity:0}

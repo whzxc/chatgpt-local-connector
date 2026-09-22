@@ -2,11 +2,13 @@
 
 [English](README.md) | **简体中文**
 
+支持多个 MCP 控制来源并发接入，共享同一个 Core。HTTPS 服务商包括 Cloudflare、ngrok、Pinggy、LocalXpose 和自定义域名；连接组件首次使用时按需下载。
+
 **在 ChatGPT 里聊想法，让本机的 coding agent 接着干。**
 
 CLC 并不是从“给 ChatGPT 再加一堆工具”开始的。它来自一个困扰我很久的实际工作问题，而且每一阶段，都是上一个问题解决之后自然长出来的。
 
-![Local Connector 主界面：ChatGPT、Connector 与 Codex 已连接](docs/images/local-connector.zh-CN.png)
+![Local Connector 主界面：连接多个控制来源与 coding agent](docs/images/local-connector.png)
 
 ## 为什么会有 Local Connector
 

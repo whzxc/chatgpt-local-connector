@@ -17,10 +17,15 @@ export interface Config {
   proxyMode: "system" | "direct" | "custom";
   proxyUrl: string;
   connectionMode: "tunnel" | "https";
-  httpsProvider: "cloudflare" | "ngrok" | "custom";
+  httpsProvider: "cloudflare" | "ngrok" | "pinggy" | "localxpose" | "custom";
   hasNgrokAuthtoken: boolean;
   ngrokMode: "quick" | "named";
   ngrokEndpoint: string;
+  pinggyMode: "quick" | "named";
+  hasPinggyToken: boolean;
+  localxposeMode: "quick" | "named";
+  hasLocalxposeAccessToken: boolean;
+  localxposeRegion: "us" | "eu" | "ap";
   cloudflareMode: "quick" | "named";
   hasCloudflareToken: boolean;
   httpsUrl: string;
@@ -35,7 +40,7 @@ export interface Config {
 }
 export interface Ingress {
   toolPolicy?: ToolPolicy;
-  discoveredUrls?: string[]; routeNotice?: string;
+  discoveredUrls?: string[];
   id: string; name: string; controlSource: string; transport: string;
   state: string; running: boolean; error: string; enabled: boolean; auth: string;
   config: Config; url: string; verification?: { verifiedAt?: string; challengeVerifiedAt?: string };

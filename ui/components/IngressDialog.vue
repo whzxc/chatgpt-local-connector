@@ -33,25 +33,36 @@ const formRef = ref<FormInst>();
 const presetNames = Object.fromEntries(curatedSources.map(p => [p.id, p.displayName]));
 const entry = ref(props.ingress);
 const toolPolicy = ref<ToolPolicy>(props.ingress?.toolPolicy ?? 'all');
-const providerReady = computed(() => form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='quick' || !!(form.httpsProvider==='ngrok' ? form.ngrokAuthtoken.trim() || entry.value?.config.hasNgrokAuthtoken : form.cloudflareToken.trim() || entry.value?.config.hasCloudflareToken));
+const providerReady = computed(() => {
+  const config=entry.value?.config;
+  switch(form.httpsProvider) {
+    case 'custom': return true;
+    case 'cloudflare': return form.cloudflareMode==='quick' || !!(form.cloudflareToken.trim() || config?.hasCloudflareToken);
+    case 'ngrok': return !!(form.ngrokAuthtoken.trim() || config?.hasNgrokAuthtoken);
+    case 'pinggy': return form.pinggyMode==='quick' || !!(form.pinggyToken.trim() || config?.hasPinggyToken);
+    case 'localxpose': return !!(form.localxposeAccessToken.trim() || config?.hasLocalxposeAccessToken);
+  }
+});
 const canSave = computed(() => !!name.value.trim() && new TextEncoder().encode(name.value).length<=120
   && (selected.value!=='custom' || /^[a-zA-Z0-9_-]+$/.test(source.value))
   && (form.connectionMode==='tunnel'
     ? /^tunnel_[a-zA-Z0-9_-]+$/.test(form.tunnelId) && !!(form.apiKey.trim() || entry.value?.config.hasApiKey)
     : providerReady.value
       && (form.httpsProvider!=='custom' || validDomain(form.domain))
-      && (form.httpsProvider!=='cloudflare' || form.cloudflareMode!=='named' || !form.domain.trim() || validDomain(form.domain))
+      && (form.httpsProvider!=='cloudflare' || form.cloudflareMode!=='named' || validDomain(form.domain))
+      && (form.httpsProvider!=='pinggy' || form.pinggyMode==='quick' || validDomain(form.domain))
+      && (form.httpsProvider!=='localxpose' || validDomain(form.domain))
       && (form.httpsProvider!=='ngrok' || form.ngrokMode==='quick' || validDomain(form.domain))));
 function configPayload() {
   const config:Record<string,unknown>={...form};
   delete config.connectionMode;
   delete config.domain;
-  const fixed = form.connectionMode==='https' && (form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named' || form.httpsProvider==='ngrok' && form.ngrokMode==='named');
+  const fixed = form.connectionMode==='https' && (form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named' || form.httpsProvider==='ngrok' && form.ngrokMode==='named' || form.httpsProvider==='pinggy' && form.pinggyMode==='named' || form.httpsProvider==='localxpose' && form.localxposeMode==='named');
   const origin = fixed && form.domain.trim() ? `https://${form.domain.trim()}` : '';
   config.httpsUrl = origin ? `${origin}/mcp` : '';
   config.ngrokEndpoint = form.httpsProvider==='ngrok' ? origin : '';
   if(!entry.value) { delete config.httpsPort; delete config.httpsHost; }
-  for(const key of ['apiKey','cloudflareToken','ngrokAuthtoken']) if(!config[key]) delete config[key];
+  for(const key of ['apiKey','cloudflareToken','ngrokAuthtoken','pinggyToken','localxposeAccessToken']) if(!config[key]) delete config[key];
   return config;
 }
 const selected = ref(props.ingress ? (controlSource(props.ingress.controlSource)?.curated ? props.ingress.controlSource : 'custom') : props.defaultChatGPT ? 'chatgpt' : '');
@@ -60,7 +71,6 @@ const name = ref(props.ingress?.name || nextSourceName(selected.value || 'chatgp
 const preset = computed(() => controlSource(selected.value));
 const form = reactive(connectionForm(props.ingress?.config));
 if(!form.domain && props.ingress?.url && (form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named')) form.domain=new URL(props.ingress.url).hostname;
-const discoveredDomains = computed(() => [...new Set((entry.value?.discoveredUrls || []).map(value => new URL(value).hostname))]);
 if (props.ingress) form.connectionMode=props.ingress.transport==='openai-tunnel' ? 'tunnel' : 'https';
 else if (preset.value) form.connectionMode=preset.value.recommendedTransport==='openai-tunnel' ? 'tunnel' : 'https';
 const auth = ref(props.ingress?.auth === 'oauth' ? 'oauth' : props.ingress?.auth === 'bearer' ? 'bearer' : 'none');
@@ -69,10 +79,10 @@ function generateToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return Array.from(bytes, byte => byte.toString(16).padStart(2,'0')).join('');
 }
-watch([()=>form.connectionMode,()=>form.httpsProvider,()=>form.cloudflareMode,()=>form.ngrokMode],()=>{
+watch([()=>form.connectionMode,()=>form.httpsProvider,()=>form.cloudflareMode,()=>form.ngrokMode,()=>form.pinggyMode,()=>form.localxposeMode],()=>{
   form.domain='';
 });
-onUnmounted(() => { form.apiKey=''; form.cloudflareToken=''; form.ngrokAuthtoken=''; });
+onUnmounted(() => { form.apiKey=''; form.cloudflareToken=''; form.ngrokAuthtoken=''; form.pinggyToken=''; form.localxposeAccessToken=''; });
 const model = computed(() => ({...form, name:name.value, source:source.value}));
 function choose(value: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement;
@@ -102,7 +112,7 @@ async function save() {
     if(entry.value) await api(`ingress/${entry.value.id}/stop`,'POST');
     const saved=await api<Ingress>(entry.value ? `ingress/${entry.value.id}` : 'ingress',entry.value ? 'PUT':'POST',{...metadata,transport:form.connectionMode==='tunnel' ? 'openai-tunnel':'https',config:configPayload()});
     entry.value=saved;
-    form.apiKey='';form.cloudflareToken='';form.ngrokAuthtoken='';
+    form.apiKey='';form.cloudflareToken='';form.ngrokAuthtoken=''; form.pinggyToken=''; form.localxposeAccessToken='';
     await refresh().catch(() => {});
     savedIngress=saved; formOpen.value=false;
   });
@@ -117,15 +127,14 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
 
     <NForm v-if="selected" ref="formRef" :model="model" :disabled="working" label-placement="top" @submit.prevent="save()">
       <NAlert :show-icon="false" v-if="form.connectionMode==='https' && auth==='bearer' && preset && !preset.supportedAuth.includes('bearer')" type="warning">{{t('presetAuthMismatch')}}</NAlert>
-      <NFormItem :label="t('sourceName')" path="name" :rule="required()" :show-require-mark="false" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}"><template #label><span class="token-heading"><span>{{t('sourceName')}} <NText type="error">*</NText></span><NButton v-if="preset?.docs[0]" text type="primary" size="tiny" @click="openUrl(preset.docs[0])">{{t('officialSetup')}}</NButton></span></template><NInput v-model:value="name" :input-props="{'aria-label':t('sourceName')}"/></NFormItem>
+      <NFormItem :label="t('sourceName')" path="name" :rule="required()" :show-require-mark="false" :label-props="{for:''}" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}"><template #label><span class="token-heading"><span>{{t('sourceName')}} <NText type="error">*</NText></span><NButton v-if="preset?.docs[0]" text type="primary" size="tiny" @click="openUrl(preset.docs[0])">{{t('officialSetup')}}</NButton></span></template><NInput v-model:value="name" :input-props="{'aria-label':t('sourceName')}"/></NFormItem>
       <NFormItem v-if="selected==='custom'" :label="t('controlSourceId')" path="source" :rule="[{...required()}, {pattern:/^[a-zA-Z0-9_-]+$/,message:t('validClientId'),trigger:'input'}]"><NInput :input-props="{'aria-label':t('controlSourceId')}" v-model:value="source" placeholder="my-client"/></NFormItem>
       <ConnectionFields :recommend-tunnel="selected==='chatgpt'" :form="form" :config="entry?.config" :disabled="working" :allow-tunnel="preset?.recommendedTransport==='openai-tunnel' || selected==='custom'">
         <template #domain>
-          <NFormItem v-if="form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named'" :label="t('domain')" path="domain" :rule="domainRule(form.httpsProvider!=='custom')" :show-require-mark="false" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
-            <template #label><span class="token-heading"><span>{{t('domain')}} <NText v-if="form.httpsProvider==='custom'" type="error">*</NText></span><NButton v-if="form.httpsProvider==='cloudflare'" text type="primary" :aria-label="t('getDomain')" size="tiny" @click="openUrl('https://dash.cloudflare.com/?to=/:account/tunnels')">{{t('getDomain')}}</NButton></span></template>
+          <NFormItem v-if="form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named'" :label="t('domain')" path="domain" :rule="domainRule()" :show-require-mark="false" :label-props="{for:''}" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
+            <template #label><span class="token-heading"><span>{{t('domain')}} <NText type="error">*</NText></span><NButton v-if="form.httpsProvider==='cloudflare'" text type="primary" :aria-label="t('getDomain')" size="tiny" @click="openUrl('https://dash.cloudflare.com/?to=/:account/tunnels')">{{t('getDomain')}}</NButton></span></template>
             <div class="url-field">
-              <NInput v-model:value="form.domain" :input-props="{'aria-label':t('domain')}" :placeholder="form.httpsProvider==='custom' ? 'connector.example.com' : t('discoverDomainAfterSaving')"/>
-              <SingleChoice v-if="form.httpsProvider==='cloudflare' && discoveredDomains.length>1" v-model:value="form.domain" :label="t('domain')" :options="discoveredDomains.map(value=>({value,label:value}))"/>
+              <NInput v-model:value="form.domain" :input-props="{'aria-label':t('domain')}" placeholder="mcp.example.com"/>
             </div>
           </NFormItem>
         </template>

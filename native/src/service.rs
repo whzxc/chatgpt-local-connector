@@ -14,9 +14,15 @@ pub struct Service {
     configuration: Mutex<()>,
     closing: std::sync::atomic::AtomicBool,
 }
-const SECRETS: &[&str] = &["apiKey", "cloudflareToken", "ngrokAuthtoken"];
+const SECRETS: &[&str] = &[
+    "apiKey",
+    "cloudflareToken",
+    "ngrokAuthtoken",
+    "pinggyToken",
+    "localxposeAccessToken",
+];
 pub(crate) fn defaults() -> Value {
-    json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false,"cloudflareMode":"quick","cloudflareToken":"","httpsProvider":"cloudflare","ngrokAuthtoken":"","ngrokMode":"quick","ngrokEndpoint":"","proxyMode":"system","proxyUrl":"","connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787})
+    json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false,"cloudflareMode":"quick","cloudflareToken":"","httpsProvider":"cloudflare","ngrokAuthtoken":"","ngrokMode":"quick","ngrokEndpoint":"","pinggyMode":"quick","pinggyToken":"","localxposeMode":"named","localxposeAccessToken":"","localxposeRegion":"us","proxyMode":"system","proxyUrl":"","connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787})
 }
 // Secrets use the existing private-directory/atomic-file storage, separately from configuration.
 pub(crate) fn store_entry(entry: &Value) -> Result<()> {
@@ -440,14 +446,19 @@ impl Service {
             }
             let mut config = body["config"].clone();
             if !config.is_object()
-                || !["cloudflare", "ngrok"].contains(&string(&config, "httpsProvider"))
+                || !["cloudflare", "ngrok", "pinggy", "localxpose"]
+                    .contains(&string(&config, "httpsProvider"))
             {
                 return Err("managed HTTPS provider required".into());
             }
             let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
             config["httpsHost"] = json!("127.0.0.1");
             config["httpsPort"] = json!(listener.local_addr().map_err(|e| e.to_string())?.port());
-            config["httpsUrl"] = json!("");
+            if !(config["httpsProvider"] == "pinggy" && config["pinggyMode"] == "named"
+                || config["httpsProvider"] == "localxpose")
+            {
+                config["httpsUrl"] = json!("");
+            }
             drop(listener);
             let entry = normalize(
                 json!({"id":format!("draft-{}",id()),"name":"Pending connection","controlSource":"custom","transport":"https","enabled":true,"auth":"bearer","bearerToken":id()+&id(),"toolPolicy":{"allowlist":[]},"config":config}),

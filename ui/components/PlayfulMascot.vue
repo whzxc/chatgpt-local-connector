@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { t } from '../i18n';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import logo from '../assets/local-connector-head.png';
 import happy from '../assets/mascot/happy.png';
 import surprised from '../assets/mascot/surprised.png';
@@ -10,8 +10,14 @@ import cross from '../assets/mascot/cross.png';
 import squeezed from '../assets/mascot/squeezed.png';
 import dizzy from '../assets/mascot/dizzy.png';
 
+const props = defineProps<{ state: 'connected' | 'offline' | 'connecting' | 'stopping' | 'degraded' | 'error' | 'unavailable' | 'working' }>();
+const stateExpressions = { connected: logo, offline: closed, connecting: surprised, stopping: squeezed,
+  degraded: pout, error: cross, unavailable: dizzy, working: happy };
 const expressions = [happy, surprised, pout, closed, cross, squeezed, dizzy];
-const expression = ref(logo);
+const interactionExpression = ref<string>();
+const stateExpression = computed(() => stateExpressions[props.state]);
+const expression = computed(() => interactionExpression.value
+  || (readyExpressions.value.includes(stateExpression.value) ? stateExpression.value : logo));
 const sprites = [logo, ...expressions];
 const spriteElements = ref<HTMLImageElement[]>([]);
 const readyExpressions = ref<string[]>([]);
@@ -20,6 +26,11 @@ let clickAnimation: Animation | undefined;
 let lastEffect = -1;
 let disposed = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
+
+watch(() => props.state, () => {
+  clearTimeout(timer);
+  interactionExpression.value = undefined;
+});
 
 onMounted(() => {
   // Decode the actual resident nodes; never switch to a sprite that is not ready.
@@ -32,14 +43,14 @@ onMounted(() => {
 
 function changeExpression() {
   clearTimeout(timer);
-  const choices = readyExpressions.value.filter(src => src !== logo && src !== expression.value);
+  const choices = readyExpressions.value.filter(src => src !== stateExpression.value && src !== expression.value);
   if (!choices.length) return;
-  expression.value = choices[Math.floor(Math.random() * choices.length)]!;
+  interactionExpression.value = choices[Math.floor(Math.random() * choices.length)]!;
 }
 
 function restoreExpressionLater() {
   clearTimeout(timer);
-  timer = setTimeout(() => { expression.value = logo; }, 3000 + Math.random() * 5000);
+  timer = setTimeout(() => { interactionExpression.value = undefined; }, 3000 + Math.random() * 5000);
 }
 
 const position = ref({ x: 0, y: 0 });
