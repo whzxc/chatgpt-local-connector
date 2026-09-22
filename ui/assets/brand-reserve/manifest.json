@@ -438,7 +438,7 @@
     }
   ],
   "controlSourceUsage": {
-    "chatgpt": "control-sources/chatgpt/app.png",
+    "chatgpt": "control-sources/chatgpt/mono.svg",
     "claude": "agents/claude/color.svg",
     "microsoft-copilot": "agents/copilot/color.svg",
     "notion": "control-sources/notion/mono.svg",

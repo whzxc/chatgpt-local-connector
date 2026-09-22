@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import { api } from './useConnector';
-import codexIcon from '../assets/brand-reserve/agents/codex/color.svg?raw';
+import codexIcon from '../assets/brand-reserve/agents/codex/mono.svg?raw';
 import piIcon from '../assets/brand-reserve/agents/pi/mono.svg?raw';
 import opencodeIcon from '../assets/brand-reserve/agents/opencode/mono.svg?raw';
 import claudeIcon from '../assets/brand-reserve/agents/claude/color.svg?raw';
