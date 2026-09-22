@@ -110,6 +110,7 @@
     ],
     "compatibility": {
       "helpArgs": [
+        "acp",
         "--help"
       ],
       "helpContains": [

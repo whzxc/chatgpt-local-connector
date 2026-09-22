@@ -70,7 +70,7 @@ onMounted(() => { void refresh(); });
 .agent-icon{display:flex;width:24px;height:24px;grid-column:1;grid-row:1 / 3;align-self:center}
 .agent-icon :deep(svg){width:100%;height:100%}
 .agent-copy{display:contents}
-.agent-name{grid-column:2;grid-row:1;font-size:13px;font-weight:500;overflow-wrap:anywhere}
+.agent-name{grid-column:2;grid-row:1;min-width:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .agent-link{text-decoration:none;cursor:pointer}.agent-link:hover{text-decoration:underline;color:var(--green)}
 .agent-version{grid-column:2 / 4;grid-row:2;min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:480px){.agent-grid{grid-template-columns:1fr}}

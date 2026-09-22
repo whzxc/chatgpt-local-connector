@@ -14,5 +14,4 @@
   color: var(--ink);
 }
 
-.settings-preferences .settings-version { text-align:center; color:var(--muted); font-size:11px; line-height:20px; }
 .settings-preferences .n-radio-button svg { width:14px; height:14px; vertical-align:middle; margin-right:5px; }

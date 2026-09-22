@@ -2,13 +2,20 @@
 import { displayMessage } from '../messages';
 import { NButton, NSwitch } from 'naive-ui';
 import { t } from '../i18n';
+import { useConnector } from '../composables/useConnector';
+import { openUrl } from '../platform';
 import SettingsGroup from './SettingsGroup.vue';
 import SettingsRow from './SettingsRow.vue';
 import { useAppUpdate } from '../composables/useAppUpdate';
 const { update, checking, active, available, error, message, autoCheck, supported, dialogOpen, showUpdate, check, setAutoCheck, openDownloads } = useAppUpdate();
+const { status, notify } = useConnector();
+const openRepository = () => openUrl('https://github.com/whzxc/chatgpt-local-connector').catch(cause => notify(String(cause), true));
 </script>
 <template>
-  <SettingsGroup :title="t('appUpdates')">
+  <SettingsGroup :title="t('aboutApp')">
+    <SettingsRow title="Local Connector" :description="t('currentVersion')">
+      <span>{{ status?.version ?? '—' }}</span>
+    </SettingsRow>
     <SettingsRow :title="t('checkForANewVersion')" :description="supported ? t('theAppRestartsAfterUpdatingAndRestoresThe') : t('checkForAndInstallUpdatesInTheDesktop')">
       <NButton :disabled="!supported || checking || active" @click="check()">{{checking ? t('checkingLabel') : t('checkForUpdates')}}</NButton>
     </SettingsRow>
@@ -24,6 +31,9 @@ const { update, checking, active, available, error, message, autoCheck, supporte
     </div>
     <SettingsRow :title="t('manualDownload')">
       <NButton text type="primary" @click="openDownloads">{{ t('openDownloads') }}</NButton>
+    </SettingsRow>
+    <SettingsRow :title="t('openSourceRepository')" :description="t('mitLicense')">
+      <NButton text type="primary" @click="openRepository">GitHub ↗</NButton>
     </SettingsRow>
   </SettingsGroup>
 </template>

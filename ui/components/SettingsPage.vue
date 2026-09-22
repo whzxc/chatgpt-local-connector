@@ -119,7 +119,6 @@ async function setApproval(enabled: boolean) {
     </SettingsGroup>
 
     <AppUpdate />
-    <footer class="settings-version">Local Connector <span v-if="status">{{status.version}}</span></footer>
   </div>
 </template>
 

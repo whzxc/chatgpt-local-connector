@@ -15,30 +15,23 @@
 .navigation-capsule.expanded{flex-direction:row;align-items:center;gap:12px;border-color:transparent;background:transparent;box-shadow:none}
 .navigation-capsule .capsule-close{background:var(--soft)}
 .update-shortcut{position:absolute;right:24px;bottom:24px;z-index:50;background:var(--surface)}
-.page-sheet{position:absolute;inset:var(--sheet-top) auto var(--sheet-inset) var(--sheet-inset);width:var(--sheet-width);z-index:30;border:1px solid transparent;border-radius:28px;background:transparent;display:flex;flex-direction:column;overflow:hidden;clip-path:inset(0 round 28px);transition:width var(--sheet-open-motion)}
-.page-sheet::after{content:"";position:absolute;inset:auto 0 0;height:72px;z-index:5;pointer-events:none;background:linear-gradient(to bottom,transparent,var(--surface) 28%);backdrop-filter:blur(3px);mask-image:linear-gradient(to bottom,transparent,#000 28%)}
+.page-sheet{position:absolute;inset:var(--sheet-top) auto var(--sheet-inset) var(--sheet-inset);width:var(--sheet-width);z-index:30;border:1px solid transparent;border-radius:28px;background:var(--surface);box-shadow:0 12px 48px #132a2418;display:flex;flex-direction:column;overflow:hidden;transform-origin:top left;transition:width var(--sheet-open-motion)}
+.page-sheet::after{content:"";position:absolute;inset:auto 0 0;height:72px;z-index:5;pointer-events:none;background:linear-gradient(to bottom,transparent,var(--surface) 28%)}
 .capsule-title{margin:0 12px 0 0;font-size:18px;font-weight:600;outline:none;animation:capsule-title-in 300ms ease both}
 @keyframes capsule-title-in{from{opacity:0;transform:translateX(-22px)}to{opacity:1;transform:none}}
 .workspace{min-height:0;flex:1;width:100%;max-width:none;margin:0;padding:24px 26.5px 80px;overflow:auto;overscroll-behavior:contain}
 .workspace.records-workspace{padding-bottom:80px}
 .workspace>.settings-page{max-width:none;margin:0}
 .app-feedback{position:absolute;left:24px;right:24px;top:48px;z-index:70;margin:0 auto;max-width:760px}
-.capsule-page-enter-active{transition:clip-path var(--sheet-open-motion),width var(--sheet-open-motion)}
-.capsule-page-leave-active{animation:sheet-collapse var(--sheet-close-motion) both}
-@keyframes sheet-collapse{from{clip-path:inset(0 round 28px)}to{clip-path:inset(calc(100% - 158px) calc(100% - 62px) 4px 4px round 32px)}}
-.capsule-page-enter-from,.capsule-page-leave-to{clip-path:inset(calc(100% - 158px) calc(100% - 62px) 4px 4px round 32px)}
 
-.capsule-page-enter-active .workspace{animation:sheet-content-in 440ms 100ms both}
-@keyframes sheet-content-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 @media(max-width:600px){.app-scene{--sheet-width:min(960px,calc(100% - 2 * var(--sheet-inset)));--sheet-inset:12px;--sheet-top:12px;--dock-left:16px;--dock-bottom:16px}.workspace{padding:24px 26.5px 80px}.home-workspace .connection-core{padding:0 20px}.update-shortcut{right:16px;bottom:16px}}
-@media(prefers-reduced-motion:reduce){.page-sheet,.capsule-page-enter-active,.capsule-page-leave-active{transition:none;animation:none}.capsule-page-enter-active .workspace{animation:none}}
+@media(prefers-reduced-motion:reduce){.page-sheet{transition:none}}
 
-.navigation-surface{position:absolute;z-index:29;pointer-events:none;left:var(--dock-left);bottom:var(--dock-bottom);width:58px;height:154px;border:1px solid color-mix(in srgb,var(--green) 15%,transparent);border-radius:32px;background:var(--surface);box-shadow:0 6px 24px #15342a12;transition:all var(--sheet-close-motion)}
-.navigation-surface.expanded{left:var(--sheet-inset);bottom:var(--sheet-inset);width:var(--sheet-width);height:calc(100% - var(--sheet-top) - var(--sheet-inset));border-radius:28px;box-shadow:0 12px 48px #132a2418;transition:all var(--sheet-open-motion)}
-.capsule-page-leave-active .workspace{opacity:0;transition:opacity 140ms}
+.navigation-surface{position:absolute;z-index:29;pointer-events:none;left:var(--dock-left);bottom:var(--dock-bottom);width:58px;height:154px;border:1px solid color-mix(in srgb,var(--green) 15%,transparent);border-radius:32px;background:var(--surface);box-shadow:0 6px 24px #15342a12;transition:opacity 180ms ease}
+.navigation-surface.expanded{opacity:0}
 @media(prefers-reduced-motion:reduce){.navigation-surface{transition:none}.capsule-title{animation:none}}
 
-.navigation-capsule{width:58px;height:154px;display:block;transition:height 220ms ease}
+.navigation-capsule{width:58px;height:154px;display:block}
 .navigation-capsule.expanded{height:58px;width:max-content;min-width:160px}
 .capsule-icons{position:absolute;inset:0}
 .capsule-icons button{position:absolute;left:6px;transition:transform 380ms cubic-bezier(.22,1,.36,1),opacity 220ms ease}

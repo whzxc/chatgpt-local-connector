@@ -36,6 +36,33 @@ async function navigate(next: Page) {
   if(next === 'overview') document.querySelector<HTMLButtonElement>(`[data-page="${lastPage.value}"]`)?.focus();
   else document.querySelector<HTMLElement>('.capsule-title')?.focus();
 }
+const sheetMotions = new WeakMap<Element, Animation>();
+function cancelSheetMotion(element: Element) {
+  sheetMotions.get(element)?.cancel();
+  sheetMotions.delete(element);
+  (element as HTMLElement).style.willChange = '';
+}
+function animateSheet(element: Element, done: () => void, opening: boolean) {
+  cancelSheetMotion(element);
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
+  const node = element as HTMLElement;
+  const dock = document.querySelector<HTMLElement>('.navigation-surface')!.getBoundingClientRect();
+  const rect = node.getBoundingClientRect();
+  const collapsed = { transform: `translate(${dock.x-rect.x}px,${dock.y-rect.y}px) scale(${dock.width/rect.width},${dock.height/rect.height})`, opacity: 0 };
+  const expanded = { transform: 'translate(0px,0px) scale(1,1)', opacity: 1 };
+  node.style.willChange = 'transform, opacity';
+  const motion = node.animate(opening ? [collapsed, expanded] : [expanded, collapsed], {
+    duration: opening ? 480 : 220, easing: opening ? 'cubic-bezier(.22,1,.36,1)' : 'cubic-bezier(.4,0,.6,1)', fill: 'both',
+  });
+  sheetMotions.set(element, motion);
+  void motion.finished.then(() => {
+    if (sheetMotions.get(element) !== motion) return;
+    cancelSheetMotion(element);
+    done();
+  }, () => {});
+}
+const enterSheet = (element: Element, done: () => void) => animateSheet(element, done, true);
+const leaveSheet = (element: Element, done: () => void) => animateSheet(element, done, false);
 function closePage(event: KeyboardEvent) {
   if(event.key === 'Escape' && page.value !== 'overview' && !panelOpen.value) {
     event.preventDefault(); void navigate('overview');
@@ -61,7 +88,7 @@ onUnmounted(()=>clearTimeout(toastTimer));
       <ConnectionOverview/>
     </main>
     <div class="navigation-surface" :class="{expanded:page!=='overview'}" aria-hidden="true"/>
-    <Transition name="capsule-page">
+    <Transition :css="false" @enter="enterSheet" @leave="leaveSheet" @enter-cancelled="cancelSheetMotion" @leave-cancelled="cancelSheetMotion">
       <section v-if="page!=='overview'" class="page-sheet" :inert="panelOpen" :aria-label="page==='settings'?t('settings'):page==='tasks'?t('tasks'):t('records')">
         <main ref="workspace" class="workspace" :class="{'records-workspace':page==='logs'}">
           <ChatGuide v-if="page==='guide'" @done="navigate('overview')" @settings="navigate('settings')"/>

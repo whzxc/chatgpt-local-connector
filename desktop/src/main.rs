@@ -132,8 +132,11 @@ fn main() {
                     });
                 }
             }
-            #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
+                // Clear the live WebView backing as well as the window configuration.
+                // On macOS this disables WKWebView's own opaque background.
+                window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
+                #[cfg(target_os = "macos")]
                 window_controls::align(&window);
             }
             tray::install(app)?;
