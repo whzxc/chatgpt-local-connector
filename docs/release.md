@@ -27,6 +27,8 @@ npm run release:preflight
 
 `release:sync` 以 `package.json` 为版本来源，同步 Tauri、两个 Cargo package 和锁文件；`CHANGELOG.md` 必须有该版本条目。它不提交、不打标签、不上传。
 
+`release:preflight` 首先检查 Core、Desktop 和验签工具的 Rust 格式，再检查版本、类型、契约、前端构建与原生编译。单独检查格式可运行 `npm run check:format`。
+
 macOS Apple Silicon 发布构建：
 
 ```sh
@@ -46,64 +48,61 @@ Stage 目录必须为空，每次使用新目录。脚本只挑选指定平台�
 
 ## 发布流程
 
-日常 push 和 PR 更新不自动运行 Actions 检查。准备发布时，先将版本、文档和代码提交到 `main`，手动运行一次双端检查：
-
-```sh
-gh workflow run check.yml --ref main
-```
-
-检查成功后，先在 `main` 上构建待发布的安装包：
+日常 push 和 PR 更新不自动运行 Actions 检查。准备发布时，先运行本地预检，再将版本、文档和代码提交到 `main`，一次触发演练：
 
 ```sh
 gh workflow run release.yml --ref main -f publish=false
+gh run watch <演练运行ID> --exit-status --compact --interval 3
 ```
 
-等待整个演练成功后，下载该次运行的 `release-metadata`，将其中的 `Casks/local-connector.rb` 放回仓库并纳入版本提交。下载到仓库外的空目录：
+演练在同一提交上并行运行双端 `Check` 和双端安装包构建；检查和构建全部通过才生成可供发布的演练元数据。检查失败时构建可能已经消耗计算资源，但产物不会进入发布。无需提前单独运行一次 `Check`。
+
+等待命令应持续跟踪同一次运行；执行环境返回后台会话时，继续读取该会话直至退出，不另起固定休眠轮询。
+
+等待整个演练成功后，下载该次运行的 `release-metadata`，将其中的 `Casks/local-connector.rb` 放回仓库并提交。下载到仓库外的空目录：
 
 ```sh
 gh run download <演练运行ID> --name release-metadata --dir <临时目录>
 cp <临时目录>/Casks/local-connector.rb Casks/local-connector.rb
 ```
 
-可以将 Cask 合入尚未推送的最终版本提交；已推送的提交不需要改写历史。最终源码与演练源码仅允许 Cask 不同，其他文件一旦改变必须重新演练。将最终提交推送至 `main`，再次运行 `Check`，成功后为该提交推送 `v<版本>` 标签。标签版本须与 `package.json` 及 `CHANGELOG.md` 一致。
+最终提交必须保留演练提交的祖先关系，且与演练源码仅允许 Cask 不同；Cask 必须逐字节匹配演练元数据。任何其他文件改变都必须重新演练。将 Cask 提交推送至 `main` 后即可为最终提交推送版本标签，无需再执行完整 `Check`。标签版本须与 `package.json` 及 `CHANGELOG.md` 一致。
 
 ```sh
-gh workflow run check.yml --ref main
-# 等待最终提交的 Check 成功后：
-git tag v0.6.2
-git push origin v0.6.2
+git tag v<版本>
+git push origin v<版本>
 ```
 
 推送前确认目标 remote 为公开源码仓库；仅推送选定分支和版本标签，不使用 `--mirror` 或 `--all`。
 
-`Check` 仅手动触发，执行版本校验、类型检查、契约测试、前端构建、原生编译检查和格式检查。可以按需在开发分支运行；`Release` 只接受同一提交在 `main` 上成功完成的最新一次手动 `Check`，不重复测试、类型检查、格式检查或 `cargo check`。正式发布只复用演练安装包，不重新构建。
+`Check` 既可通过 `gh workflow run check.yml --ref <分支>` 独立执行，也可由演练复用；在恢复 Rust 缓存和安装 npm 依赖前执行格式与版本校验，再执行类型检查、契约测试、前端构建和原生编译检查。独立检查不触发构建或发布。正式发布复用成功演练中的检查证据与安装包，不重新构建。
 
 `Release` 由版本标签触发实际发布。手动运行默认是演练（`publish=false`），执行构建、验签与清单生成，仅上传 Actions artifacts；不创建 Release、不修改公开下载和 Homebrew。手动发布必须选择版本标签并设置 `publish=true`。
 
 工作流步骤：
 
-1. 演练核对同一提交的 `Check` 结果，并行构建 macOS Apple Silicon 与 Windows x64 安装包，验证更新签名，生成清单、更新说明与含真实 DMG 哈希的 Cask。
-2. 正式发布核对最终提交的 `Check`，从最近 100 次成功的 `main` 演练中，选择源码（除 Cask 外）和已提交 Cask 均匹配的一次。找不到匹配构建或产物已过期时停止发布，需重新演练并更新 Cask。
+1. 演练并行检查同一提交并构建 macOS Apple Silicon 与 Windows x64 安装包，验证更新签名，生成清单、更新说明与含真实 DMG 哈希的 Cask。
+2. 正式发布从最近 100 次成功的 `main` 演练中，选择演练提交为当前提交祖先、源码（除 Cask 外）和已提交 Cask 均匹配的一次。找不到匹配构建或产物已过期时停止发布，需重新演练并更新 Cask。
 3. 下载该次演练的两端安装包，重新验证签名并生成清单；确认生成的 Cask 与标签内文件完全一致。
 4. 上传全部文件到 Draft Release，再一次性公开为 latest；不会提前把不完整更新推给用户。
 5. 从公开地址下载清单及所有产物，逐一比对本地已验签的字节。发布流程不向默认分支写入提交。
 
-公开后的版本不可覆盖重建。构建失败可以重跑；如果已经公开但发布后验证失败，先检查已发布内容，使用 `node tooling/release.mjs verify-published <产物目录>` 回读，不重复覆盖该 Release。新修复使用新的版本号。Cask 在版本提交进入主分支后即更新，正式 Release 公开前，该版本的 Homebrew 下载暂不可用，应连续完成最终检查与发布。
+公开后的版本不可覆盖重建。构建失败可以重跑；如果已经公开但发布后验证失败，先检查已发布内容，使用 `node tooling/release.mjs verify-published <产物目录>` 回读，不重复覆盖该 Release。新修复使用新的版本号。Cask 在版本提交进入主分支后即更新，正式 Release 公开前，该版本的 Homebrew 下载暂不可用，应连续完成 Cask 提交与发布。
 
 ## 缓存与发布演练
 
-npm 下载由 `setup-node` 缓存。Rust 使用 `rust-cache` 缓存依赖和编译产物，检查、安装包构建与清单验签使用不同缓存，按工具链、平台与依赖区分；演练生成安装包，正式发布复用同一批字节并重新验签。
+npm 下载由 `setup-node` 缓存。Rust 使用 `rust-cache` 缓存依赖和编译产物，检查、安装包构建与清单验签使用不同缓存，按工具链、平台与依赖区分；演练由 `desktop:build` 统一准备前端并生成安装包，每个平台只构建一次前端；正式发布复用同一批字节并重新验签。
 
-只有 `main` 写入 Rust 缓存。发布标签可以读取默认分支缓存，不依赖上一个版本标签的缓存。首次使用、工具链变化或依赖大幅更新后，在已通过 `Check` 的 `main` 上运行演练以预热：
+只有 `main` 写入 Rust 缓存。发布标签可以读取默认分支缓存，不依赖上一个版本标签的缓存。首次使用、工具链变化或依赖大幅更新后，在 `main` 上运行包含检查的演练以预热：
 
 ```sh
 gh workflow run release.yml --ref main -f publish=false
 ```
 
-演练是正式发布的构建阶段，产物保留 14 天；需在过期前完成 Cask 提交、最终检查和发布。已公开版本不可用演练产物覆盖。
+演练是正式发布的构建阶段，产物保留 14 天；需在过期前完成 Cask 提交和发布。已公开版本不可用演练产物覆盖。
 
 ## 阶段耗时
 
-`Check` 与 `Release` 在结束时运行 `Timing summary`。Actions 运行摘要中提供每个作业、每个阶段与各步骤的实际耗时、结果和 Rust 精确缓存命中状态；失败步骤同样计入。`workflow-timing` artifact 提供 `timings.md` 和 `timings.json`，保留 30 天。
+独立 `Check` 与 `Release` 在结束时运行 `Timing summary`；演练中复用的检查统一计入 Release 汇总，不额外启动统计作业。Actions 运行摘要中提供每个作业、每个阶段与各步骤的实际耗时、结果和 Rust 精确缓存命中状态；失败步骤同样计入。`workflow-timing` artifact 提供 `timings.md` 和 `timings.json`，保留 30 天。
 
 总耗时按墙钟时间计算，两端并行构建不能相加；统计覆盖业务作业的调度等待、缓存恢复及保存、依赖安装、检查或打包、验签、上传、发布和 Cask 校验。统计作业本身及其上传开销不计入该值，GitHub 页面总时长包含这部分开销。

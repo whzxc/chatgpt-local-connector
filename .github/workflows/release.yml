@@ -11,6 +11,7 @@ on:
         default: false
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -27,18 +28,18 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Gate | Require successful Check for the exact commit
+      - name: Gate | Validate version and release ref
         env:
-          GH_TOKEN: ${{ github.token }}
           PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
         shell: bash
         run: |
           set -euo pipefail
           if [ "$PUBLISH" = true ]; then
             test "$GITHUB_REF_TYPE" = tag || { echo 'Publishing requires a version tag.'; exit 1; }
+          else
+            test "$GITHUB_REF" = refs/heads/main || { echo 'Rehearsals must run on main.'; exit 1; }
           fi
-          result=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?head_sha=$GITHUB_SHA&event=workflow_dispatch&branch=main&per_page=1" --jq '.workflow_runs[0] | "\(.status):\(.conclusion)"')
-          test "$result" = completed:success || { echo "Run Check manually on main for this exact commit before building: $result"; exit 1; }
+          node tooling/release.mjs check
       - name: Gate | Find verified build matching source and cask
         id: artifacts
         if: github.event_name == 'push' || inputs.publish
@@ -51,6 +52,7 @@ jobs:
           while IFS=$'\t' read -r run_id source_sha; do
             [ -n "$run_id" ] || continue
             git cat-file -e "$source_sha^{commit}" 2>/dev/null || continue
+            git merge-base --is-ancestor "$source_sha" "$GITHUB_SHA" || continue
             git diff --quiet "$source_sha" "$GITHUB_SHA" -- . ':!Casks/local-connector.rb' || continue
             metadata="$RUNNER_TEMP/release-metadata-$run_id"
             if ! gh run download "$run_id" --name release-metadata --dir "$metadata"; then
@@ -62,8 +64,12 @@ jobs:
               exit 0
             fi
           done <<< "$runs"
-          echo 'No successful main rehearsal matches this source and committed Cask. Run a rehearsal, commit its Cask, and run Check before tagging.'
+          echo 'No successful main rehearsal matches this source and committed Cask. Run a rehearsal with passing checks and commit its exact Cask before tagging.'
           exit 1
+  checks:
+    needs: gate
+    if: github.event_name == 'workflow_dispatch' && !inputs.publish
+    uses: ./.github/workflows/check.yml
   build:
     needs: gate
     if: github.event_name == 'workflow_dispatch' && !inputs.publish
@@ -109,8 +115,6 @@ jobs:
         run: npm ci
       - name: Validation | Release version
         run: npm run release:check
-      - name: Frontend | Build
-        run: npm run build
       - name: Package | Native build and signed installers
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -129,8 +133,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   publish:
-    needs: [gate, build]
-    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    needs: [gate, checks, build]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.checks.result == 'success' || needs.checks.result == 'skipped') && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -197,7 +201,7 @@ jobs:
   timings:
     name: Timing summary
     if: always()
-    needs: [gate, build, publish]
+    needs: [gate, checks, build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read

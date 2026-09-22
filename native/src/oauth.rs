@@ -90,7 +90,8 @@ impl OAuth {
             self.persist()?;
         }
         let now = clock();
-        self.pending.retain(|_, p| p.expires + if p.decision == Some(true) { 300 } else { 0 } > now);
+        self.pending
+            .retain(|_, p| p.expires + if p.decision == Some(true) { 300 } else { 0 } > now);
         // Unused dynamic registrations expire; active grants retain their client metadata.
         self.stored.clients.retain(|id, c| {
             c.created + REGISTRATION_TTL > now || self.stored.grants.iter().any(|g| &g.client == id)
@@ -300,7 +301,9 @@ impl OAuth {
             .pending
             .get_mut(key)
             .ok_or("Authorization request expired; reconnect from your client")?;
-        if p.expires <= clock() { return Err("Authorization request expired".into()); }
+        if p.expires <= clock() {
+            return Err("Authorization request expired".into());
+        }
         let Some(allowed) = p.decision else {
             return Ok((None, p.comparison.clone()));
         };
@@ -393,7 +396,9 @@ impl OAuth {
                 let (key, p) = self
                     .pending
                     .iter()
-                    .find(|(_, p)| p.code_hash == code_hash && p.decision == Some(true) && p.expires > clock())
+                    .find(|(_, p)| {
+                        p.code_hash == code_hash && p.decision == Some(true) && p.expires > clock()
+                    })
                     .map(|(k, p)| (k.clone(), p.clone()))
                     .ok_or("invalid_grant")?;
                 let verifier = get("code_verifier");
@@ -655,8 +660,14 @@ async fn route(
                     .await
                     .resume(q.get("request").ok_or("invalid_request")?, resource);
                 return Ok(match result {
-                    Ok((Some(url),_)) => Response::builder().status(303).header("Location",url).header("Cache-Control","no-store").header("Referrer-Policy","no-referrer").body(Full::new(Bytes::new())).unwrap(),
-                    Ok((None,code)) => html(200, Some(&code)),
+                    Ok((Some(url), _)) => Response::builder()
+                        .status(303)
+                        .header("Location", url)
+                        .header("Cache-Control", "no-store")
+                        .header("Referrer-Policy", "no-referrer")
+                        .body(Full::new(Bytes::new()))
+                        .unwrap(),
+                    Ok((None, code)) => html(200, Some(&code)),
                     Err(_) => html(400, None),
                 });
             }

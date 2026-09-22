@@ -1,10 +1,11 @@
 name: Check
 on:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
-  group: check-${{ github.ref }}
+  group: check-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   check:
@@ -23,6 +24,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Format | Rust
+        run: npm run check:format
+      - name: Validation | Version
+        run: npm run release:check
       - name: Cache | Rust dependencies
         id: rust-cache
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
@@ -37,8 +42,6 @@ jobs:
         run: echo "Rust cache lookup complete"
       - name: Dependencies | npm ci
         run: npm ci
-      - name: Validation | Version
-        run: npm run release:check
       - name: Validation | Types
         run: npm run check
       - name: Tests | Contracts
@@ -47,15 +50,9 @@ jobs:
         run: npm run build
       - name: Native check | Desktop
         run: cargo check --manifest-path desktop/Cargo.toml
-      - name: Format | Core
-        run: cargo fmt --manifest-path native/Cargo.toml -- --check
-      - name: Format | Desktop
-        run: cargo fmt --manifest-path desktop/Cargo.toml -- --check
-      - name: Format | Verifier
-        run: cargo fmt --manifest-path tooling/verifier/Cargo.toml -- --check
   timings:
     name: Timing summary
-    if: always()
+    if: always() && github.workflow == 'Check'
     needs: check
     runs-on: ubuntu-latest
     permissions:
