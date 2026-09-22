@@ -26,7 +26,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphic
 
 [profile.release]
 lto = "thin"
-codegen-units = 1
+codegen-units = 4
 strip = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
