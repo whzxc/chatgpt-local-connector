@@ -650,7 +650,9 @@ impl Service {
             let i = self.ingress(id).await?;
             if method == "POST" && action == "credentials" {
                 let credentials = i.request("config/credentials", "GET", json!({})).await?;
-                return Ok(json!({"apiKey": credentials["apiKey"], "bearerToken": credentials["bearerToken"]}));
+                return Ok(
+                    json!({"apiKey": credentials["apiKey"], "bearerToken": credentials["bearerToken"]}),
+                );
             }
             if method == "GET" && action.is_empty() {
                 return i.summary().await;

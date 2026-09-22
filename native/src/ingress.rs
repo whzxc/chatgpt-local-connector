@@ -800,8 +800,10 @@ pub(crate) fn configured(s: &Value) -> bool {
             "cloudflare" => {
                 s["cloudflareMode"] == "quick" || !string(s, "cloudflareToken").is_empty()
             }
-            "ngrok" => !string(s, "ngrokAuthtoken").is_empty()
-                && (s["ngrokMode"] == "quick" || !string(s, "ngrokEndpoint").is_empty()),
+            "ngrok" => {
+                !string(s, "ngrokAuthtoken").is_empty()
+                    && (s["ngrokMode"] == "quick" || !string(s, "ngrokEndpoint").is_empty())
+            }
             _ => !string(s, "httpsUrl").is_empty(),
         }
     } else {
@@ -877,7 +879,10 @@ pub(crate) fn validate_config(s: &Value) -> Result<()> {
     if !["quick", "named"].contains(&string(s, "ngrokMode")) {
         return Err("ngrok 模式无效".into());
     }
-    if s["httpsProvider"] == "ngrok" && s["ngrokMode"] == "named" && !string(s, "ngrokEndpoint").is_empty() {
+    if s["httpsProvider"] == "ngrok"
+        && s["ngrokMode"] == "named"
+        && !string(s, "ngrokEndpoint").is_empty()
+    {
         crate::https_tunnel::ngrok_endpoint(string(s, "ngrokEndpoint"))?;
     }
     string(s, "httpsHost")
