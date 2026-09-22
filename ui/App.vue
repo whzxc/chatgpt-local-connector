@@ -2,7 +2,7 @@
 import { displayMessage } from './messages';
 import { t } from './i18n';
 import { computed, defineAsyncComponent, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { LayoutDashboard, Logs, Settings, Download, Minus, Square, X, Maximize2, Minimize2 } from '@lucide/vue';
+import { LayoutDashboard, Logs, Settings, Download, X, Maximize2, Minimize2 } from '@lucide/vue';
 import { NButton } from 'naive-ui';
 import { provideConnector } from './composables/useConnector';
 import { isDesktop, notifyNative } from './platform';
@@ -49,9 +49,6 @@ onMounted(async () => {
   unlisteners.push(await listen<string>('connection-error', event => notify(event.payload, true)));
 });
 onUnmounted(() => unlisteners.forEach(stop => stop()));
-async function windowAction(action: 'minimize' | 'toggleMaximize' | 'close') {
-  const { getCurrentWindow } = await import('@tauri-apps/api/window'); await getCurrentWindow()[action]();
-}
 watch(() => status.value?.core.appServer.state, (n,old) => { if(old && n==='error' && n!==old) void notifyNative(t('localConnectionError'),t('checkDiagnosticsInSettings')).catch(()=>{}); });
 let toastTimer: ReturnType<typeof setTimeout>;
 watch(() => feedback.value.text, text => { clearTimeout(toastTimer); if(text && !feedback.value.error) toastTimer=setTimeout(()=>feedback.value.text='',4500); });
@@ -59,9 +56,7 @@ onUnmounted(()=>clearTimeout(toastTimer));
 </script>
 <template>
   <div class="app-scene" :class="{desktop:isDesktop,mac,'sheet-wide':sheetWide}" @keydown="closePage">
-    <div v-if="isDesktop" class="window-drag-strip" data-tauri-drag-region>
-      <div v-if="!mac" class="window-controls"><button :aria-label="t('minimize')" @click="windowAction('minimize')"><Minus /></button><button :aria-label="t('maximizeOrRestore')" @click="windowAction('toggleMaximize')"><Square /></button><button :aria-label="t('closeWindow')" @click="windowAction('close')"><X /></button></div>
-    </div>
+    <div v-if="isDesktop" class="window-drag-strip" data-tauri-drag-region/>
     <main class="home-workspace" :inert="page!=='overview' || panelOpen">
       <ConnectionOverview/>
     </main>

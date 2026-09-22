@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { usePreferredDark } from '@vueuse/core';
 import { NConfigProvider, darkTheme, enUS, zhCN, dateEnUS, dateZhCN, type GlobalThemeOverrides } from 'naive-ui';
 import { locale } from '../i18n';
-import { theme, accent } from '../theme';
+import { theme, accent, sceneColors, translucent } from '../theme';
+import { isDesktop } from '../platform';
 const systemDark = usePreferredDark();
 const dark = computed(() => theme.value === 'dark' || (theme.value === 'system' && systemDark.value));
+if (isDesktop && navigator.platform.toLowerCase().includes('win')) {
+  document.documentElement.dataset.nativeWindowsFrame = 'true';
+  watch([dark, sceneColors, translucent], async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('set_windows_appearance', { color: dark.value ? sceneColors.value.dark : sceneColors.value.light, dark: dark.value, translucent: translucent.value });
+  }, { immediate: true });
+}
 function tint(hex: string, target: number, amount: number) {
   return '#' + [1, 3, 5].map(offset => Math.round(parseInt(hex.slice(offset, offset + 2), 16) * (1 - amount) + target * amount).toString(16).padStart(2, '0')).join('');
 }

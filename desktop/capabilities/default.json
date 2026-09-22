@@ -9,9 +9,6 @@
     "opener:default",
     "notification:default",
     "window-state:default",
-    "core:window:allow-start-dragging",
-    "core:window:allow-minimize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-close"
+    "core:window:allow-start-dragging"
   ]
 }

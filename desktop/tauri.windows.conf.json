@@ -17,7 +17,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "backgroundColor": "#00000000",
-        "decorations": false,
+        "decorations": true,
         "transparent": true,
         "windowEffects": {
           "effects": [

@@ -10,6 +10,8 @@ mod tray;
 mod updates;
 #[cfg(target_os = "macos")]
 mod window_controls;
+#[cfg(target_os = "windows")]
+mod windows_frame;
 
 async fn request(
     app: &tauri::AppHandle,
@@ -99,7 +101,9 @@ fn main() {
             i18n::set_ui_locale,
             updates::check_update,
             updates::install_update,
-            updates::cancel_update
+            updates::cancel_update,
+            #[cfg(target_os = "windows")]
+            windows_frame::set_windows_appearance
         ])
         .setup(|app| {
             if !cfg!(debug_assertions) {
@@ -133,6 +137,10 @@ fn main() {
                 window_controls::align(&window);
             }
             tray::install(app)?;
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                windows_frame::install(&window)?;
+            }
             #[cfg(target_os = "macos")]
             appearance::install(app).map_err(std::io::Error::other)?;
             Ok(())

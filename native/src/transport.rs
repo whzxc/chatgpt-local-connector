@@ -310,6 +310,7 @@ pub async fn stdio() -> Result<()> {
 }
 
 pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<Value> {
+    crate::init_crypto();
     let unavailable = "无法连接后台，请先打开 Local Connector 桌面应用。";
     let info = load(&root().join("web/native.json")).map_err(|_| unavailable)?;
     let port = info["port"]

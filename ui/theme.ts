@@ -12,6 +12,13 @@ export const themeColors = {
 } as const;
 export const themeColor = useStorage<string>('theme-color', 'forest');
 export const accent = computed(() => themeColors[themeColor.value as keyof typeof themeColors] || themeColors.forest);
+function sceneMix(hex: string, base: number[], amount: number) {
+  return base.map((value, index) => Math.round(value * (1 - amount) + parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16) * amount));
+}
+export const sceneColors = computed(() => ({
+  light: sceneMix(accent.value.light, [255, 255, 255], .13),
+  dark: sceneMix(accent.value.dark, [23, 33, 30], .12),
+}));
 watch(accent, value => {
   const style = document.documentElement.style;
   style.setProperty('--green', `light-dark(${value.light},${value.dark})`);
@@ -19,7 +26,7 @@ watch(accent, value => {
   style.setProperty('--accent-light', value.light);
   style.setProperty('--accent-dark', value.dark);
   style.setProperty('--accent-soft', `light-dark(color-mix(in srgb, ${value.light} 9%, #fff),color-mix(in srgb, ${value.dark} 12%, #202522))`);
-  style.setProperty('--scene-color', `light-dark(color-mix(in srgb, ${value.light} 13%, #fff),color-mix(in srgb, ${value.dark} 12%, #17211e))`);
+  style.setProperty('--scene-color', `light-dark(rgb(${sceneColors.value.light.join(' ')}),rgb(${sceneColors.value.dark.join(' ')}))`);
 }, { immediate: true });
 
 export const translucent = useStorage('translucent', false);
