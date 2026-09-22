@@ -2,7 +2,7 @@
 import { t, language, languageOptions, setLanguage } from '../i18n';
 import { NButton, NSwitch, NInput } from 'naive-ui';
 import SingleChoice from './SingleChoice.vue';
-import { theme } from '../theme';
+import { theme, themeColor, themeColors, translucent } from '../theme';
 import { controlSourceClick } from '../behavior';
 import { Monitor, Sun, Moon } from '@lucide/vue';
 import { useIntervalFn } from '@vueuse/core';
@@ -94,6 +94,12 @@ async function setApproval(enabled: boolean) {
       </SettingsRow>
       <SettingsRow :title="t('appearance')">
         <SingleChoice v-model:value="theme" :label="t('appearance')" @update:value="preferences" :options="[{value:'system',label:t('system'),icon:Monitor},{value:'light',label:t('light'),icon:Sun},{value:'dark',label:t('dark'),icon:Moon}]"/>
+      </SettingsRow>
+      <SettingsRow :title="t('themeColor')">
+        <SingleChoice appearance="swatches" v-model:value="themeColor" :label="t('themeColor')" :options="Object.entries(themeColors).map(([value, color]) => ({value,label:t(color.label),color:color.light}))"/>
+      </SettingsRow>
+      <SettingsRow title="Translucent">
+        <NSwitch v-model:value="translucent" aria-label="Translucent"/>
       </SettingsRow>
       <SettingsRow v-if="mac" :title="t('showAppIn')">
         <SingleChoice :value="displayPosition" :disabled="!!busy || !appearanceReady" :label="t('showAppIn')" @update:value="setAppearance" :options="[{value:'all',label:t('all')},{value:'menu',label:t('menuBarOnly')},{value:'dock',label:t('dockOnly')}] as const"/>

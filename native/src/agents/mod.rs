@@ -79,7 +79,7 @@ impl AgentHost {
         }))
     }
     async fn ensure_enabled(&self, agent: &str) -> Result<()> {
-        if agent != "codex" && self.disabled.lock().await.contains(agent) {
+        if self.disabled.lock().await.contains(agent) {
             return Err("AGENT_DISABLED".into());
         }
         Ok(())
@@ -92,9 +92,6 @@ impl AgentHost {
         let enabled = body["enabled"]
             .as_bool()
             .ok_or("ENABLED_BOOLEAN_REQUIRED")?;
-        if agent == "codex" && !enabled {
-            return Err("CODEX_ALWAYS_ENABLED".into());
-        }
         let mut disabled = self.disabled.lock().await;
         let mut next = disabled.clone();
         if enabled {
@@ -189,7 +186,7 @@ impl AgentHost {
         let processes = self.processes.lock().await;
         for row in inventory["agents"].as_array_mut().unwrap() {
             let agent = string(row, "agent");
-            let enabled = agent == "codex" || !disabled.contains(agent);
+            let enabled = !disabled.contains(agent);
             let ready = processes.values().any(|p| {
                 p.alive.load(std::sync::atomic::Ordering::SeqCst)
                     && p.state.try_lock().is_ok_and(|s| s["agent"] == agent)

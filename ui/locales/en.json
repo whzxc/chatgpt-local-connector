@@ -71,7 +71,6 @@
   "refresh": "Refresh",
   "default": "(Default)",
   "allowConnectorToUseValue": "Allow Connector to use {agent}",
-  "codexIsAlwaysEnabled": "Codex is always enabled",
   "allowConnectorToAcceptRequestsForThisAgent": "Allow Connector to accept requests for this Agent",
   "collapseList": "Collapse list",
   "showAllValue": "Show all ({count})",
@@ -459,5 +458,14 @@
   "temporaryDomain": "Temporary domain",
   "invalidNgrokDomain": "Enter a domain or HTTPS origin without a path",
   "ngrokDomainRequired": "Enter an ngrok fixed domain",
-  "ngrokEndpointInUse": "This ngrok domain is already in use. Stop the connection using it or choose another domain (ERR_NGROK_334)."
+  "ngrokEndpointInUse": "This ngrok domain is already in use. Stop the connection using it or choose another domain (ERR_NGROK_334).",
+  "reorderAgent": "Reorder {agent}",
+  "agentDragHint": "Drag to reorder, or focus and use arrow keys",
+  "agentNotInstalled": "Not installed",
+  "themeColor": "Theme color",
+  "themeForest": "Forest",
+  "themeOcean": "Ocean",
+  "themeViolet": "Violet",
+  "themeAmber": "Amber",
+  "themeRose": "Rose"
 }

@@ -1,5 +1,5 @@
 /* Window-sized canvas and the lower-left navigation surface. */
-.app-scene{--sheet-open-motion:540ms cubic-bezier(.2,.8,.2,1);--sheet-close-motion:220ms cubic-bezier(.4,0,.6,1);--sheet-width:min(960px,calc(100% - 2 * var(--sheet-inset)));--sheet-inset:20px;--sheet-top:20px;--dock-left:24px;--dock-bottom:24px;height:100dvh;min-height:0;overflow:hidden;position:relative;background:light-dark(#e3eee8,#20352f)}
+.app-scene{--sheet-open-motion:540ms cubic-bezier(.2,.8,.2,1);--sheet-close-motion:220ms cubic-bezier(.4,0,.6,1);--sheet-width:min(960px,calc(100% - 2 * var(--sheet-inset)));--sheet-inset:20px;--sheet-top:20px;--dock-left:24px;--dock-bottom:24px;height:100dvh;min-height:0;overflow:hidden;position:relative;background:var(--scene-color,light-dark(#e3eee8,#20352f))}
 .app-scene.sheet-wide{--sheet-width:calc(100% - 2 * var(--sheet-inset))}
 .app-scene.mac{--sheet-top:48px}
 .window-drag-strip{position:absolute;inset:0 0 auto;height:38px;z-index:60;display:flex;justify-content:flex-end}

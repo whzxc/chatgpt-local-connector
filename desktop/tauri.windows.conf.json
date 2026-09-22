@@ -16,8 +16,16 @@
         "minHeight": 578,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "backgroundColor": "#f4f5f1",
-        "decorations": false
+        "backgroundColor": "#00000000",
+        "decorations": false,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "sidebar",
+            "acrylic"
+          ],
+          "state": "active"
+        }
       }
     ]
   }

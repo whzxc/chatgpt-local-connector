@@ -71,7 +71,6 @@
   "refresh": "刷新",
   "default": "（默认）",
   "allowConnectorToUseValue": "允许 Connector 使用 {agent}",
-  "codexIsAlwaysEnabled": "Codex 始终开启",
   "allowConnectorToAcceptRequestsForThisAgent": "允许 Connector 接受此 Agent 的请求",
   "collapseList": "收起列表",
   "showAllValue": "展开全部（{count}）",
@@ -459,5 +458,14 @@
   "temporaryDomain": "临时域名",
   "invalidNgrokDomain": "ngrok 固定域名无效，请填写域名或 HTTPS 地址（不含路径）",
   "ngrokDomainRequired": "请填写 ngrok 固定域名",
-  "ngrokEndpointInUse": "ngrok 固定域名已被其他连接占用，请关闭占用该域名的连接，或使用其他域名（ERR_NGROK_334）"
+  "ngrokEndpointInUse": "ngrok 固定域名已被其他连接占用，请关闭占用该域名的连接，或使用其他域名（ERR_NGROK_334）",
+  "reorderAgent": "调整 {agent} 的排序",
+  "agentDragHint": "拖拽排序，也可聚焦后按方向键调整",
+  "agentNotInstalled": "未安装",
+  "themeColor": "主题色",
+  "themeForest": "松绿",
+  "themeOcean": "海蓝",
+  "themeViolet": "紫罗兰",
+  "themeAmber": "琥珀",
+  "themeRose": "玫瑰"
 }

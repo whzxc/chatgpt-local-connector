@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { api } from './useConnector';
 import codexIcon from '../assets/brand-reserve/agents/codex/mono.svg?raw';
 import piIcon from '../assets/brand-reserve/agents/pi/mono.svg?raw';
@@ -8,7 +8,7 @@ import cursorIcon from '../assets/brand-reserve/agents/cursor/mono.svg?raw';
 import geminiIcon from '../assets/brand-reserve/agents/gemini/color.svg?raw';
 import grokIcon from '../assets/brand-reserve/agents/grok/mono.svg?raw';
 import copilotIcon from '../assets/brand-reserve/agents/copilot/color.svg?raw';
-import kimiIcon from '../assets/brand-reserve/agents/kimi/color.svg?raw';
+import kimiIcon from '../assets/brand-reserve/agents/kimi/mono.svg?raw';
 import qwenIcon from '../assets/brand-reserve/agents/qwen/color.svg?raw';
 import kiroIcon from '../assets/brand-reserve/agents/kiro/color.svg?raw';
 import devinIcon from '../assets/brand-reserve/agents/devin/color.svg?raw';
@@ -38,7 +38,43 @@ function persist() {
   } catch { /* A storage failure must not discard a successful discovery. */ }
 }
 export const icons: Record<string, string> = { codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: geminiIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon };
+export const agentLinks: Record<string, string> = {
+  codex: 'https://github.com/openai/codex',
+  pi: 'https://pi.dev/',
+  opencode: 'https://opencode.ai/',
+  claude: 'https://github.com/anthropics/claude-code',
+  cursor: 'https://cursor.com/docs/cli/acp',
+  gemini: 'https://github.com/google-gemini/gemini-cli',
+  grok: 'https://docs.x.ai/build/cli/reference',
+  copilot: 'https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server',
+  kimi: 'https://www.kimi.com/code/',
+  qwen: 'https://github.com/QwenLM/qwen-code',
+  kiro: 'https://kiro.dev/',
+  devin: 'https://docs.devin.ai/desktop/acp',
+  cline: 'https://docs.cline.bot/',
+  junie: 'https://junie.jetbrains.com/',
+  hermes: 'https://hermes-agent.nousresearch.com/',
+};
 export const name = (agent: Agent) => agent.displayName || ({ codex: 'Codex', pi: 'Pi', opencode: 'OpenCode' }[agent.agent] || agent.agent);
+const orderKey = 'clc.agent-order';
+const order = ref<string[]>([]);
+try {
+  const stored: unknown = JSON.parse(localStorage.getItem(orderKey) || '[]');
+  if (Array.isArray(stored) && stored.every(id => typeof id === 'string')) order.value = [...new Set(stored)];
+} catch { /* Discovery supplies the default order. */ }
+const orderedAgents = computed(() => [...agents.value].sort((a, b) => {
+  const ai = order.value.indexOf(a.agent), bi = order.value.indexOf(b.agent);
+  if (ai >= 0 || bi >= 0) return (ai < 0 ? Infinity : ai) - (bi < 0 ? Infinity : bi);
+  return Number(b.agent === 'codex') - Number(a.agent === 'codex') || Number(!!b.installed) - Number(!!a.installed) || name(a).localeCompare(name(b));
+}));
+function moveAgent(from: string, to: string) {
+  const ids = orderedAgents.value.map(a => a.agent);
+  const start = ids.indexOf(from), end = ids.indexOf(to);
+  if (start < 0 || end < 0 || start === end) return;
+  ids.splice(start, 1); ids.splice(end, 0, from);
+  order.value = ids;
+  try { localStorage.setItem(orderKey, JSON.stringify(ids)); } catch { /* Keep the current session order. */ }
+}
 let pendingRefresh: Promise<void> | undefined;
 let revision = 0;
 function refresh(manual = false): Promise<void> {
@@ -69,4 +105,4 @@ async function toggle(agent: Agent, enabled: boolean) {
   finally { saving.value = ''; }
 }
 
-export function useAgents() { return { agents, loaded, loading, saving, error, refresh, toggle }; }
+export function useAgents() { return { agents, orderedAgents, moveAgent, loaded, loading, saving, error, refresh, toggle }; }

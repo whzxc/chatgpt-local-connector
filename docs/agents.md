@@ -1,8 +1,8 @@
 # 本地 Agents
 
-CLC 支持 Codex Native、Pi RPC 和 OpenCode ACP。设置页的 Agents 区域自动发现可执行文件、版本和连接方式，不保存或要求重复填写 provider/token。Codex 保持默认；调用通用工具时显式选择 `agent`。
+CLC 支持 Codex Native、Pi RPC 和 OpenCode ACP。Agents 面板自动发现可执行文件、版本和连接方式，不保存或要求重复填写 provider/token。Codex 初始排序在首位，可关闭并调整排序；调用通用工具时显式选择 `agent`。
 
-设置页以图标、名称和已安装版本展示 Agent；没有版本时不显示副标题。Agents 标题栏右侧的“刷新”按钮可更新本机发现结果。Codex 始终开启；其他 Agent 的开关仅控制 CLC 是否接受该 Agent 的请求，关闭后新的 `agent_*` 调用返回 `AGENT_DISABLED`，不会卸载 Agent、修改其配置或终止已执行的任务。开关保存在本机，重启后仍生效；`agents` 返回 `enabled` 状态。本机管理接口 `PUT /api/agents` 接收 `{ "agent": "pi", "enabled": false }`，不能关闭 Codex。
+Agents 面板用卡片展示图标、名称和已安装版本，未安装项显示“未安装”。每张卡片的图标、标题与开关同排展示，不显示拖拽标识；拖拽卡片可排序，也可聚焦卡片后用方向键调整。顺序保存在本机，首页显示排序前四个 Agent。标题栏的“刷新”按钮更新本机发现结果。所有已安装 Agent（包括 Codex）的开关控制 CLC 是否接受该 Agent 的通用请求；关闭后新的 `agent_*` 调用返回 `AGENT_DISABLED`，不会卸载 Agent、修改其配置或终止已执行的任务。Codex 专用 `codex_*` 入口保持独立。开关保存在本机，重启后仍生效；本机管理接口 `PUT /api/agents` 接收 `{ "agent": "codex", "enabled": false }`。
 
 | Agent | 连接方式 | 配置与执行归属 | 能力边界 |
 | --- | --- | --- | --- |
