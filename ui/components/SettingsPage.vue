@@ -3,6 +3,7 @@ import { t, language, languageOptions, setLanguage } from '../i18n';
 import { NButton, NSwitch, NInput } from 'naive-ui';
 import SingleChoice from './SingleChoice.vue';
 import { theme } from '../theme';
+import { controlSourceClick } from '../behavior';
 import { Monitor, Sun, Moon } from '@lucide/vue';
 import { useIntervalFn } from '@vueuse/core';
 import { computed, onMounted, ref } from 'vue';
@@ -69,7 +70,10 @@ async function setApproval(enabled: boolean) {
   <div class="settings-preferences">
 
 
-    <SettingsGroup :title="t('tasks')">
+    <SettingsGroup :title="t('behavior')">
+      <SettingsRow :title="t('clickControlSource')">
+        <SingleChoice v-model:value="controlSourceClick" :label="t('clickControlSource')" :options="[{value:'service',label:t('goToService')},{value:'settings',label:t('connectionSettings')}] as const"/>
+      </SettingsRow>
       <SettingsRow :title="t('automaticallyOpenCodexTasks')" :description="t('whenDisabledNewTasksRunInTheBackground')" control-id="settings-auto-open">
         <NSwitch id="settings-auto-open" :aria-label="t('automaticallyOpenCodexTasks')"  :value="status?.autoOpenCodex !== false" :disabled="!!busy || !status" @update:value="setAutoOpen" />
       </SettingsRow>

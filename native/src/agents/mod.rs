@@ -16,6 +16,7 @@ use process::Process;
 
 pub struct AgentHost {
     drivers: HashMap<String, AgentDriver>,
+    inventory_cache: Mutex<Option<(std::time::Instant, Value)>>,
     disabled: Mutex<HashSet<String>>,
     processes: Mutex<HashMap<String, Arc<Process>>>,
     operations: Mutex<HashMap<String, Operation>>,
@@ -69,6 +70,7 @@ impl AgentHost {
         Ok(Arc::new(Self {
             disabled: Mutex::new(disabled),
             drivers,
+            inventory_cache: Default::default(),
             processes: Default::default(),
             operations: Default::default(),
             session: id(),
@@ -165,6 +167,43 @@ impl AgentHost {
         return Err("UNSUPPORTED_PLATFORM".into());
         Ok(json!({"opened":true,"target":"terminal"}))
     }
+    /// UI polling reuses discovery facts; manual refresh bypasses the cache.
+    /// MCP discovery and task launch continue to verify the actual executables.
+    pub async fn ui_inventory(&self, refresh: bool) -> Value {
+        let mut cache = self.inventory_cache.lock().await;
+        if refresh
+            || cache
+                .as_ref()
+                .is_none_or(|(at, _)| at.elapsed().as_secs() >= 300)
+        {
+            let value = self.inventory().await;
+            *cache = Some((std::time::Instant::now(), value));
+        }
+        let mut value = cache.as_ref().unwrap().1.clone();
+        drop(cache);
+        self.inventory_status(&mut value).await;
+        value
+    }
+    async fn inventory_status(&self, inventory: &mut Value) {
+        let disabled = self.disabled.lock().await;
+        let processes = self.processes.lock().await;
+        for row in inventory["agents"].as_array_mut().unwrap() {
+            let agent = string(row, "agent");
+            let enabled = agent == "codex" || !disabled.contains(agent);
+            let ready = processes.values().any(|p| {
+                p.alive.load(std::sync::atomic::Ordering::SeqCst)
+                    && p.state.try_lock().is_ok_and(|s| s["agent"] == agent)
+            });
+            row["enabled"] = json!(enabled);
+            row["status"] = json!(if ready {
+                "ready"
+            } else if row["available"] == true {
+                "installed"
+            } else {
+                "unavailable"
+            });
+        }
+    }
     pub async fn inventory(&self) -> Value {
         let mut rows = Vec::new();
         let mut probes = tokio::task::JoinSet::new();
@@ -182,14 +221,12 @@ impl AgentHost {
             };
             let available = discovery_error.is_none();
             let descriptor = driver.descriptor();
-            let ready = self.processes.lock().await.values().any(|p| {
-                p.alive.load(std::sync::atomic::Ordering::SeqCst)
-                    && p.state.try_lock().is_ok_and(|s| s["agent"] == agent)
-            });
-            rows.push(json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"available":available,"discoveryError":discovery_error,"descriptor":descriptor,"displayName":descriptor["displayName"],"integration":descriptor["integration"],"enabled":self.ensure_enabled(&agent).await.is_ok(),"status":if ready {"ready"}else if available{"installed"}else{"unavailable"},"version":version.as_deref().map(str::trim),"path":binary,"configuration":"inherited","readiness":"ready means a live initialized session, not provider authentication"}));
+            rows.push(json!({"agent":agent,"protocol":driver.protocol(),"installed":binary.is_some(),"available":available,"discoveryError":discovery_error,"descriptor":descriptor,"displayName":descriptor["displayName"],"integration":descriptor["integration"],"version":version.as_deref().map(str::trim),"path":binary,"configuration":"inherited","readiness":"ready means a live initialized session, not provider authentication"}));
         }
         rows.sort_by(|a, b| string(a, "agent").cmp(string(b, "agent")));
-        json!({"agents":rows,"defaultAgent":"codex","observedAt":now()})
+        let mut inventory = json!({"agents":rows,"defaultAgent":"codex","observedAt":now()});
+        self.inventory_status(&mut inventory).await;
+        inventory
     }
     async fn task(&self, agent: &str, task: &str) -> Result<Value> {
         let p = self.processes.lock().await.get(task).cloned();

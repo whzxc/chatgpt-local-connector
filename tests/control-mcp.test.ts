@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -9,6 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { identifyPolicy, normalizeSelection, presetPolicy, type ToolCatalog, type ToolPolicy } from '../ui/toolPolicy.ts';
 import { toolFingerprint } from '../tooling/catalog.mjs';
 const catalog = JSON.parse(await readFile(new URL('../native/src/catalog.json', import.meta.url), 'utf8'));
 const nativeDomains = catalog.domains;
@@ -19,6 +20,11 @@ let client: Client;
 let inventory: Awaited<ReturnType<Client['listTools']>>;
 before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), 'chatgpt-local-connector-test-'));
+  // A persisted legacy entry with no policy retains the default-all semantics.
+  await mkdir(path.join(directory, 'ingresses/default'), { recursive: true });
+  await writeFile(path.join(directory, 'ingresses/index.json'), JSON.stringify(['default']));
+  await writeFile(path.join(directory, 'ingresses/default/config.json'), JSON.stringify({ id: 'default', name: 'ChatGPT', controlSource: 'chatgpt', transport: 'openai-tunnel', auth: 'openai', enabled: true, config: {} }));
+  await writeFile(path.join(directory, 'ingresses/default/secrets.json'), JSON.stringify({apiKey:'',cloudflareToken:'',ngrokAuthtoken:''}));
   const fixture = path.join(directory, 'app-server.mjs');
   await writeFile(fixture, `
 import { createInterface } from 'node:readline';
@@ -61,6 +67,7 @@ tokio={version="1",features=["full"]}
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[tokio::main] async fn main() {
  let service=connector_core::service::Service::fixture(std::env::var("CLC_FIXTURE_BINARY").unwrap().into()).unwrap();
+ let _listener=connector_core::transport::listen(service.clone()).await.unwrap();
  let mut lines=BufReader::new(tokio::io::stdin()).lines();
  let mut out=tokio::io::stdout();
  while let Some(line)=lines.next_line().await.unwrap() {
@@ -213,4 +220,157 @@ test('running owner retains startup package identity when the package manifest i
   assert.equal(second.version, first.version);
   assert.equal(second.backendSession, first.backendSession);
   assert.ok(first.backendSession);
+});
+
+async function management(route: string, method = 'GET', body?: unknown) {
+  const endpoint = JSON.parse(await readFile(path.join(directory, 'web/native.json'), 'utf8'));
+  const response = await fetch(`http://127.0.0.1:${endpoint.port}/api/${route}`, {
+    method, headers: { Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' },
+    ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }),
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  return result;
+}
+async function ingressRpc(ingress: any, method: string, params?: unknown) {
+  const response = await fetch(`http://127.0.0.1:${ingress.config.httpsPort}/mcp`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${`test-${ingress.id}`.padEnd(40, 'x')}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: randomUUID(), method, params }),
+  });
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+test('tool presets use the full registry, preserve exact allowlists and close only necessary read dependencies', async () => {
+  const config: ToolCatalog = await management('tool-catalog');
+  assert.deepEqual(config.tools.map(tool => tool.name), inventory.tools.map(tool => tool.name));
+  assert.deepEqual(Object.keys(catalog.toolExposure.tools).sort(), config.tools.map(tool => tool.name).sort());
+  for (const tool of config.tools) {
+    assert.ok(config.groups.some(group => group.id === tool.group));
+    for (const dependency of tool.requires) assert.ok(config.tools.some(tool => tool.name === dependency));
+  }
+  const readOnly = presetPolicy('readOnly', config) as { allowlist: string[] };
+  const common = presetPolicy('common', config) as { allowlist: string[] };
+  for (const forbidden of ['agent_request', 'codex_request', 'fs', 'command', 'process', 'mcp', 'codex_call', 'codex_thread', 'codex_query', 'codex_account', ...['agent', 'codex'].flatMap(prefix => ['create', 'send', 'interrupt', 'respond'].map(action => `${prefix}_${action}`))]) {
+    assert.ok(!readOnly.allowlist.includes(forbidden), forbidden);
+  }
+  // Read-only closure must not silently pull in any entry excluded from this preset.
+  assert.deepEqual(new Set(readOnly.allowlist), new Set(config.tools.filter(tool => tool.presets.includes('readOnly')).map(tool => tool.name)));
+  for (const prefix of ['agent', 'codex']) {
+    for (const action of ['create', 'send', 'interrupt', 'respond', 'request', 'read', 'wait', 'events', 'pending', 'capabilities', 'tasks']) assert.ok(common.allowlist.includes(`${prefix}_${action}`));
+    const selection = normalizeSelection([`${prefix}_send`, `${prefix}_send`], config);
+    for (const name of [`${prefix}_send`, `${prefix}_request`, `${prefix}_read`, `${prefix}_wait`, 'control_output', 'connector_verify']) assert.ok(selection.includes(name));
+    assert.deepEqual(normalizeSelection(selection, config), selection);
+    assert.ok(!selection.includes(`${prefix}_respond`), 'optional write response must not be auto-enabled');
+  }
+  assert.equal(identifyPolicy(undefined, config), 'all');
+  assert.equal(identifyPolicy('all', config), 'all');
+  for (const mode of ['common', 'readOnly'] as const) {
+    const policy = presetPolicy(mode, config) as { allowlist: string[] };
+    assert.equal(identifyPolicy({ allowlist: [...policy.allowlist].reverse().concat(policy.allowlist[0]) }, config), mode);
+  }
+  const legacy = { allowlist: ['read'] };
+  assert.equal(identifyPolicy(legacy, config), 'custom');
+  assert.deepEqual(legacy, { allowlist: ['read'] });
+  const future = structuredClone(config);
+  future.tools.push({ name: 'future_read', group: 'project', presets: ['readOnly'], requires: ['control_output'] });
+  assert.equal(identifyPolicy(readOnly, future), 'custom');
+  assert.ok(!readOnly.allowlist.includes('future_read'));
+});
+
+test('real HTTP ingresses isolate discovery and direct execution; policy PUT preserves identity, metadata and peer availability', async () => {
+  const config: ToolCatalog = await management('tool-catalog');
+  const a = await management('ingress', 'POST', { id: 'policy-all', name: 'Policy all', controlSource: 'custom', transport: 'https', auth: 'bearer', bearerToken: 'test-policy-all'.padEnd(40, 'x'), config: { httpsProvider: 'custom', httpsUrl: 'https://policy-all.example/mcp' } });
+  const b = await management('ingress', 'POST', { id: 'policy-read', name: 'Policy read', controlSource: 'custom', transport: 'https', auth: 'bearer', bearerToken: 'test-policy-read'.padEnd(40, 'x'), toolPolicy: presetPolicy('readOnly', config), config: { httpsProvider: 'custom', httpsUrl: 'https://policy-read.example/mcp' } });
+  try {
+    assert.equal(a.toolPolicy, 'all');
+    await management(`ingress/${a.id}/start`, 'POST');
+    await management(`ingress/${b.id}/start`, 'POST');
+    const list = async (i: any) => (await ingressRpc(i, 'tools/list')).result.tools.map((tool: any) => tool.name);
+    assert.deepEqual(await list(a), config.tools.map(tool => tool.name));
+    assert.deepEqual(await list(b), b.toolPolicy.allowlist);
+    assert.deepEqual((await management('tool-catalog')).tools, config.tools, 'management inventory remains unfiltered');
+    for (const name of config.tools.filter(tool => !b.toolPolicy.allowlist.includes(tool.name)).map(tool => tool.name)) {
+      assert.equal((await ingressRpc(b, 'tools/call', { name, arguments: { action: 'approve', requestId: randomUUID() } })).error.code, -32601, name);
+    }
+    const args = { requestId: randomUUID(), method: 'fixture/counts', params: {} };
+    const blocked = await ingressRpc(b, 'tools/call', { name: 'codex_call', arguments: args });
+    assert.equal(blocked.error.code, -32601);
+    assert.equal(blocked.error.message, 'tool not available');
+    const missingReceipt = await ingressRpc(a, 'tools/call', { name: 'codex_request', arguments: { requestId: args.requestId } });
+    assert.equal(missingReceipt.result.structuredContent.result.state, 'not-found', 'blocked mutation did not create a receipt');
+    const allowed = await ingressRpc(a, 'tools/call', { name: 'codex_call', arguments: args });
+    assert.equal(allowed.result.isError, false);
+    // A restricted real read succeeds, not merely schema validation or list filtering.
+    const read = await ingressRpc(b, 'tools/call', { name: 'read', arguments: { project: directory, path: 'Cargo.toml' } });
+    assert.equal(read.result.isError, false, JSON.stringify(read));
+    const verifyFile = path.join(directory, 'ingresses', b.id, 'verification.json');
+    const code = JSON.parse(await readFile(verifyFile, 'utf8')).code;
+    const verified = await ingressRpc(b, 'tools/call', { name: 'connector_verify', arguments: { code } });
+    assert.equal(verified.result.isError, false, JSON.stringify(verified));
+    const identity = await readFile(verifyFile, 'utf8');
+    const secrets = await readFile(path.join(directory, 'ingresses', b.id, 'secrets.json'), 'utf8');
+    for (const policy of [presetPolicy('common', config), { allowlist: normalizeSelection(['agent_send'], config) }, 'all'] as ToolPolicy[]) {
+      await management(`ingress/${b.id}/stop`, 'POST');
+      const saved = await management(`ingress/${b.id}`, 'PUT', { toolPolicy: policy });
+      assert.deepEqual(saved.toolPolicy, policy);
+      assert.equal(saved.name, b.name);
+      assert.equal(saved.controlSource, b.controlSource);
+      assert.equal(saved.auth, b.auth);
+      assert.deepEqual(saved.config, b.config);
+      assert.equal(await readFile(verifyFile, 'utf8'), identity);
+      assert.equal(await readFile(path.join(directory, 'ingresses', b.id, 'secrets.json'), 'utf8'), secrets);
+      assert.deepEqual((await management(`ingress/${b.id}`)).toolPolicy, policy);
+      await management(`ingress/${b.id}/start`, 'POST');
+      assert.equal(await readFile(verifyFile, 'utf8'), identity);
+      assert.deepEqual(await list(b), policy === 'all' ? config.tools.map(tool => tool.name) : policy.allowlist);
+      assert.deepEqual(await list(a), config.tools.map(tool => tool.name), 'other ingress stays online and unchanged');
+    }
+    await management(`ingress/${b.id}/stop`, 'POST');
+    await management(`ingress/${b.id}`, 'PUT', { toolPolicy: { allowlist: [] } });
+    await management(`ingress/${b.id}/start`, 'POST');
+    assert.deepEqual(await list(b), []);
+    for (const name of ['connector_verify', 'codex_wait', 'agent_wait']) assert.equal((await ingressRpc(b, 'tools/call', { name, arguments: {} })).error.code, -32601);
+  } finally {
+    await management(`ingress/${a.id}`, 'DELETE');
+    await management(`ingress/${b.id}`, 'DELETE');
+  }
+});
+
+// Simulate only the tunnel provider's loopback readiness API; ingress commit and
+// persistence still run through the compiled production Service implementation.
+test('managed draft commits the selected policy instead of publishing all tools', { skip: process.platform !== 'darwin' }, async () => {
+  const dependency = path.join(directory, 'dependencies/cloudflare', `darwin-${process.arch === 'arm64' ? 'arm64' : 'amd64'}`);
+  await mkdir(dependency, { recursive: true });
+  const binary = path.join(dependency, 'cloudflared');
+  const script = `#!/usr/bin/env node
+const http = require('node:http');
+const endpoint = process.argv[process.argv.indexOf('--metrics') + 1];
+http.createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(req.url === '/quicktunnel' ? {hostname:'policy-draft.trycloudflare.com'} : {})); }).listen(Number(endpoint.split(':')[1]), '127.0.0.1');
+`;
+  await writeFile(binary, script);
+  await chmod(binary, 0o700);
+  await writeFile(path.join(dependency, 'installed.json'), JSON.stringify({sha256:createHash('sha256').update(script).digest('hex')}));
+  const config: ToolCatalog = await management('tool-catalog');
+  for (const policy of [presetPolicy('readOnly', config), {allowlist:normalizeSelection(['agent_send'], config)}]) {
+    let draft = await management('ingress-drafts', 'POST', {config:{httpsProvider:'cloudflare',cloudflareMode:'quick',proxyMode:'direct'}});
+    let committed = false;
+    try {
+      const deadline = Date.now() + 10000;
+      while (!draft.url) {
+        assert.ok(Date.now() < deadline, 'local tunnel fixture becomes ready');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        draft = await management(`ingress-drafts/${draft.id}`);
+      }
+      assert.deepEqual(draft.toolPolicy, {allowlist:[]});
+      const saved = await management(`ingress-drafts/${draft.id}/commit`, 'POST', { name:'Policy draft',controlSource:'custom',auth:'bearer',toolPolicy:policy,url:draft.url });
+      committed = true;
+      assert.deepEqual(saved.toolPolicy, policy);
+      assert.deepEqual((await management(`ingress/${saved.id}`)).toolPolicy, policy);
+      const disk = JSON.parse(await readFile(path.join(directory, 'ingresses', saved.id, 'config.json'), 'utf8'));
+      assert.deepEqual(disk.toolPolicy, policy);
+    } finally {
+      await management(`${committed ? 'ingress' : 'ingress-drafts'}/${draft.id}`, 'DELETE');
+    }
+  }
 });

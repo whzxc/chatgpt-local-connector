@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, reactive, computed, onUnmounted, watch } from 'vue';
 import { NForm, NFormItem, NInput, NButton, NAlert, NText, type FormInst } from 'naive-ui';
 import FormDialog from './FormDialog.vue';
+import ToolPolicyField from './ToolPolicyField.vue';
+import type { ToolPolicy } from '../toolPolicy';
 import SourceIcon from './SourceIcon.vue';
-import { required, validMcpUrl } from '../formRules';
-import { t, locale } from '../i18n';
+import { required, httpsUrl, validMcpUrl } from '../formRules';
+import { t } from '../i18n';
 import { controlSource, curatedSources, nextSourceName } from '../controlSources';
 import { openUrl } from '../platform';
 import SingleChoice from './SingleChoice.vue';
@@ -12,102 +14,54 @@ import { displayMessage } from '../messages';
 import { api, useConnector, type Ingress } from '../composables/useConnector';
 import { connectionForm } from '../composables/connectionForm';
 import ConnectionFields from './ConnectionFields.vue';
-import CopyField from './CopyField.vue';
-import { useClipboard } from '@vueuse/core';
 
 const props = defineProps<{ ingress?: Ingress; defaultChatGPT?: boolean }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; saved: [ingress: Ingress] }>();
 const { refresh, status } = useConnector();
 const formRef = ref<FormInst>();
 const presetNames = Object.fromEntries(curatedSources.map(p => [p.id, p.displayName]));
 const entry = ref(props.ingress);
-const draft = ref<Ingress>();
-const acquiring = ref(false);
-const liveEntry = computed(() => draft.value || status.value?.ingresses.find(i=>i.id===entry.value?.id) || entry.value);
-const urlReady = computed(() => validMcpUrl(form.httpsUrl));
+const toolPolicy = ref<ToolPolicy>(props.ingress?.toolPolicy ?? 'all');
 const providerReady = computed(() => form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='quick' || !!(form.httpsProvider==='ngrok' ? form.ngrokAuthtoken.trim() || entry.value?.config.hasNgrokAuthtoken : form.cloudflareToken.trim() || entry.value?.config.hasCloudflareToken));
 const canSave = computed(() => !!name.value.trim() && new TextEncoder().encode(name.value).length<=120
   && (selected.value!=='custom' || /^[a-zA-Z0-9_-]+$/.test(source.value))
   && (form.connectionMode==='tunnel'
     ? /^tunnel_[a-zA-Z0-9_-]+$/.test(form.tunnelId) && !!(form.apiKey.trim() || entry.value?.config.hasApiKey)
-    : providerReady.value && urlReady.value && (auth.value==='none' || auth.value==='bearer' && (!!token.value || entry.value?.auth==='bearer'))));
+    : providerReady.value
+      && (form.httpsProvider!=='custom' || validMcpUrl(form.httpsUrl))
+      && (form.httpsProvider!=='cloudflare' || form.cloudflareMode!=='named' || !form.httpsUrl || validMcpUrl(form.httpsUrl))
+      && (form.httpsProvider!=='ngrok' || form.ngrokMode==='quick' || validMcpUrl(form.httpsUrl) && !new URL(form.httpsUrl).port)));
 function configPayload() {
   const config:Record<string,unknown>={...form};
   delete config.connectionMode;
+  if(form.connectionMode==='https' && form.httpsProvider==='ngrok' && form.ngrokMode==='named') config.ngrokEndpoint=new URL(form.httpsUrl).origin;
   if(!entry.value) { delete config.httpsPort; delete config.httpsHost; }
   for(const key of ['apiKey','cloudflareToken','ngrokAuthtoken']) if(!config[key]) delete config[key];
   return config;
-}
-async function discardDraft() {
-  const id=draft.value?.id; draft.value=undefined;
-  if(id) await api(`ingress-drafts/${id}`,'DELETE').catch(()=>{});
-}
-async function obtainUrl() {
-  if(working.value || !providerReady.value) return;
-  await action(async()=>{
-    form.httpsUrl=''; acquiring.value=true;
-    if(entry.value) {
-      if(entry.value.running) await api(`ingress/${entry.value.id}/stop`,'POST');
-      entry.value=await api<Ingress>(`ingress/${entry.value.id}`,'PUT',{config:configPayload()});
-      await api(`ingress/${entry.value.id}/start`,'POST');
-    } else {
-      await discardDraft();
-      draft.value=await api<Ingress>('ingress-drafts','POST',{config:configPayload()});
-    }
-    await pollUrl();
-  });
-}
-let polling=false;
-async function pollUrl() {
-  if(polling || disposed || !(draft.value || entry.value)) return;
-  polling=true;
-  const id=draft.value?.id || entry.value!.id, pending=!!draft.value;
-  try {
-    const next=await api<Ingress>(pending ? `ingress-drafts/${id}` : `ingress/${id}`);
-    if(disposed || (pending ? draft.value?.id : entry.value?.id)!==id) return;
-    if(pending) draft.value=next; else entry.value=next;
-    if(form.connectionMode==='https' && form.httpsProvider!=='custom' && next.url) { form.httpsUrl=next.url; acquiring.value=false; }
-  } catch(e) { if(!disposed) error.value=String(e); }
-  finally {polling=false;}
 }
 const selected = ref(props.ingress ? (controlSource(props.ingress.controlSource)?.curated ? props.ingress.controlSource : 'custom') : props.defaultChatGPT ? 'chatgpt' : '');
 const source = ref(props.ingress?.controlSource || '');
 const name = ref(props.ingress?.name || nextSourceName(selected.value || 'chatgpt', status.value?.ingresses.map(i=>i.name) || []));
 const preset = computed(() => controlSource(selected.value));
-const localized = (value: {en:string; 'zh-CN':string}) => value[locale.value === 'zh-CN' ? 'zh-CN' : 'en'];
 const form = reactive(connectionForm(props.ingress?.config));
 if(props.ingress?.url) form.httpsUrl=props.ingress.url;
+else if(form.httpsProvider==='ngrok' && form.ngrokMode==='named' && form.ngrokEndpoint) {
+  const domain=form.ngrokEndpoint;
+  form.httpsUrl=new URL(domain.includes('://') ? domain : `https://${domain}`).origin+'/mcp';
+}
 if (props.ingress) form.connectionMode=props.ingress.transport==='openai-tunnel' ? 'tunnel' : 'https';
 else if (preset.value) form.connectionMode=preset.value.recommendedTransport==='openai-tunnel' ? 'tunnel' : 'https';
 const auth = ref(props.ingress?.auth === 'bearer' ? 'bearer' : 'none');
-const token = ref(''), working = ref(false), error = ref('');
-const readingKey = ref(false), deliveredToken = ref('');
-const { copy:copyToken, copied:tokenCopied } = useClipboard({copiedDuring:1500});
+const working = ref(false), error = ref('');
 function generateToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  token.value = Array.from(bytes, byte => byte.toString(16).padStart(2,'0')).join('');
+  return Array.from(bytes, byte => byte.toString(16).padStart(2,'0')).join('');
 }
-watch([auth, urlReady, () => form.connectionMode], () => {
-  if (auth.value==='bearer' && urlReady.value && form.connectionMode==='https' && entry.value?.auth!=='bearer' && !token.value) generateToken();
-}, {immediate:true});
-let disposed = false;
-let pollTimer: ReturnType<typeof setInterval>;
-watch([()=>form.connectionMode,()=>form.httpsProvider,()=>form.cloudflareMode,()=>form.cloudflareToken,()=>form.ngrokAuthtoken],()=>{
-  if(working.value) return;
-  form.httpsUrl=''; token.value=''; acquiring.value=false; void discardDraft();
+watch([()=>form.connectionMode,()=>form.httpsProvider,()=>form.cloudflareMode,()=>form.cloudflareToken,()=>form.ngrokAuthtoken,()=>form.ngrokMode,()=>form.ngrokEndpoint],()=>{
+  form.httpsUrl='';
 });
-onUnmounted(() => { disposed=true; clearInterval(pollTimer); void discardDraft(); form.apiKey=''; token.value=''; deliveredToken.value=''; });
-onMounted(async () => {
-  pollTimer=setInterval(()=>{if(draft.value || acquiring.value) void pollUrl();},2000);
-  if (!entry.value?.config.hasApiKey || form.connectionMode!=='tunnel') return;
-  readingKey.value=true;
-  try {
-    const credentials = await api<{apiKey:string}>(`ingress/${entry.value.id}/credentials`, 'POST');
-    if (!disposed) form.apiKey=credentials.apiKey || '';
-  } catch { if (!disposed) error.value=t('credentialReadFailed'); }
-  finally { if(!disposed) readingKey.value=false; }
-});
-const model = computed(() => ({...form, name:name.value, source:source.value, token:token.value}));
+onUnmounted(() => { form.apiKey=''; form.cloudflareToken=''; form.ngrokAuthtoken=''; });
+const model = computed(() => ({...form, name:name.value, source:source.value}));
 function choose(value: string) {
   selected.value = value; source.value = value === 'custom' ? '' : value;
   name.value = value==='custom' ? '' : nextSourceName(value, status.value?.ingresses.map(i=>i.name) || []);
@@ -121,73 +75,53 @@ async function action(fn: () => Promise<void>) {
   finally { await refresh().catch(() => {}); working.value = false; }
 }
 async function save() {
-  if (working.value || readingKey.value || !canSave.value) return;
+  if (working.value || !canSave.value) return;
   try { await formRef.value?.validate(); } catch { return; }
   await action(async () => {
     const bearer=form.connectionMode==='https' && auth.value==='bearer';
-    const metadata={name:name.value.trim(),controlSource:selected.value==='custom' ? source.value : selected.value,auth:form.connectionMode==='tunnel' ? 'openai' : auth.value,...(bearer && token.value ? {bearerToken:token.value} : {})};
-    let saved:Ingress;
-    if(draft.value) {
-      saved=await api<Ingress>(`ingress-drafts/${draft.value.id}/commit`,'POST',{...metadata,url:form.httpsUrl});
-      draft.value=undefined;
-    } else {
-      const restart=!!entry.value;
-      if(entry.value?.running) await api(`ingress/${entry.value.id}/stop`,'POST');
-      saved=await api<Ingress>(entry.value ? `ingress/${entry.value.id}` : 'ingress',entry.value ? 'PUT':'POST',{...metadata,transport:form.connectionMode==='tunnel' ? 'openai-tunnel':'https',config:configPayload()});
-      if(restart) await api(`ingress/${saved.id}/start`,'POST');
-    }
+    const metadata={toolPolicy:toolPolicy.value,name:name.value.trim(),controlSource:selected.value==='custom' ? source.value : selected.value,auth:form.connectionMode==='tunnel' ? 'openai' : auth.value,
+      ...(bearer && entry.value?.auth!=='bearer' ? {bearerToken:generateToken()} : {})};
+    if(entry.value) await api(`ingress/${entry.value.id}/stop`,'POST');
+    const saved=await api<Ingress>(entry.value ? `ingress/${entry.value.id}` : 'ingress',entry.value ? 'PUT':'POST',{...metadata,transport:form.connectionMode==='tunnel' ? 'openai-tunnel':'https',config:configPayload()});
     entry.value=saved;
-    if(bearer && token.value) deliveredToken.value=token.value;
-    form.apiKey='';form.cloudflareToken='';form.ngrokAuthtoken='';token.value='';
-    if(!deliveredToken.value) emit('close');
+    form.apiKey='';form.cloudflareToken='';form.ngrokAuthtoken='';
+    await refresh().catch(() => {});
+    emit('saved', saved);
   });
 }
-async function stop() { await action(async () => { await api(`ingress/${entry.value!.id}/stop`, 'POST'); entry.value = await api<Ingress>(`ingress/${entry.value!.id}`); }); }
 async function remove() { await action(async () => { await api(`ingress/${entry.value!.id}`, 'DELETE'); emit('close'); }); }
 </script>
 <template>
   <FormDialog :show="true" :title="(entry ? t('editControlSource') : t('addControlSource')) + (selected ? ' · ' + (presetNames[selected] || t('customControlSource')) : '')" :busy="working" @close="emit('close')">
-    <div v-if="deliveredToken" class="token-field"><NInput :value="deliveredToken" readonly type="password" show-password-on="click" :input-props="{'aria-label':'Bearer token'}"/><NButton @click="copyToken(deliveredToken)">{{tokenCopied ? t('copied') : t('copy')}}</NButton><p class="token-help">{{t('savedBearerHelp')}}</p><NAlert :show-icon="false" v-if="error" type="error">{{displayMessage(error)}}</NAlert></div>
-    <div v-else-if="!selected" class="source-choices"><NButton v-for="option in [...curatedSources.map(p=>p.id),'custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option)"><span class="source-choice"><SourceIcon :platform="option" :add="option==='custom'"/><span>{{presetNames[option] || t('customControlSource')}}</span></span></NButton></div>
-    <NForm v-else ref="formRef" :model="model" :disabled="working || readingKey" label-placement="top" @submit.prevent="save()">
-      <NAlert :show-icon="false" v-if="preset && selected!=='chatgpt'" :type="preset.status==='supported' ? 'info' : 'warning'" class="preset-help">{{localized(preset.caveat)}} <NButton text type="primary" @click="openUrl(preset.docs[0]!)">{{t('officialSetup')}}</NButton></NAlert>
+    <div v-if="!selected" class="source-choices"><NButton v-for="option in [...curatedSources.map(p=>p.id),'custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option)"><span class="source-choice"><SourceIcon :platform="option" :add="option==='custom'"/><span>{{presetNames[option] || t('customControlSource')}}</span></span></NButton></div>
+    <NForm v-else ref="formRef" :model="model" :disabled="working" label-placement="top" @submit.prevent="save()">
       <NAlert :show-icon="false" v-if="form.connectionMode==='https' && auth==='bearer' && preset && !preset.supportedAuth.includes('bearer')" type="warning">{{t('presetAuthMismatch')}}</NAlert>
-      <NFormItem :label="t('sourceName')" path="name" :rule="required()"><NInput v-model:value="name" :input-props="{'aria-label':t('sourceName')}"/></NFormItem>
+      <NFormItem :label="t('sourceName')" path="name" :rule="required()" :show-require-mark="false" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}"><template #label><span class="token-heading"><span>{{t('sourceName')}} <NText type="error">*</NText></span><NButton v-if="preset?.docs[0]" text type="primary" size="tiny" @click="openUrl(preset.docs[0])">{{t('officialSetup')}}</NButton></span></template><NInput v-model:value="name" :input-props="{'aria-label':t('sourceName')}"/></NFormItem>
       <NFormItem v-if="selected==='custom'" :label="t('controlSourceId')" path="source" :rule="[{...required()}, {pattern:/^[a-zA-Z0-9_-]+$/,message:t('validClientId'),trigger:'input'}]"><NInput :input-props="{'aria-label':t('controlSourceId')}" v-model:value="source" placeholder="my-client"/></NFormItem>
-      <ConnectionFields :recommend-tunnel="selected==='chatgpt'" :form="form" :config="entry?.config" :disabled="working || readingKey" :allow-tunnel="preset?.recommendedTransport==='openai-tunnel' || selected==='custom'">
+      <ConnectionFields :recommend-tunnel="selected==='chatgpt'" :form="form" :config="entry?.config" :disabled="working" :allow-tunnel="preset?.recommendedTransport==='openai-tunnel' || selected==='custom'">
         <template #mcp-url>
-          <NFormItem v-if="providerReady || urlReady || acquiring" label="MCP URL" path="httpsUrl" :validation-status="form.httpsUrl && !urlReady ? 'error' : undefined" :feedback="form.httpsUrl && !urlReady ? t('validHttpsUrl') : undefined">
-            <NInput v-if="form.httpsProvider==='custom'" v-model:value="form.httpsUrl" :input-props="{'aria-label':'MCP URL'}" placeholder="https://connector.example.com/mcp"/>
-            <div v-else class="url-field">
-              <SingleChoice v-if="(liveEntry?.discoveredUrls?.length || 0)>1" v-model:value="form.httpsUrl" label="MCP URL" :disabled="working" :options="(liveEntry?.discoveredUrls || []).map(value=>({value,label:value}))"/>
-              <CopyField v-else-if="urlReady" :value="form.httpsUrl" label="MCP URL"/>
-              <NButton v-else :disabled="!providerReady || working" :loading="working || liveEntry?.state==='starting'" @click="obtainUrl">{{t('obtainMcpUrl')}}</NButton>
-              <NAlert :show-icon="false" v-if="liveEntry?.routeNotice" type="info">{{liveEntry.routeNotice}}</NAlert>
-              <CopyField v-if="draft && form.cloudflareMode==='named' && !urlReady" :value="`http://127.0.0.1:${draft.config.httpsPort}`" :label="t('httpReverseProxyTarget')"/>
-              <NAlert :show-icon="false" v-if="liveEntry?.error" type="error">{{displayMessage(liveEntry.error)}}</NAlert>
+          <NFormItem v-if="form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named'" label="MCP URL" path="httpsUrl" :rule="httpsUrl(form.httpsProvider!=='custom')" :show-require-mark="form.httpsProvider==='custom'">
+            <div class="url-field">
+              <NInput v-model:value="form.httpsUrl" :input-props="{'aria-label':'MCP URL'}" :placeholder="form.httpsProvider==='custom' ? 'https://connector.example.com/mcp' : t('discoverUrlAfterSaving')"/>
+              <SingleChoice v-if="(entry?.discoveredUrls?.length || 0)>1" v-model:value="form.httpsUrl" label="MCP URL" :options="(entry?.discoveredUrls || []).map(value=>({value,label:value}))"/>
             </div>
           </NFormItem>
         </template>
       </ConnectionFields>
-      <template v-if="form.connectionMode==='https' && urlReady">
-        <NFormItem :label="t('authentication')" path="auth"><SingleChoice v-model:value="auth" :label="t('authentication')" :disabled="working || readingKey" :options="[{label:t('authNone'),value:'none'},{label:'Bearer',value:'bearer'}]"/></NFormItem>
-        <NFormItem v-if="auth==='bearer'" path="token" :show-require-mark="false" :rule="entry?.auth==='bearer' ? undefined : required()" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
-          <template #label><span class="token-heading"><span>Bearer token<NText type="error"> *</NText></span><NButton text type="primary" size="tiny" :aria-label="t('generateNewToken')" :disabled="working || readingKey" @click="generateToken">{{t('generateNewToken')}}</NButton></span></template>
-          <div class="token-field"><NInput :value="token" readonly type="password" show-password-on="click" :input-props="{autocomplete:'off','aria-label':'Bearer token'}" :placeholder="t('existingBearerPreserved')"/><NButton :disabled="!token || working" @click="copyToken(token)">{{tokenCopied ? t('copied') : t('copy')}}</NButton><p class="token-help">{{token ? t('generatedBearerHelp') : t('existingBearerHelp')}}</p></div>
-        </NFormItem>
+      <template v-if="form.connectionMode==='https'">
+        <NFormItem :label="t('authentication')" path="auth"><SingleChoice v-model:value="auth" :label="t('authentication')" :disabled="working" :options="[{label:t('authNone'),value:'none'},{label:'Bearer',value:'bearer'}]"/></NFormItem>
+
       </template>
 
+      <ToolPolicyField v-model:value="toolPolicy" :disabled="working"/>
       <NAlert :show-icon="false" v-if="error" type="error" role="alert">{{displayMessage(error)}}</NAlert>
     </NForm>
     <template v-if="selected" #footer>
-      <NButton v-if="deliveredToken" type="primary" :disabled="working" @click="emit('close')">{{t('close')}}</NButton>
-      <template v-else>
-      <NButton v-if="entry" type="error" secondary :disabled="working || readingKey" @click="remove">{{t('remove')}}</NButton>
+      <NButton v-if="entry" type="error" secondary :disabled="working" @click="remove">{{t('remove')}}</NButton>
       <span class="action-spacer"/>
-      <NButton v-if="entry" :disabled="working || readingKey || !entry.running" @click="stop">{{t('disconnect')}}</NButton>
-      <NButton type="primary" :disabled="readingKey || working || !canSave" :loading="working" @click="save()">{{entry ? t('saveAndReconnect') : t('save')}}</NButton>
-      </template>
+      <NButton :disabled="working" @click="emit('close')">{{t('cancel')}}</NButton>
+      <NButton type="primary" :disabled="working || !canSave" :loading="working" @click="save()">{{t('save')}}</NButton>
     </template>
   </FormDialog>
 </template>
-<style scoped>.url-field{width:100%;display:grid;gap:10px}.token-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}.token-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;width:100%}.token-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px;line-height:1.5}.source-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px 0}.source-choices .n-button{height:116px;white-space:normal}.source-choice{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}.preset-help{margin-bottom:16px}</style>
+<style scoped>.url-field{width:100%;display:grid;gap:10px}.token-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}.source-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px 0}.source-choices .n-button{height:116px;white-space:normal}.source-choice{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}</style>

@@ -26,7 +26,7 @@ On macOS the usual executable is `/Applications/Local Connector.app/Contents/Mac
 | `configure --stdin`, `connect`, `disconnect` | Primary ingress onboarding shortcuts; do not operate on all entries |
 | `verify`, `verify --fresh` | Read all challenges, or explicitly reset all challenges |
 
-Add requires controlSource, transport, auth and config. Name defaults to the preset display name (or unknown source label), with an available numeric suffix, enabled to true, toolPolicy to all. `id` is immutable and contains ASCII letters, digits, hyphen or underscore. ControlSource is a descriptive client label, not an authenticated user identity. HTTPS requires auth none or bearer; OpenAI Tunnel requires auth openai. Bearer requires a unique 32+ printable ASCII secret supplied through stdin. `toolPolicy` is `"all"` or `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait"]}`. Both tool discovery and invocation enforce it. Include connector_verify to use challenge verification. This policy does not isolate tasks or filter native methods within a tool.
+Add requires controlSource, transport, auth and config. Name defaults to the preset display name (or unknown source label), with an available numeric suffix, enabled to true, toolPolicy to all. `id` is immutable and contains ASCII letters, digits, hyphen or underscore. ControlSource is a descriptive client label, not an authenticated user identity. HTTPS requires auth none or bearer; OpenAI Tunnel requires auth openai. Bearer requires a unique 32+ printable ASCII secret supplied through stdin. `toolPolicy` is `"all"` or `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait","control_output"]}`. Both tool discovery and invocation enforce it. Include connector_verify to use challenge verification. This policy does not isolate tasks or filter native methods within a tool.
 
 Configuration keys and limits are discoverable in help. No secret is accepted as a command argument. Pipe JSON from an authorized secure local source, or redirect a protected file. Do not put secrets in shell literals, chat, screenshots or logs. For rotation, arrange a private destination first (for example `umask 077` and stdout redirection to a local file); do not capture stdout into a conversation. Deliver the secret to the supported client credential field using authorized local interaction. Never substitute the desktop management token or provider credential for the ingress bearer token.
 
@@ -42,10 +42,10 @@ ChatGPT uses the official identity system:
 
 Obtain the Tunnel identity and runtime key through the official Platform flow and associate it with the intended workspace. Use the client's supported Tunnel connection UI. Personal sign-in, permissions, CAPTCHA and identity authorization remain user actions; do not bypass them.
 
-Notion-labelled MCP access via a fixed ngrok endpoint:
+Notion-labelled MCP access via an ngrok-assigned endpoint:
 
 ```json
-{"id":"notion","controlSource":"notion","transport":"https","auth":"bearer","bearerToken":"FROM_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"ngrok","httpsUrl":"https://your-reserved-domain.ngrok.app/mcp","ngrokAuthtoken":"FROM_SECURE_LOCAL_SOURCE"}}
+{"id":"notion","controlSource":"notion","transport":"https","auth":"bearer","bearerToken":"FROM_SECURE_LOCAL_SOURCE_32_PLUS_CHARS","config":{"httpsProvider":"ngrok","ngrokAuthtoken":"FROM_SECURE_LOCAL_SOURCE"}}
 ```
 
 Cursor MCP access via Cloudflare Fixed:

@@ -8,6 +8,7 @@ use tokio::process::Child;
 
 pub struct Tunnel {
     child: Child,
+    error_readers: Vec<tokio::task::JoinHandle<Option<String>>>,
     dir: PathBuf,
     health: String,
     provider: String,
@@ -21,6 +22,9 @@ pub struct Tunnel {
 impl Drop for Tunnel {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+        for reader in &self.error_readers {
+            reader.abort();
+        }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -30,6 +34,23 @@ impl Tunnel {
     }
     pub async fn ready(&mut self) -> Result<bool> {
         if self.child.try_wait().map_err(|e| e.to_string())?.is_some() {
+            let mut code = None;
+            for mut reader in self.error_readers.drain(..) {
+                match tokio::time::timeout(Duration::from_secs(2), &mut reader).await {
+                    Ok(Ok(Some(value))) => code = Some(value),
+                    Err(_) => reader.abort(),
+                    _ => {}
+                }
+            }
+            if let Some(code) = code {
+                if code == "ERR_NGROK_334" {
+                    return Err("ngrok 固定域名已被其他连接占用，请关闭占用该域名的连接，或使用其他域名（ERR_NGROK_334）".into());
+                }
+                return Err(format!(
+                    "ngrok 隧道启动失败（{code}），请查看 https://ngrok.com/docs/errors/{}",
+                    code.to_lowercase()
+                ));
+            }
             return Err(format!(
                 "{} 隧道进程已退出，请检查凭据、网络、账号并发会话和端点额度后重试",
                 self.provider
@@ -254,29 +275,46 @@ async fn spawn(
         health = format!("http://{admin}/ready");
     } else {
         let mut agent = json!({"authtoken":settings["ngrokAuthtoken"],"web_addr":admin,
-            "console_ui":false,"log_format":"json","log":"stdout","update_check":false,"remote_management":false});
+            "console_ui":false,"inspect_db_size":-1,"log_format":"json","log":"stdout","update_check":false,"remote_management":false});
         if let Some(url) = proxy.tunnel_proxy_url() {
             agent["proxy_url"] = json!(url);
         }
         save(&config, &json!({"version":"3","agent":agent}))?;
-        cmd.args(["http", upstream, "--config"])
-            .arg(&config)
-            .arg("--inspect=false");
-        if let Ok(url) = reqwest::Url::parse(string(settings, "httpsUrl")) {
-            cmd.arg("--url").arg(url.origin().ascii_serialization());
+        // Request inspection is disabled through the agent configuration above.
+        cmd.args(["http", upstream, "--config"]).arg(&config);
+        if settings["ngrokMode"] == "named" {
+            let endpoint = ngrok_endpoint(string(settings, "ngrokEndpoint"))?;
+            cmd.args(["--url", &endpoint]);
         }
+        // Temporary mode never reuses a discovered URL as a requested hostname.
         health = format!("http://{admin}/api/endpoints");
     }
-    // Agent logs can include credentials and private requests. Read only the loopback status API.
+    // Drain ngrok diagnostics, retaining only its public error code, never raw logs.
     cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(if provider == "ngrok" {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stderr(if provider == "ngrok" {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     drop(reservation);
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("无法启动 {provider}: {e}"))?;
+    let mut error_readers = Vec::new();
+    if let Some(stdout) = child.stdout.take() {
+        error_readers.push(tokio::spawn(ngrok_error_code(stdout)));
+    }
+    if let Some(stderr) = child.stderr.take() {
+        error_readers.push(tokio::spawn(ngrok_error_code(stderr)));
+    }
     let mut tunnel = Tunnel {
         child,
+        error_readers,
         dir: dir.into(),
         health,
         provider: provider.into(),
@@ -440,4 +478,64 @@ async fn install(provider: &str, proxy: &crate::proxy::NetworkProxy) -> Result<P
     .await;
     let _ = std::fs::remove_dir_all(staging);
     result
+}
+
+// Accept a user-owned hostname or HTTPS origin, never an MCP path or credentials.
+pub(crate) fn ngrok_endpoint(endpoint: &str) -> Result<String> {
+    let endpoint = endpoint.trim();
+    if endpoint.is_empty() {
+        return Err("请填写 ngrok 固定域名".into());
+    }
+    let address = if endpoint.contains("://") {
+        endpoint.to_owned()
+    } else {
+        format!("https://{endpoint}")
+    };
+    let url = reqwest::Url::parse(&address)
+        .map_err(|_| "ngrok 固定域名无效，请填写域名或 HTTPS 地址（不含路径）")?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || endpoint.contains('*')
+        || endpoint.chars().any(char::is_whitespace)
+    {
+        return Err("ngrok 固定域名无效，请填写域名或 HTTPS 地址（不含路径）".into());
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+async fn ngrok_error_code(mut stream: impl tokio::io::AsyncRead + Unpin) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let mut buffer = [0u8; 4096];
+    let mut tail = Vec::new();
+    let mut code = None;
+    while let Ok(count) = stream.read(&mut buffer).await {
+        if count == 0 {
+            break;
+        }
+        tail.extend_from_slice(&buffer[..count]);
+        let prefix = b"ERR_NGROK_";
+        for (index, window) in tail.windows(prefix.len()).enumerate() {
+            if window == prefix {
+                let digits: Vec<u8> = tail[index + prefix.len()..]
+                    .iter()
+                    .copied()
+                    .take_while(u8::is_ascii_digit)
+                    .take(12)
+                    .collect();
+                if !digits.is_empty() {
+                    code = Some(format!("ERR_NGROK_{}", String::from_utf8_lossy(&digits)));
+                }
+            }
+        }
+        if tail.len() > 64 {
+            tail.drain(..tail.len() - 64);
+        }
+    }
+    code
 }

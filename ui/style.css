@@ -86,7 +86,5 @@ html,body,#app{height:100%;overflow:hidden}.settings-block .card-head{align-item
 .connection-action.is-on .connection-switch-track{background:light-dark(#b8d2ae,#638457)}
 .connection-action.is-on .connection-knob{transform:translateX(30px)}
 .connection-action-label{font-size:15px;font-weight:650;letter-spacing:.3px;white-space:nowrap}
-.connection-action-light{width:7px;height:7px;border-radius:50%;background:light-dark(#a5b1a2,#7f8e7c);margin-left:2px}
-.connection-action.is-on .connection-action-light{background:#6ca455;box-shadow:0 0 0 4px #80ac6020,0 0 10px #94bd6280}
 .connection-action.is-busy svg{animation:spin 1.2s linear infinite}
 @media(max-width:450px){.connection-action{height:60px;gap:11px;padding-right:17px}}

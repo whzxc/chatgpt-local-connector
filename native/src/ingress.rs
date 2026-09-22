@@ -616,9 +616,10 @@ impl Ingress {
             }
             ("GET", "core") => Ok(self.status().await?["core"].clone()),
             ("GET", "config/credentials") => {
+                let bearer = self.meta.lock().await["bearerToken"].clone();
                 let settings = self.settings.lock().await;
                 Ok(
-                    json!({"apiKey":settings["apiKey"],"ngrokAuthtoken":settings["ngrokAuthtoken"],"cloudflareToken":settings["cloudflareToken"]}),
+                    json!({"bearerToken":bearer,"apiKey":settings["apiKey"],"ngrokAuthtoken":settings["ngrokAuthtoken"],"cloudflareToken":settings["cloudflareToken"]}),
                 )
             }
             ("GET", "service") => Ok(
@@ -799,7 +800,8 @@ pub(crate) fn configured(s: &Value) -> bool {
             "cloudflare" => {
                 s["cloudflareMode"] == "quick" || !string(s, "cloudflareToken").is_empty()
             }
-            "ngrok" => !string(s, "ngrokAuthtoken").is_empty(),
+            "ngrok" => !string(s, "ngrokAuthtoken").is_empty()
+                && (s["ngrokMode"] == "quick" || !string(s, "ngrokEndpoint").is_empty()),
             _ => !string(s, "httpsUrl").is_empty(),
         }
     } else {
@@ -831,7 +833,7 @@ pub(crate) fn validate_config(s: &Value) -> Result<()> {
         s["proxyMode"].as_str().ok_or("代理模式无效")?,
         s["proxyUrl"].as_str().ok_or("代理地址无效")?,
     )?;
-    if o.len() != 15 || !s["autoStart"].is_boolean() {
+    if o.len() != 17 || !s["autoStart"].is_boolean() {
         return Err("配置字段错误".into());
     }
     for (k, max) in [
@@ -840,6 +842,8 @@ pub(crate) fn validate_config(s: &Value) -> Result<()> {
         ("cloudflareMode", 16),
         ("cloudflareToken", 4096),
         ("ngrokAuthtoken", 4096),
+        ("ngrokMode", 16),
+        ("ngrokEndpoint", 2048),
         ("httpsUrl", 2048),
         ("httpsHost", 128),
         ("tunnelId", 160),
@@ -869,6 +873,12 @@ pub(crate) fn validate_config(s: &Value) -> Result<()> {
     }
     if string(s, "ngrokAuthtoken").chars().any(char::is_whitespace) {
         return Err("ngrok Authtoken 不能包含空白字符".into());
+    }
+    if !["quick", "named"].contains(&string(s, "ngrokMode")) {
+        return Err("ngrok 模式无效".into());
+    }
+    if s["httpsProvider"] == "ngrok" && s["ngrokMode"] == "named" && !string(s, "ngrokEndpoint").is_empty() {
+        crate::https_tunnel::ngrok_endpoint(string(s, "ngrokEndpoint"))?;
     }
     string(s, "httpsHost")
         .parse::<std::net::IpAddr>()

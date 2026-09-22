@@ -16,7 +16,7 @@ pub struct Service {
 }
 const SECRETS: &[&str] = &["apiKey", "cloudflareToken", "ngrokAuthtoken"];
 pub(crate) fn defaults() -> Value {
-    json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false,"cloudflareMode":"quick","cloudflareToken":"","httpsProvider":"cloudflare","ngrokAuthtoken":"","proxyMode":"system","proxyUrl":"","connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787})
+    json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false,"cloudflareMode":"quick","cloudflareToken":"","httpsProvider":"cloudflare","ngrokAuthtoken":"","ngrokMode":"quick","ngrokEndpoint":"","proxyMode":"system","proxyUrl":"","connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787})
 }
 // Secrets use the existing private-directory/atomic-file storage, separately from configuration.
 pub(crate) fn store_entry(entry: &Value) -> Result<()> {
@@ -48,7 +48,7 @@ fn read_entry(id: &str) -> Result<Value> {
     let secret = load(&dir.join("secrets.json"))?;
     entry["bearerToken"] = secret["bearerToken"].clone();
     for key in SECRETS {
-        entry["config"][*key] = secret[*key].clone();
+        entry["config"][*key] = secret.get(*key).cloned().unwrap_or_else(|| json!(""));
     }
     Ok(entry)
 }
@@ -64,6 +64,9 @@ fn valid_id(id: &str) -> Result<()> {
     Ok(())
 }
 fn normalize(mut entry: Value) -> Result<Value> {
+    if let Some(config) = entry["config"].as_object_mut() {
+        config.remove("ngrokDomain");
+    }
     if entry
         .as_object()
         .ok_or("expected ingress object")?
@@ -106,6 +109,9 @@ fn normalize(mut entry: Value) -> Result<Value> {
         }
     } else if !["none", "bearer"].contains(&string(&entry, "auth")) {
         return Err("HTTPS auth must be none or bearer".into());
+    }
+    if entry.get("toolPolicy").is_none() {
+        entry["toolPolicy"] = json!("all");
     }
     if entry["toolPolicy"] != "all" {
         let allowed = entry["toolPolicy"]["allowlist"]
@@ -402,6 +408,28 @@ impl Service {
         if self.closing.load(Ordering::SeqCst) {
             return Err("core shutting down".into());
         }
+        if route == "tool-catalog" && method == "GET" {
+            let catalog = catalog();
+            let exposure = &catalog["toolExposure"];
+            let tools: Vec<_> = catalog["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|tool| {
+                    let name = string(tool, "name");
+                    let mut item = exposure["tools"][name].clone();
+                    if !item.is_object() {
+                        item = json!({"group":"native","presets":[],"requires":["control_output"]});
+                    }
+                    item["name"] = json!(name);
+                    item["description"] = tool["description"].clone();
+                    item
+                })
+                .collect();
+            return Ok(
+                json!({"groups":exposure["groups"],"required":exposure["required"],"tools":tools}),
+            );
+        }
         if route == "ingress-drafts" && method == "POST" {
             let _guard = self.configuration.lock().await;
             if self.closing.load(Ordering::SeqCst) {
@@ -504,7 +532,7 @@ impl Service {
                 if !["none", "bearer"].contains(&string(&entry, "auth")) {
                     return Err("invalid authentication".into());
                 }
-                entry["toolPolicy"] = json!("all");
+                entry["toolPolicy"] = body.get("toolPolicy").cloned().unwrap_or(json!("all"));
                 entry["config"]["httpsUrl"] = body["url"].clone();
                 let entry = normalize(entry)?;
                 // Validate the live URL before publishing or enabling any tools.
@@ -622,7 +650,7 @@ impl Service {
             let i = self.ingress(id).await?;
             if method == "POST" && action == "credentials" {
                 let credentials = i.request("config/credentials", "GET", json!({})).await?;
-                return Ok(json!({"apiKey": credentials["apiKey"]}));
+                return Ok(json!({"apiKey": credentials["apiKey"], "bearerToken": credentials["bearerToken"]}));
             }
             if method == "GET" && action.is_empty() {
                 return i.summary().await;
@@ -747,7 +775,8 @@ impl Service {
                 ("POST", "agents/open") => {
                     self.agents.open_interactive(string(&body, "agent")).await
                 }
-                ("GET", "agents") => Ok(self.agents.inventory().await),
+                ("GET", "agents") => Ok(self.agents.ui_inventory(false).await),
+                ("POST", "agents") => Ok(self.agents.ui_inventory(true).await),
                 ("PUT", "agents") => self.agents.set_enabled(&body).await,
                 ("GET", "codex/login") => {
                     let binary = crate::desktop::installation()

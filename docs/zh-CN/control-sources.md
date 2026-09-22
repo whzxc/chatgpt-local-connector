@@ -35,3 +35,13 @@ CLC 仅接受 `openai` / `none` / `bearer`。不实现任意静态密钥头、qu
 - “Copilot Studio 缺什么？” → microsoft-copilot，先说明 API-key Header 兼容条件；需要 OAuth 时当前缺服务端授权能力。
 
 省略 name 时自动使用 Notion、Notion 2、Notion 3 等未占用名称；自定义 name 原样保留。保存或 ready 不等于接入完成：按 [Codex 配置](codex-setup.md) 从实际客户端完成 connector_verify，再按需要做无害任务验收。
+
+## 工具列表
+
+连接编辑弹窗末尾提供 **工具列表：全部 / 常用 / 只读 / 自定义**。新增连接默认全部，保存为 `"all"`，随注册表包含新工具；其它模式保存为明确的 `{ "allowlist": [...] }` 快照。一级表单显示当前工具数量，点击“查看全部”打开二级弹窗。预设在其中展示已选工具；自定义支持组选择与逐项选择，“完成”将选择带回连接表单，“取消”放弃本次选择。选择操作时会保留必需的回执、状态、等待和结果读取依赖，不自动开启可选写操作。编辑器生成的受限策略始终保留 `connector_verify`：它只写连接验证记录，是只读模式的连接维护例外。
+
+常用包含项目事实查询和完整的 Agent/Codex 创建、续接、中断、交互、进度、回执及结果链路，省略通用主机写入、命令和任意原生 RPC。只读包含项目/代码读取、固定只读 Git、Agent/Codex 能力、任务列表、状态、历史、事件、待处理交互、等待、Schema 与输出读取；排除两个 `*_request`（approve/bypass/reject 会改变任务）、create/send/interrupt/respond，以及混合入口 `fs`、`command`、`process`、`mcp`、`codex_call`、`codex_thread`。`codex_query` 透传的原生参数包括插件/应用 `forceRefetch` 和技能 `forceReload`，`codex_account` 的账户读取允许刷新凭据，均保守排除。
+
+这是同时作用于 `tools/list` 和 `tools/call` 的顶层 MCP 工具暴露策略，不细分工具内部 action/method，不隔离任务所有权，也不代表设备的 OS 沙箱只读；任务执行仍使用其自身权限。经过本机认证的管理目录始终返回完整注册表。
+
+既有 allowlist 仅在完整集合与预设一致时回显对应预设，否则显示自定义。打开弹窗或仅保存其它字段不会改变它；明确修改工具选择才会归一化依赖、去重并按注册表排序。新工具不自动加入已保存的 allowlist，重新选择预设可采用当前定义。保存只重连当前连接；策略修改保留验证身份，公网 URL 或认证改变仍遵循原身份重置规则。客户端可能缓存工具列表，保存后需在客户端刷新 MCP 工具或重新连接；CLC 不保证客户端自动刷新。

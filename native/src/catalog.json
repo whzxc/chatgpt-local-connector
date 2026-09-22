@@ -2698,5 +2698,471 @@
         ]
       }
     }
+  },
+  "toolExposure": {
+    "groups": [
+      {
+        "id": "project",
+        "label": {
+          "zh-CN": "项目与代码",
+          "en": "Projects & code"
+        }
+      },
+      {
+        "id": "agent",
+        "label": {
+          "zh-CN": "Agent 任务",
+          "en": "Agent tasks"
+        }
+      },
+      {
+        "id": "codex",
+        "label": {
+          "zh-CN": "Codex 任务",
+          "en": "Codex tasks"
+        }
+      },
+      {
+        "id": "host",
+        "label": {
+          "zh-CN": "主机能力",
+          "en": "Host capabilities"
+        }
+      },
+      {
+        "id": "native",
+        "label": {
+          "zh-CN": "原生高级能力",
+          "en": "Advanced native capabilities"
+        }
+      }
+    ],
+    "required": [
+      "connector_verify"
+    ],
+    "tools": {
+      "connector_verify": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": []
+      },
+      "projects": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "overview": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "tree": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "search": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "read": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "git": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "fs": {
+        "group": "host",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request",
+          "codex_events"
+        ]
+      },
+      "command": {
+        "group": "host",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request",
+          "codex_events"
+        ]
+      },
+      "process": {
+        "group": "host",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request",
+          "codex_events"
+        ]
+      },
+      "mcp": {
+        "group": "native",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request",
+          "codex_events"
+        ]
+      },
+      "codex_thread": {
+        "group": "native",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request",
+          "codex_events"
+        ]
+      },
+      "codex_account": {
+        "group": "native",
+        "presets": [],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "file_search": {
+        "group": "project",
+        "presets": [
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_tasks": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_read": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_wait": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_create": {
+        "group": "codex",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "codex_read",
+          "codex_wait",
+          "codex_request"
+        ]
+      },
+      "codex_send": {
+        "group": "codex",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "codex_read",
+          "codex_wait",
+          "codex_request"
+        ]
+      },
+      "codex_interrupt": {
+        "group": "codex",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "codex_read",
+          "codex_wait",
+          "codex_request"
+        ]
+      },
+      "codex_capabilities": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_request": {
+        "group": "codex",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "codex_read",
+          "codex_wait"
+        ]
+      },
+      "codex_items": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_schema": {
+        "group": "native",
+        "presets": [
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_query": {
+        "group": "native",
+        "presets": [],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_call": {
+        "group": "native",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request",
+          "codex_events"
+        ]
+      },
+      "codex_pending": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "codex_respond": {
+        "group": "codex",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "codex_read",
+          "codex_wait",
+          "codex_request",
+          "codex_pending"
+        ]
+      },
+      "codex_events": {
+        "group": "codex",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "control_output": {
+        "group": "project",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": []
+      },
+      "agents": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_capabilities": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_tasks": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_create": {
+        "group": "agent",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "agent_read",
+          "agent_wait",
+          "agent_request"
+        ]
+      },
+      "agent_read": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_wait": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_send": {
+        "group": "agent",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "agent_read",
+          "agent_wait",
+          "agent_request"
+        ]
+      },
+      "agent_interrupt": {
+        "group": "agent",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "agent_read",
+          "agent_wait",
+          "agent_request"
+        ]
+      },
+      "agent_events": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_pending": {
+        "group": "agent",
+        "presets": [
+          "common",
+          "readOnly"
+        ],
+        "requires": [
+          "control_output"
+        ]
+      },
+      "agent_respond": {
+        "group": "agent",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "agent_read",
+          "agent_wait",
+          "agent_request",
+          "agent_pending"
+        ]
+      },
+      "agent_request": {
+        "group": "agent",
+        "presets": [
+          "common"
+        ],
+        "requires": [
+          "control_output",
+          "agent_read",
+          "agent_wait"
+        ]
+      }
+    }
   }
 }

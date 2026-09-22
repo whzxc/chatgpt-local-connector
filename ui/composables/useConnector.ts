@@ -1,3 +1,4 @@
+import type { ToolPolicy } from '../toolPolicy';
 import { t } from '../i18n';
 import type { CoreSnapshot } from '../types';
 import { onUnmounted } from 'vue';
@@ -18,6 +19,8 @@ export interface Config {
   connectionMode: "tunnel" | "https";
   httpsProvider: "cloudflare" | "ngrok" | "custom";
   hasNgrokAuthtoken: boolean;
+  ngrokMode: "quick" | "named";
+  ngrokEndpoint: string;
   cloudflareMode: "quick" | "named";
   hasCloudflareToken: boolean;
   httpsUrl: string;
@@ -31,6 +34,7 @@ export interface Config {
   hasApiKey: boolean;
 }
 export interface Ingress {
+  toolPolicy?: ToolPolicy;
   discoveredUrls?: string[]; routeNotice?: string;
   id: string; name: string; controlSource: string; transport: string;
   state: string; running: boolean; error: string; enabled: boolean; auth: string;
