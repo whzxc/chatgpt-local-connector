@@ -58,7 +58,7 @@ Set that Cloudflare tunnel's service route to `http://127.0.0.1:8788`. Each Fixe
 
 For Quick Tunnel use cloudflareMode quick, without a fixed URL or provider token. Use it for temporary trials. Prefer fixed addresses plus authentication for long-lived clients supporting static bearer. For Custom Domain use httpsProvider custom, httpsUrl, httpsHost and httpsPort, and configure the TLS reverse proxy separately. The listener is HTTP behind TLS termination; never expose the desktop management listener.
 
-See the [control source matrix](control-sources.md) before choosing auth. Slackbot does not accept this static Bearer setup; only no-auth intersects with CLC today. Claude organization request-header beta and Copilot Studio API-key Header are conditional paths, not OAuth support. Never silently downgrade authentication. `ingress presets` exposes these boundaries offline; do not mistake a local probe for official client acceptance.
+See the [control source matrix](control-sources.md) before choosing auth. Slackbot does not accept this static Bearer setup; use OAuth with dynamic or locally preregistered clients and local owner consent. Claude organization request-header beta and Copilot Studio API-key Header remain conditional Bearer paths; OAuth is a separate option. Never silently downgrade authentication. `ingress presets` exposes these boundaries offline; do not mistake a local probe for official client acceptance.
 
 ## Complete an authorized setup
 
@@ -72,7 +72,7 @@ In a supplied authenticated browser, use visible supported controls to configure
 
 ## Boundaries
 
-No-auth allows any reachable caller to invoke allowed tools. Bearer authenticates possession, not a person. Namespace is globally shared; no task/user RBAC exists. OAuth, DCR, Slack Identity and service-specific APIs are outside this implementation. Local listener request processing permits 300-second waits; external proxies and provider plans may impose shorter limits, which require their own verification/configuration. Shorter waits can be repeated with the same task ID; timeout never stops a task.
+No-auth allows any reachable caller to invoke allowed tools. Bearer authenticates possession, not a person. Namespace is globally shared; no task/user RBAC exists. OAuth supports PKCE, DCR or preregistration, local owner consent, refresh and revocation; see [OAuth authentication](oauth.md). Slack Identity and service-specific APIs are outside this implementation. Local listener request processing permits 300-second waits; external proxies and provider plans may impose shorter limits, which require their own verification/configuration. Shorter waits can be repeated with the same task ID; timeout never stops a task.
 
 An ingress failure is local to that entry. Read its error and redacted logs before changing configuration. App shutdown closes ingress resources, then AgentHost and Control; ordinary disconnect does not. The home page shows a running count and one line per entry. Credentials, policies and provider details primarily belong in the CLI.
 

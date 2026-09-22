@@ -21,7 +21,7 @@ Agents 面板用卡片展示图标、名称和已安装版本，未安装项显�
 | Agent / id | 启动命令 | 类型 | 认证归属与主要限制 | 实机覆盖 |
 | --- | --- | --- | --- | --- |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/acp-mode.md) / gemini | `gemini --acp` | native | Gemini CLI/provider；旧 `--experimental-acp` 已弃用；个人 Code Assist 登录不再服务 Gemini CLI | 0.53.1 启动与认证拒绝路径；无成功 prompt |
-| [Claude Code](https://github.com/agentclientprotocol/claude-agent-acp) / claude | `claude-agent-acp` | adapter | ACP 项目维护的 `@agentclientprotocol/claude-agent-acp` 使用官方 Claude Agent SDK；独立 `claude` 不提供原生 ACP | adapter 0.79.0 握手、建会话与缺少认证失败路径；无成功 prompt |
+| [Claude Code](https://github.com/agentclientprotocol/claude-agent-acp) / claude | `claude` + Connector 管理的 ACP 适配器 | adapter | ACP 项目维护的 `@agentclientprotocol/claude-agent-acp` 使用官方 Claude Agent SDK；独立 `claude` 不提供原生 ACP | adapter 0.79.0 握手、建会话与缺少认证失败路径；无成功 prompt |
 | [Cursor Agent](https://cursor.com/docs/cli/acp) / cursor | `agent acp`，同参数别名 `cursor-agent` | native | Cursor 登录/API token；同名 agent 必须通过 Cursor 身份检查；旧版没有 acp 时不可用 | 旧版本和同名非 Cursor 程序的发现拒绝；未做 prompt |
 | [Grok Build / Grok CLI](https://docs.x.ai/build/cli/reference) / grok | `grok agent stdio` | native | 官方 Grok 登录/XAI provider；不适用于同名社区 CLI | 1.0.25 创建、wait、最终输出、send、跨进程 load、cancel；无害命令未触发权限请求 |
 | [GitHub Copilot CLI](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server) / copilot | `copilot --acp --stdio` | native | Copilot 登录或 BYOK；ACP 仍是 public preview；不是 Copilot language server | 静态与未安装状态 |
@@ -44,7 +44,11 @@ Agents 面板用卡片展示图标、名称和已安装版本，未安装项显�
 
 Gemini/Qwen/Cline 的 npm 安装需要各自版本要求的 Node；Kimi/Hermes 使用自身 Python 环境；Grok、Cursor、Kiro、Devin 和 Junie 使用官方安装提供的运行环境。Copilot 可以使用独立二进制或 npm 安装。CLC 不把发现 npx/node/bun 当成发现 Agent。
 
-Claude adapter 的 npm 包要求 Node >=22。安装后启动 `claude-agent-acp`；用户也可用 Custom manifest 显式启动 `npx -y @agentclientprotocol/claude-agent-acp`，但这会按 npm 行为获取依赖，并非内置发现的隐式回退。adapter 使用 SDK 自带的匹配平台 CLI，或官方支持的 `CLAUDE_CODE_EXECUTABLE` 指定已有兼容 CLI；CLC 不重写 SDK，不将现有 Claude 安装误报为 adapter 已安装。
+Claude Code 使用 Connector 管理的 ACP 适配器。用户安装并登录 Claude Code 后，在 Agents 中启用 Claude；首次启用会后台下载固定版本的适配器及私有 Bun 运行时，使用 SHA-512 校验，并在启动探测通过后原子激活。无需全局 Node、npm 或 `claude-agent-acp`，也不重复下载 SDK 的 Claude 原生程序。适配器通过 `CLAUDE_CODE_EXECUTABLE` 复用已发现的 Claude，认证和 provider 配置仍归 Claude 管理。
+
+组件保存在 CLC 数据目录的 `dependencies/claude-acp/<version>`，按 Connector 内置清单随版本更新；支持 macOS / Windows 的 ARM64、x64。下载使用应用的网络代理配置，不执行 npm 安装脚本。普通发现和刷新不会下载；启用后显示准备状态，失败后重新启用可重试，未完成的安装不会被任务使用。关闭开关会取消当前准备，不卸载已完成组件；退出应用也取消未完成准备。升级后组件清单变化时需要再次启用以准备新版本，既有版本保留供正在运行的会话使用。
+
+Claude 的 `installed`、`path`、`version` 描述本机 Claude Code；`available` 还要求适配器就绪，`adapter.state` 区分 missing、preparing、ready、failed。适配器就绪只表示可以尝试建立会话，不保证 Claude 已登录、额度或模型服务可用。
 
 ### Session 能力边界
 

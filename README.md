@@ -101,3 +101,5 @@ Local data defaults to `~/.local/state/chatgpt-local-connector` on macOS or `%LO
 Licensed under [MIT](LICENSE). Source and desktop installers are distributed through GitHub. No public npm package is published.
 
 Curated control sources are ChatGPT, Claude, Microsoft Copilot, Notion, Slack, Cursor, GitHub Copilot and Raycast, plus Custom. Repeated sources are allowed and default names receive an available numeric suffix. See the [support matrix](docs/control-sources.md) for authentication limits.
+
+OAuth 2.1 for HTTPS connections includes local consent, PKCE, dynamic client registration, refresh and revocation. See [OAuth authentication](docs/oauth.md).

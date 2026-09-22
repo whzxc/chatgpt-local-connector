@@ -19,6 +19,7 @@ impl AgentDriver {
         match self {
             Self::CodexNative => crate::desktop::installation().map(|i| i.binary),
             Self::Pi => discover("pi"),
+            Self::Acp(m) if m.id == "claude" => discover("claude"),
             Self::Acp(m) => m.candidates().into_iter().next(),
         }
     }
@@ -31,6 +32,9 @@ impl AgentDriver {
     }
     /// Verify launch conditions without starting ACP, logging in, or fetching packages.
     pub async fn discover(&self) -> (Option<PathBuf>, Option<String>, Option<String>) {
+        if matches!(self, Self::Acp(m) if m.id == "claude") {
+            return super::adapter::discover().await;
+        }
         let candidates = match self {
             Self::Acp(m) => m.candidates(),
             _ => self.binary().into_iter().collect(),
@@ -117,6 +121,11 @@ impl AgentDriver {
             }
             Self::Acp(m) => m.args.clone(),
             Self::CodexNative => return Err("USE_NATIVE_CONTROL".into()),
+        };
+        let (binary, args) = if matches!(self, Self::Acp(m) if m.id == "claude") {
+            super::adapter::launch()?
+        } else {
+            (binary, args)
         };
         let p = Process::start(&binary, &args, &cwd, matches!(self, Self::Pi), task, wake).await?;
         let init=async {

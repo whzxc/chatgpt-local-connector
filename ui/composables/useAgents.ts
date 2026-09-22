@@ -16,7 +16,7 @@ import clineIcon from '../assets/brand-reserve/agents/cline/mono.svg?raw';
 import junieIcon from '../assets/brand-reserve/agents/junie/color.svg?raw';
 import hermesIcon from '../assets/brand-reserve/agents/hermes/mono.svg?raw';
 
-export type Agent = { agent: string; installed?: boolean; available?: boolean; enabled?: boolean; status?: string; version?: string | null; displayName?: string };
+export type Agent = { adapter?: { state: string; error?: string | null }; agent: string; installed?: boolean; available?: boolean; enabled?: boolean; status?: string; version?: string | null; displayName?: string };
 const cacheKey = 'clc.agents';
 function readCache(): Agent[] | undefined {
   try {
@@ -77,6 +77,7 @@ function moveAgent(from: string, to: string) {
 }
 let pendingRefresh: Promise<void> | undefined;
 let revision = 0;
+let preparationPoll: ReturnType<typeof setTimeout> | undefined;
 function refresh(manual = false): Promise<void> {
   if (saving.value) return Promise.resolve();
   if (pendingRefresh) return manual ? pendingRefresh.then(() => refresh(true)) : pendingRefresh;
@@ -88,6 +89,8 @@ function refresh(manual = false): Promise<void> {
       if (currentRevision !== revision) return;
       agents.value = result.agents; loaded.value = true; error.value = '';
       persist();
+      if (preparationPoll) clearTimeout(preparationPoll);
+      if (agents.value.some(a => a.adapter?.state === 'preparing')) preparationPoll = setTimeout(() => void refresh(), 1500);
     } catch (e) { if (currentRevision === revision) error.value = e instanceof Error ? e.message : String(e); }
     finally { loading.value = false; pendingRefresh = undefined; }
   })();
@@ -97,12 +100,14 @@ async function toggle(agent: Agent, enabled: boolean) {
   revision++;
   saving.value = agent.agent;
   try {
-    const result = await api<{ enabled: boolean }>('agents', 'PUT', { agent: agent.agent, enabled });
+    const result = await api<{ enabled: boolean; preparing?: boolean }>('agents', 'PUT', { agent: agent.agent, enabled });
     agent.enabled = result.enabled;
+    if (result.preparing) agent.adapter = { state: 'preparing' };
     persist();
     error.value = '';
-  } catch (e) { error.value = e instanceof Error ? e.message : String(e); }
+  } catch (e) { error.value = e instanceof Error ? e.message : String(e); return; }
   finally { saving.value = ''; }
+  await refresh(true);
 }
 
 export function useAgents() { return { agents, orderedAgents, moveAgent, loaded, loading, saving, error, refresh, toggle }; }

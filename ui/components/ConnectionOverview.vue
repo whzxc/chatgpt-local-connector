@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NTooltip } from 'naive-ui';
 import { useElementSize, useMediaQuery } from '@vueuse/core';
-import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { Ellipsis, Plus, Power, LoaderCircle, CircleCheck, CircleDashed, CircleAlert, CirclePause, Bot } from '@lucide/vue';
 import { t } from '../i18n';
 import { openUrl } from '../platform';
@@ -39,7 +39,66 @@ function openSource(source?: Ingress) {
 const agents = computed(() => inventory.orderedAgents.value.slice(0,4));
 const sources = computed(() => [...(status.value?.ingresses || [])].sort((a,b) => Number(b.controlSource==='chatgpt')-Number(a.controlSource==='chatgpt') || a.name.localeCompare(b.name)));
 const running = computed(() => sources.value.some(i => i.running));
+const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const progressing = computed(() => !!busy.value || sources.value.some(i => ['starting','stopping'].includes(i.state)));
+const switchOn = ref<boolean>();
+const sparks = ref<{ id: number; style: Record<string, string> }[]>([]);
+let sparkPending = false, sparkId = 0, impactFrame = 0;
+watch([() => status.value ? running.value : undefined, progressing], ([on, active]) => {
+  if (active) {
+    sparkPending = false;
+    sparks.value = [];
+    return;
+  }
+  if (on === undefined) return;
+  sparkPending = on && switchOn.value === false;
+  switchOn.value = on;
+  if (!on) sparks.value = [];
+}, { immediate: true });
+function watchSwitchImpact(event: TransitionEvent) {
+  if (event.target !== event.currentTarget || event.propertyName !== 'transform') return;
+  cancelAnimationFrame(impactFrame);
+  const knob = event.currentTarget as HTMLElement;
+  const track = knob.parentElement;
+  if (!track || !sparkPending || reducedMotion.value) return;
+  const edge = track.clientWidth - knob.offsetWidth - knob.offsetLeft * 2;
+  const observe = () => {
+    if (!sparkPending || !switchOn.value || progressing.value || !knob.isConnected) return;
+    const position = new DOMMatrixReadOnly(getComputedStyle(knob).transform).m41;
+    // The spring easing reaches the edge before it finishes overshooting and settling.
+    if (position >= edge - .5) burstSparks();
+    else impactFrame = requestAnimationFrame(observe);
+  };
+  impactFrame = requestAnimationFrame(observe);
+}
+function stopImpactWatch(event: TransitionEvent) {
+  if (event.target !== event.currentTarget || event.propertyName !== 'transform') return;
+  cancelAnimationFrame(impactFrame);
+}
+function burstSparks() {
+  if (!sparkPending) return;
+  sparkPending = false;
+  if (!switchOn.value || progressing.value || reducedMotion.value) return;
+  const count = 5 + Math.floor(Math.random() * 3);
+  sparks.value = Array.from({ length: count }, (_, index) => {
+    // Spread origins across the right semicircle, with jitter within each segment.
+    const angle = -Math.PI / 2 + (index + .15 + Math.random() * .7) / count * Math.PI;
+    const distance = 30 + Math.random() * 55;
+    return {
+      id: ++sparkId,
+      style: {
+        '--spark-origin-x': `${50 + Math.cos(angle) * 50}%`,
+        '--spark-origin-y': `${50 + Math.sin(angle) * 50}%`,
+        '--spark-size': `${9 + Math.random() * 8}px`,
+        '--spark-x': `${Math.cos(angle) * distance}px`,
+        '--spark-y': `${Math.sin(angle) * distance}px`,
+        '--spark-turn': `${60 + Math.random() * 180}deg`,
+        '--spark-duration': `${650 + Math.random() * 250}ms`,
+      },
+    };
+  });
+}
+function removeSpark(id: number) { sparks.value = sparks.value.filter(spark => spark.id !== id); }
 const dialog = ref(false), editing = ref<Ingress>(), defaultChatGPT = ref(false);
 const sourceOrigin = ref({x:20,y:20,size:44});
 function closeSource() { dialog.value=false; requestAnimationFrame(()=>document.querySelector<HTMLButtonElement>('.add-source')?.focus()); }
@@ -63,7 +122,7 @@ async function toggle() {
 }
 let timer: ReturnType<typeof setInterval>;
 onMounted(()=>{ void inventory.refresh(); timer=setInterval(()=>void inventory.refresh(),15000); });
-onUnmounted(()=>clearInterval(timer));
+onUnmounted(()=>{ clearInterval(timer); cancelAnimationFrame(impactFrame); });
 const height = computed(()=>Math.max(320,Math.max(Math.max(1,sources.value.length)+1,(agents.value.length+1))*84));
 const y = (index:number,count:number) => height.value/2+(index-(count-1)/2)*84;
 const leftWires = ref<HTMLElement>();
@@ -142,7 +201,7 @@ const marker = (index: number, count: number, right = false) => {
 </script>
 <template>
   <section class="connection-core" :aria-label="t('connectionStatus')">
-    <div class="core-toggle"><button class="connection-action" :class="{'is-on':running,'is-busy':progressing}" :disabled="progressing || loading || !status" :aria-busy="progressing" @click="toggle"><span class="connection-switch-track" aria-hidden="true"><span class="connection-knob"><LoaderCircle v-if="progressing"/><Power v-else/></span></span><span class="connection-action-label">{{ progressing ? t('pleaseWait') : running ? t('disconnect') : t('connect') }}</span></button></div>
+    <div class="core-toggle"><button class="connection-action" :class="{'is-on':switchOn,'is-busy':progressing}" :disabled="progressing || loading || !status" :aria-busy="progressing" :aria-label="progressing ? t('pleaseWait') : running ? t('disconnect') : t('connect')" @click="toggle"><span class="connection-switch-track" aria-hidden="true"><span class="connection-switch-state">{{ switchOn ? 'ON' : 'OFF' }}</span><span class="connection-knob" @transitionrun="watchSwitchImpact" @transitionend="stopImpactWatch" @transitioncancel="stopImpactWatch"><LoaderCircle v-if="progressing"/><Power v-else/></span></span></button><span class="connection-sparks" aria-hidden="true"><span v-for="spark in sparks" :key="spark.id" class="connection-spark" :style="spark.style" @animationend="removeSpark(spark.id)"/></span></div>
     <div class="connection-graph" :style="{height:`${height}px`}">
       <div class="graph-nodes sources">
         <NTooltip v-if="!sources.length" :show="!dialog && !agentsDialog && nodeTip==='default-source'" placement="top"><template #trigger><button class="graph-node" aria-label="ChatGPT" @mouseenter="nodeTip='default-source'" @mouseleave="nodeTip=''" @focus="nodeTip='default-source'" @blur="nodeTip=''" @keydown.esc="nodeTip=''" @click="openSource()"><SourceIcon platform="chatgpt"/></button></template>ChatGPT</NTooltip>
@@ -163,7 +222,7 @@ const marker = (index: number, count: number, right = false) => {
   <IngressDetailsDialog v-if="details" :ingress="details" :auto-connect="connectAfterSave" @close="details=undefined" @edit="editDetails"/>
 </template>
 <style scoped>
-.connection-core{--graph-bg:var(--scene-color,light-dark(#e3eee8,#20352f));background:var(--graph-bg);border:1px solid light-dark(#cfdfd6,#354c43);border-radius:24px;padding:34px 32px 28px;overflow:hidden}.core-toggle{display:flex;align-items:center;flex-direction:column;gap:12px}.connection-graph{width:100%;max-width:1100px;align-self:center;grid-template-rows:minmax(0,1fr);margin-top:30px;display:grid;grid-template-columns:minmax(80px,.75fr) minmax(110px,1.25fr) 190px minmax(80px,1fr) minmax(110px,1fr);align-items:center}.graph-nodes{display:flex;flex-direction:column;justify-content:center;gap:40px;z-index:2}.graph-node{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;border-radius:12px;min-width:0;background:transparent}.graph-node{border:0;box-shadow:none}.graph-node:hover{background:transparent}.graph-node>:first-child{transition:transform 160ms ease}.graph-node:hover>:first-child{transform:scale(1.1)}.graph-node:focus-visible{outline:2px solid #87ad99;outline-offset:0}.sources{align-items:flex-end}.sources .graph-node{margin-right:4px;padding:0;justify-content:center;background:transparent;border:0;box-shadow:none}.sources .graph-node:hover{background:transparent}.sources .source-icon{transition:transform 160ms ease}.graph-node img,.source-icon{width:38px;height:38px;flex-shrink:0;border-radius:12px;display:grid;place-items:center;background:transparent}.graph-node img{object-fit:contain}.source-icon b{font-family:Georgia,serif;font-size:27px}.source-icon svg{width:23px;height:23px}.agent-brand :deep(svg){width:32px;height:32px}.add-source{color:var(--muted);background:transparent}.add-source .source-icon{background:transparent;border:1px dashed currentColor}.graph-brain{display:flex;flex-direction:column;align-items:center;gap:18px;position:relative;z-index:1}.graph-brain:before{content:'';position:absolute;width:260px;height:260px;border:1px solid light-dark(#cedfd470,#ffffff08);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none}.graph-wires{height:100%;min-height:0;position:relative}.graph-wires>svg{position:absolute;inset:0;display:block}.graph-wires svg{width:100%;height:100%;overflow:visible}.graph-wires path{fill:none;stroke:light-dark(#abbfb4,#60796b);stroke-width:1.4;vector-effect:non-scaling-stroke}.graph-wires path.live{stroke:#5c9d80;stroke-width:2}.graph-wires path.failed{stroke:#be826b}.graph-wires path.placeholder{stroke-dasharray:4 5;opacity:.65}.wire-status{padding:0;border:0;box-shadow:none;cursor:pointer;position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;display:grid;place-items:center;color:var(--muted);background:transparent;border-radius:50%}.wire-status svg{width:17px;height:17px}.wire-status.live{color:var(--green)}.wire-status.failed,.graph-error{color:#b66b54}.graph-error{font-size:12px}.agent-side{min-height:0;grid-template-rows:minmax(0,1fr);--agent-icon-size:38px;grid-column:4 / 6;display:grid;height:100%;grid-template-columns:1fr;align-items:center}.agent-side>.right{grid-area:1 / 1;width:calc(75% - (var(--agent-icon-size) + 12px)/2)}.agent-side>.agents{grid-area:1 / 1;margin-left:calc(75% - (var(--agent-icon-size) + 12px)/2)}.agents{align-items:flex-start;gap:46px}.agents .graph-node{width:38px;height:38px;margin-left:12px}@media(max-width:800px){.connection-core{padding:26px 16px}.connection-graph{grid-template-columns:minmax(64px,.75fr) minmax(88px,1.05fr) 124px minmax(60px,.8fr) minmax(92px,1fr)}.graph-brain :deep(.mascot){width:120px;height:120px}.graph-brain:before{width:160px;height:160px}.graph-node img,.source-icon{width:30px;height:30px}.agent-side{--agent-icon-size:30px}.agents{gap:54px}.agents .graph-node{width:30px;height:30px}}
+.connection-core{--graph-bg:var(--scene-color,light-dark(#e3eee8,#20352f));background:var(--graph-bg);border:1px solid light-dark(#cfdfd6,#354c43);border-radius:24px;padding:34px 32px 28px;overflow:hidden}.core-toggle{display:flex;align-items:center;flex-direction:column;gap:12px}.connection-graph{width:100%;max-width:1100px;align-self:center;grid-template-rows:minmax(0,1fr);margin-top:30px;display:grid;grid-template-columns:minmax(80px,.75fr) minmax(110px,1.25fr) 190px minmax(80px,1fr) minmax(110px,1fr);align-items:center}.graph-nodes{display:flex;flex-direction:column;justify-content:center;gap:40px;z-index:2}.graph-node{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;border-radius:12px;min-width:0;background:transparent}.graph-node{border:0;box-shadow:none}.graph-node:hover{background:transparent}.graph-node>:first-child{transition:transform 160ms ease}.graph-node:hover>:first-child{transform:scale(1.1)}.graph-node:focus-visible{outline:2px solid #87ad99;outline-offset:0}.sources{align-items:flex-end}.sources .graph-node{margin-right:4px;padding:0;justify-content:center;background:transparent;border:0;box-shadow:none}.sources .graph-node:hover{background:transparent}.sources .source-icon{transition:transform 160ms ease}.graph-node img,.source-icon{width:38px;height:38px;flex-shrink:0;border-radius:12px;display:grid;place-items:center;background:transparent}.graph-node img{object-fit:contain}.source-icon b{font-family:Georgia,serif;font-size:27px}.source-icon svg{width:23px;height:23px}.agent-brand :deep(svg){width:32px;height:32px}.add-source{color:var(--muted);background:transparent}.add-source .source-icon{background:transparent;border:1px dashed currentColor}.graph-brain{display:flex;flex-direction:column;align-items:center;gap:18px;position:relative;z-index:3}.graph-brain:before{content:'';position:absolute;width:260px;height:260px;border:1px solid light-dark(#cedfd470,#ffffff08);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none}.graph-wires{height:100%;min-height:0;position:relative}.graph-wires>svg{position:absolute;inset:0;display:block}.graph-wires svg{width:100%;height:100%;overflow:visible}.graph-wires path{fill:none;stroke:light-dark(#abbfb4,#60796b);stroke-width:1.4;vector-effect:non-scaling-stroke}.graph-wires path.live{stroke:#5c9d80;stroke-width:2}.graph-wires path.failed{stroke:#be826b}.graph-wires path.placeholder{stroke-dasharray:4 5;opacity:.65}.wire-status{padding:0;border:0;box-shadow:none;cursor:pointer;position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;display:grid;place-items:center;color:var(--muted);background:transparent;border-radius:50%}.wire-status svg{width:17px;height:17px}.wire-status.live{color:var(--green)}.wire-status.failed,.graph-error{color:#b66b54}.graph-error{font-size:12px}.agent-side{min-height:0;grid-template-rows:minmax(0,1fr);--agent-icon-size:38px;grid-column:4 / 6;display:grid;height:100%;grid-template-columns:1fr;align-items:center}.agent-side>.right{grid-area:1 / 1;width:calc(75% - (var(--agent-icon-size) + 12px)/2)}.agent-side>.agents{grid-area:1 / 1;margin-left:calc(75% - (var(--agent-icon-size) + 12px)/2)}.agents{align-items:flex-start;gap:46px}.agents .graph-node{width:38px;height:38px;margin-left:12px}@media(max-width:800px){.connection-core{padding:26px 16px}.connection-graph{grid-template-columns:minmax(64px,.75fr) minmax(88px,1.05fr) 124px minmax(60px,.8fr) minmax(92px,1fr)}.graph-brain :deep(.mascot){width:120px;height:120px}.graph-brain:before{width:160px;height:160px}.graph-node img,.source-icon{width:30px;height:30px}.agent-side{--agent-icon-size:30px}.agents{gap:54px}.agents .graph-node{width:30px;height:30px}}
 .wire-port{position:absolute;width:8px;height:8px;box-sizing:border-box;transform:translate(-50%,-50%);border:1.5px solid light-dark(#8da69a,#789486);border-radius:50%;background:var(--graph-bg);box-shadow:0 0 0 3px var(--graph-bg);pointer-events:none;z-index:2}
 .wire-port.live{border-color:var(--green)}
 .wire-port.failed{border-color:#be826b}

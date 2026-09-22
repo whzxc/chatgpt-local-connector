@@ -94,6 +94,30 @@ async fn handle(
     local_host: String,
 ) -> std::result::Result<Response<Full<Bytes>>, Infallible> {
     let error = |code, message| Ok(reply(code, Some(json!({"error":message}))));
+    let url = service.mcp_url.lock().await.clone();
+    let Ok(url) = reqwest::Url::parse(&url) else {
+        return error(503, "tunnel starting");
+    };
+    let origin = url.origin().ascii_serialization();
+    let host = request
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let public_host = origin.strip_prefix("https://").unwrap_or("");
+    if host != public_host && host != format!("{public_host}:443") && host != local_host {
+        return error(403, "invalid host");
+    }
+    let oauth = service.meta.lock().await["auth"] == "oauth";
+    if oauth
+        && (request.uri().path().starts_with("/.well-known/")
+            || request.uri().path().starts_with("/oauth/"))
+    {
+        if !service.connected.load(std::sync::atomic::Ordering::SeqCst) {
+            return error(503, "connector stopped");
+        }
+        return Ok(crate::oauth::handle(request, &service, url.as_str()).await);
+    }
     if request.uri().path() != "/mcp" || request.uri().query().is_some() {
         return error(404, "not found");
     }
@@ -110,23 +134,9 @@ async fn handle(
         let mut response = reply(401, Some(json!({"error":"unauthorized"})));
         response.headers_mut().insert(
             "www-authenticate",
-            hyper::header::HeaderValue::from_static("Bearer"),
+            hyper::header::HeaderValue::from_str(&if oauth { format!("Bearer resource_metadata=\"{origin}/.well-known/oauth-protected-resource/mcp\", scope=\"mcp\"") } else { "Bearer".to_owned() }).unwrap(),
         );
         return Ok(response);
-    }
-    let url = service.mcp_url.lock().await.clone();
-    let Ok(url) = reqwest::Url::parse(&url) else {
-        return error(503, "tunnel starting");
-    };
-    let origin = url.origin().ascii_serialization();
-    let host = request
-        .headers()
-        .get("host")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let public_host = origin.strip_prefix("https://").unwrap_or("");
-    if host != public_host && host != format!("{public_host}:443") && host != local_host {
-        return error(403, "invalid host");
     }
     if let Some(value) = request.headers().get("origin") {
         if value.to_str().ok() != Some(origin.as_str()) {

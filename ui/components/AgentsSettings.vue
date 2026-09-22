@@ -8,6 +8,13 @@ import { NButton, NText, NSwitch } from 'naive-ui';
 import { Bot, RefreshCw } from '@lucide/vue';
 import { useAgents, icons, agentLinks, name, type Agent } from '../composables/useAgents';
 const { orderedAgents, moveAgent, loaded, loading, saving, error, refresh, toggle } = useAgents();
+function adapterFailure(error: string) {
+  if (error === 'CLAUDE_ADAPTER_DOWNLOAD_FAILED') return t('agentAdapterDownloadFailed');
+  if (error === 'CLAUDE_ADAPTER_CHECKSUM_FAILED') return t('agentAdapterChecksumFailed');
+  if (error === 'CLAUDE_ADAPTER_EXTRACT_FAILED') return t('agentAdapterExtractFailed');
+  if (error === 'CLAUDE_ADAPTER_PROBE_FAILED') return t('agentAdapterProbeFailed');
+  return t('agentAdapterSetupFailed');
+}
 const props=defineProps<{origin:{x:number;y:number;size:number}}>();
 const open=ref(true);
 
@@ -41,12 +48,13 @@ onMounted(() => { void refresh(); });
         @keydown.down.self.prevent="moveWithKey(agent.agent,1)" @keydown.right.self.prevent="moveWithKey(agent.agent,1)"
         :draggable="loaded" @dragstart="dragStart($event,agent.agent)" @dragend="finishDrag" @dragover.prevent="dropTarget=agent.agent" @drop.prevent="drop(agent.agent)">
           <NSwitch v-if="agent.installed" size="small" class="agent-switch" :id="`agent-${agent.agent}`" :aria-label="t('allowConnectorToUseValue', { agent: name(agent) })" :value="agent.enabled === true"
-            :disabled="!!saving || loading || typeof agent.enabled !== 'boolean'"
+            :loading="agent.adapter?.state === 'preparing'" :disabled="agent.adapter?.state === 'preparing' || !!saving || loading || typeof agent.enabled !== 'boolean'"
             :title="t('allowConnectorToAcceptRequestsForThisAgent')" @update:value="toggle(agent, $event)" />
         <div class="agent-info">
           <span v-if="icons[agent.agent]" class="agent-icon" v-html="icons[agent.agent]" aria-hidden="true" />
           <Bot v-else class="agent-icon" :size="24" aria-hidden="true" />
           <span class="agent-copy"><NText v-if="agentLinks[agent.agent]" tag="a" class="agent-name agent-link" :href="agentLinks[agent.agent]" target="_blank" rel="noopener noreferrer" :draggable="false" @click.prevent="openUrl(agentLinks[agent.agent]).catch(cause => error=String(cause))">{{name(agent)}}</NText><span v-else class="agent-name">{{name(agent)}}</span><span v-if="!agent.installed || agent.version" class="agent-version">{{agent.installed ? agent.version : t('agentNotInstalled')}}</span></span>
+          <span v-if="agent.installed && agent.adapter && agent.adapter.state !== 'ready'" class="agent-adapter" :role="agent.adapter.state === 'failed' ? 'alert' : 'status'">{{t(agent.adapter.state === 'preparing' ? 'agentAdapterPreparing' : agent.adapter.state === 'failed' ? 'agentAdapterFailed' : 'agentAdapterMissing')}}<span v-if="agent.adapter.error"> {{adapterFailure(agent.adapter.error)}}</span></span>
         </div>
       </article>
     </div>
@@ -75,5 +83,6 @@ onMounted(() => { void refresh(); });
 .agent-version{grid-column:2 / 4;grid-row:2;min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:480px){.agent-grid{grid-template-columns:1fr}}
 
+.agent-adapter{grid-column:2 / 4;grid-row:3;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 .agent-error { color: #a46651; font-size: 12px; padding: 0 0 10px; margin: 0; }
 </style>

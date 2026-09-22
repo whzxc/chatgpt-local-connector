@@ -7,10 +7,11 @@
     "curated": true,
     "recommendedTransport": "openai-tunnel",
     "recommendedAuth": "openai",
-    "httpsAuth": "none",
+    "httpsAuth": "oauth",
     "supportedAuth": [
       "openai",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "supported",
@@ -23,8 +24,8 @@
     "customHeaders": "No general static-header configuration documented for ChatGPT HTTPS apps.",
     "capability": "Remote MCP over Streamable HTTP",
     "caveat": {
-      "en": "Prefer Secure Tunnel. HTTPS supports no-auth; CLC does not implement OAuth. Tunnel access and ChatGPT developer-mode permissions are separate.",
-      "zh-CN": "优先 Secure Tunnel；HTTPS 可用无认证，CLC 尚无 OAuth。Tunnel 与 ChatGPT 开发者模式权限分别管理。"
+      "en": "Prefer Secure Tunnel. HTTPS also supports OAuth with local owner consent. Tunnel access and client developer-mode permissions are separate.",
+      "zh-CN": "优先 Secure Tunnel；HTTPS 也支持本机确认的 OAuth。Tunnel 与客户端开发者模式权限分别管理。"
     },
     "badge": {
       "en": "",
@@ -44,10 +45,11 @@
     "curated": true,
     "recommendedTransport": "https",
     "recommendedAuth": "oauth",
-    "httpsAuth": "bearer",
+    "httpsAuth": "oauth",
     "supportedAuth": [
       "bearer",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "conditional",
@@ -59,12 +61,12 @@
     "customHeaders": "Organization administrators can configure Authorization or x-api-key in static_headers beta.",
     "capability": "Remote MCP over Streamable HTTP",
     "caveat": {
-      "en": "Organization static-header beta can use Authorization: Bearer <token>. CLC has no OAuth; personal OAuth setup is unavailable. No-auth is an explicit opt-in.",
-      "zh-CN": "组织静态请求头 Beta 可用 Authorization: Bearer；CLC 尚无 OAuth，个人 OAuth 接入不可用。无认证需主动选择。"
+      "en": "OAuth uses local owner consent and DCR or preregistered client credentials. Organization static-header beta can still use Bearer. Verify the client registration flow.",
+      "zh-CN": "OAuth 使用本机确认，支持动态注册或预注册客户端凭据。组织静态请求头 Beta 仍可使用 Bearer；需确认客户端注册流程。"
     },
     "badge": {
-      "en": "Organization headers beta",
-      "zh-CN": "组织请求头 Beta；尚无 OAuth"
+      "en": "OAuth · local consent",
+      "zh-CN": "OAuth · 本机确认"
     },
     "homeUrl": "https://claude.ai/",
     "docs": [
@@ -83,7 +85,8 @@
     "httpsAuth": "bearer",
     "supportedAuth": [
       "bearer",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "conditional",
@@ -96,8 +99,8 @@
     "customHeaders": "Copilot Studio API-key Header accepts a configured header name.",
     "capability": "Remote MCP over Streamable HTTP",
     "caveat": {
-      "en": "Copilot Studio: API key → Header → Authorization, credential value Bearer <token>; confirm actual header forwarding. OAuth and other key headers are not implemented. Teams / Microsoft 365 Copilot are publishing channels.",
-      "zh-CN": "Copilot Studio 选择 API key → Header → Authorization，凭据填 Bearer <token>，需验证实际转发。尚无 OAuth 或其他密钥头。可发布到 Teams / Microsoft 365 Copilot。"
+      "en": "Copilot Studio can use Authorization: Bearer <token> through API-key headers, or OAuth with registered client credentials. Verify actual tenant compatibility. Other API-key headers are not implemented.",
+      "zh-CN": "Copilot Studio 可通过 API key 请求头使用 Authorization: Bearer，或使用已注册客户端凭据接入 OAuth；需确认租户兼容性。尚无其他 API key 请求头。"
     },
     "badge": {
       "en": "API-key Header setup required",
@@ -121,7 +124,8 @@
     "httpsAuth": "bearer",
     "supportedAuth": [
       "bearer",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "supported",
@@ -152,12 +156,13 @@
     "curated": true,
     "recommendedTransport": "https",
     "recommendedAuth": "oauth",
-    "httpsAuth": "",
+    "httpsAuth": "oauth",
     "supportedAuth": [
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
-    "status": "auth-limited",
+    "status": "conditional",
     "clientAuth": [
       "none",
       "slack-identity",
@@ -167,12 +172,12 @@
     "customHeaders": "Custom headers in Slack documentation apply to identity requests, not arbitrary MCP request headers.",
     "capability": "Remote MCP over Streamable HTTP",
     "caveat": {
-      "en": "Slackbot supports no-auth, signed Slack identity and OAuth. CLC only intersects at no-auth. Bearer is not compatible; configure with CLI/Codex and explicitly choose no-auth only for intentionally public tools.",
-      "zh-CN": "Slackbot 支持无认证、Slack 签名身份和 OAuth；CLC 目前仅无认证有交集，Bearer 不兼容。请用 CLI/Codex 配置，仅对允许公开的工具主动选择无认证。"
+      "en": "OAuth supports dynamic or local preregistration and local owner consent. Verify the Slack client flow. Signed Slack identity is not implemented; Bearer is not compatible.",
+      "zh-CN": "OAuth 支持动态注册或本机预注册，需本机用户确认并核对 Slack 客户端流程。尚未实现 Slack 身份签名；不支持 Bearer。"
     },
     "badge": {
-      "en": "No-auth only",
-      "zh-CN": "目前仅支持无认证"
+      "en": "OAuth · local consent",
+      "zh-CN": "OAuth · 本机确认"
     },
     "homeUrl": "https://app.slack.com/",
     "docs": [
@@ -190,7 +195,8 @@
     "httpsAuth": "bearer",
     "supportedAuth": [
       "bearer",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "supported",
@@ -226,7 +232,8 @@
     "httpsAuth": "bearer",
     "supportedAuth": [
       "bearer",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "supported",
@@ -262,7 +269,8 @@
     "httpsAuth": "bearer",
     "supportedAuth": [
       "bearer",
-      "none"
+      "none",
+      "oauth"
     ],
     "remoteMcp": "supported",
     "status": "supported",

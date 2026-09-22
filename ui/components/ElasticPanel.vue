@@ -115,7 +115,7 @@ const close = () => { if (props.show && topmost.value && !props.busy) emit('clos
 onClickOutside(panel, close, { ignore: ['.v-binder-follower-content'] });
 </script>
 <template>
-  <Teleport to=".app-scene">
+  <Teleport defer to=".app-scene">
     <Transition :css="false" appear @enter="enter" @leave="leave" @after-leave="closed" @enter-cancelled="cancelTransition" @leave-cancelled="cancelTransition">
       <div v-if="show" class="panel-layer" :class="{ recessed: !topmost }" :style="{zIndex:55 + Math.max(0,panelLayers.indexOf(layer!)) * 2}" :inert="!topmost">
       <section ref="panel" class="elastic-panel" :style="style" tabindex="-1" role="dialog" aria-modal="true" :aria-label="title" @keydown.esc.stop="close">

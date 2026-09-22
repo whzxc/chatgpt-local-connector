@@ -66,7 +66,7 @@
   {
     "id": "claude",
     "displayName": "Claude Code",
-    "command": "claude-agent-acp",
+    "command": "claude",
     "args": [],
     "protocol": "acp-v1",
     "integration": "adapter",
@@ -78,14 +78,14 @@
     "compatibility": {
       "helpArgs": [],
       "helpContains": [],
-      "versionRequirement": "Current package requires Node >=22; use the current stable ACP adapter.",
-      "runtime": "Node.js >=22 for @agentclientprotocol/claude-agent-acp; native adapter distributions bundle their runtime. No automatic npx/bun download.",
+      "versionRequirement": "Installed Claude Code compatible with Claude Agent SDK 0.3.274.",
+      "runtime": "Connector-managed private Bun runtime and pinned ACP adapter, downloaded on first enable; no global Node/npm required.",
       "authentication": "Adapter / Claude Agent SDK login and supported provider environment; CLC stores no credentials.",
       "caveats": [
-        "ACP-maintained adapter using the official Claude Agent SDK; claude CLI itself is not a native ACP server.",
-        "Installing claude alone does not install this adapter.",
-        "Client terminal/fs and opt-in extensions are not advertised by CLC.",
-        "The adapter can use CLAUDE_CODE_EXECUTABLE to select an existing compatible Claude binary; otherwise install its SDK platform dependency."
+        "Connector provisions the ACP adapter on explicit enable and reuses the discovered Claude Code executable via CLAUDE_CODE_EXECUTABLE.",
+        "Discovery never downloads components. Agent installed/version describe Claude Code; available additionally requires prepared adapter components.",
+        "Authentication and provider configuration remain owned by Claude Code.",
+        "Client terminal/fs and opt-in extensions are not advertised by CLC."
       ],
       "sources": [
         "https://github.com/agentclientprotocol/claude-agent-acp"

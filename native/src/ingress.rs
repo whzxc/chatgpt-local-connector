@@ -15,6 +15,7 @@ use tokio::{
 pub struct Ingress {
     pub id: String,
     pub meta: Mutex<Value>,
+    pub(crate) oauth: Mutex<crate::oauth::OAuth>,
     dir: PathBuf,
     pub control: Arc<Control>,
     pub agents: Arc<crate::agents::AgentHost>,
@@ -56,6 +57,7 @@ impl Ingress {
         Ok(Arc::new(Self {
             id: ingress_id,
             meta: Mutex::new(entry),
+            oauth: Mutex::new(crate::oauth::OAuth::new(&dir)?),
             dir: dir.clone(),
             control,
             agents,
@@ -139,6 +141,18 @@ impl Ingress {
         let meta = self.meta.lock().await;
         if meta["auth"] == "none" {
             return true;
+        }
+        if meta["auth"] == "oauth" {
+            drop(meta);
+            let resource = self.mcp_url.lock().await.clone();
+            let Ok(resource) = reqwest::Url::parse(&resource) else {
+                return false;
+            };
+            return self
+                .oauth
+                .lock()
+                .await
+                .authenticate(header, resource.as_str());
         }
         if meta["auth"] != "bearer" {
             return false;

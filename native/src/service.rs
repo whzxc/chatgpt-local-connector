@@ -107,8 +107,8 @@ fn normalize(mut entry: Value) -> Result<Value> {
         if entry["auth"] != "openai" {
             return Err("OpenAI Tunnel requires auth=openai".into());
         }
-    } else if !["none", "bearer"].contains(&string(&entry, "auth")) {
-        return Err("HTTPS auth must be none or bearer".into());
+    } else if !["none", "bearer", "oauth"].contains(&string(&entry, "auth")) {
+        return Err("HTTPS auth must be none, bearer or oauth".into());
     }
     if entry.get("toolPolicy").is_none() {
         entry["toolPolicy"] = json!("all");
@@ -529,7 +529,7 @@ impl Service {
                         entry[key] = value.clone();
                     }
                 }
-                if !["none", "bearer"].contains(&string(&entry, "auth")) {
+                if !["none", "bearer", "oauth"].contains(&string(&entry, "auth")) {
                     return Err("invalid authentication".into());
                 }
                 entry["toolPolicy"] = body.get("toolPolicy").cloned().unwrap_or(json!("all"));
@@ -648,6 +648,43 @@ impl Service {
                 return Err("core shutting down".into());
             }
             let i = self.ingress(id).await?;
+            if action.starts_with("oauth") {
+                let _runtime = i.operation.lock().await;
+                if i.retired.load(Ordering::SeqCst) {
+                    return Err("Connection configuration changed; retry".into());
+                }
+                if i.meta.lock().await["auth"] != "oauth" {
+                    return Err("OAuth is not enabled for this connection".into());
+                }
+                let resource = i.mcp_url.lock().await.clone();
+                if resource.is_empty() {
+                    return Err("Start this connection before managing OAuth".into());
+                }
+                let resource = reqwest::Url::parse(&resource)
+                    .map_err(|_| "Invalid OAuth resource URL")?
+                    .to_string();
+                let mut oauth = i.oauth.lock().await;
+                if method == "GET" && action == "oauth" {
+                    return oauth.management(&resource);
+                }
+                if method == "POST" && action == "oauth/decision" {
+                    oauth.management(&resource)?;
+                    oauth.decide(
+                        string(&body, "id"),
+                        body["allow"].as_bool().ok_or("allow must be boolean")?,
+                        string(&body, "comparison"),
+                    )?;
+                    return Ok(json!({"ok":true}));
+                }
+                if method == "POST" && action == "oauth/revoke" {
+                    oauth.revoke(string(&body, "id"))?;
+                    return Ok(json!({"ok":true}));
+                }
+                if method == "POST" && action == "oauth/register" {
+                    return oauth.register(&body, &resource);
+                }
+                return Err("UNKNOWN_ROUTE".into());
+            }
             if method == "POST" && action == "credentials" {
                 let credentials = i.request("config/credentials", "GET", json!({})).await?;
                 return Ok(
@@ -709,6 +746,9 @@ impl Service {
                     || ["transport", "controlSource", "auth", "bearerToken"]
                         .iter()
                         .any(|key| previous[*key] != entry[*key]);
+                if identity_changed || previous["toolPolicy"] != entry["toolPolicy"] {
+                    next.oauth.lock().await.reset()?;
+                }
                 if identity_changed {
                     next.request("verification/reset", "POST", json!({}))
                         .await?;

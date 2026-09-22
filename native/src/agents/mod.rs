@@ -1,6 +1,7 @@
 //! Common task host. Codex's native Control remains the owner of all native semantics.
 use crate::*;
 use std::collections::{HashMap, HashSet};
+mod adapter;
 mod driver;
 mod manifest;
 mod process;
@@ -16,6 +17,8 @@ use process::Process;
 
 pub struct AgentHost {
     drivers: HashMap<String, AgentDriver>,
+    adapter_job: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    adapter_error: Mutex<Option<String>>,
     inventory_cache: Mutex<Option<(std::time::Instant, Value)>>,
     disabled: Mutex<HashSet<String>>,
     processes: Mutex<HashMap<String, Arc<Process>>>,
@@ -70,6 +73,8 @@ impl AgentHost {
         Ok(Arc::new(Self {
             disabled: Mutex::new(disabled),
             drivers,
+            adapter_job: Default::default(),
+            adapter_error: Default::default(),
             inventory_cache: Default::default(),
             processes: Default::default(),
             operations: Default::default(),
@@ -82,9 +87,12 @@ impl AgentHost {
         if self.disabled.lock().await.contains(agent) {
             return Err("AGENT_DISABLED".into());
         }
+        if agent == "claude" && !adapter::ready() {
+            return Err("CLAUDE_ADAPTER_NOT_READY".into());
+        }
         Ok(())
     }
-    pub async fn set_enabled(&self, body: &Value) -> Result<Value> {
+    pub async fn set_enabled(self: &Arc<Self>, body: &Value) -> Result<Value> {
         let agent = string(body, "agent");
         if !self.drivers.contains_key(agent) {
             return Err("UNKNOWN_AGENT".into());
@@ -92,6 +100,37 @@ impl AgentHost {
         let enabled = body["enabled"]
             .as_bool()
             .ok_or("ENABLED_BOOLEAN_REQUIRED")?;
+        if agent == "claude" {
+            let mut job = self.adapter_job.lock().await;
+            if let Some(active) = job.as_ref() {
+                if !active.is_finished() && enabled {
+                    return Ok(json!({"enabled":false,"preparing":true}));
+                }
+            }
+            if let Some(active) = job.take() {
+                active.abort();
+                let _ = active.await;
+            }
+            *self.adapter_error.lock().await = None;
+            if enabled && !adapter::ready() {
+                let host = self.clone();
+                *job = Some(tokio::spawn(async move {
+                    let result = async {
+                        adapter::prepare().await?;
+                        let mut disabled = host.disabled.lock().await;
+                        let mut next = disabled.clone();
+                        next.remove("claude");
+                        save(&root().join("agents/disabled.json"), &json!(next))?;
+                        *disabled = next;
+                        Ok::<_, String>(())
+                    }
+                    .await;
+                    *host.adapter_error.lock().await = result.err();
+                    *host.inventory_cache.lock().await = None;
+                }));
+                return Ok(json!({"enabled":false,"preparing":true}));
+            }
+        }
         let mut disabled = self.disabled.lock().await;
         let mut next = disabled.clone();
         if enabled {
@@ -182,11 +221,22 @@ impl AgentHost {
         value
     }
     async fn inventory_status(&self, inventory: &mut Value) {
+        let preparing = self
+            .adapter_job
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|j| !j.is_finished());
+        let adapter_error = self.adapter_error.lock().await.clone();
         let disabled = self.disabled.lock().await;
         let processes = self.processes.lock().await;
         for row in inventory["agents"].as_array_mut().unwrap() {
-            let agent = string(row, "agent");
-            let enabled = !disabled.contains(agent);
+            let agent_id = string(row, "agent").to_owned();
+            let agent = agent_id.as_str();
+            let enabled = !disabled.contains(agent) && (agent != "claude" || adapter::ready());
+            if agent == "claude" {
+                row["adapter"] = json!({"state":if preparing {"preparing"} else if adapter_error.is_some() {"failed"} else if adapter::ready() {"ready"} else {"missing"},"error":adapter_error,"managed":true});
+            }
             let ready = processes.values().any(|p| {
                 p.alive.load(std::sync::atomic::Ordering::SeqCst)
                     && p.state.try_lock().is_ok_and(|s| s["agent"] == agent)
@@ -267,6 +317,10 @@ impl AgentHost {
         Ok(p)
     }
     pub async fn close(&self) {
+        if let Some(job) = self.adapter_job.lock().await.take() {
+            job.abort();
+            let _ = job.await;
+        }
         let _lock = self.lifecycle.lock().await;
         for (request, job) in self.operations.lock().await.drain() {
             job.job.abort();

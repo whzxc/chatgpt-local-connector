@@ -40,6 +40,14 @@ impl Process {
     ) -> Result<Arc<Self>> {
         state["processSession"] = json!(id());
         let mut cmd = launch_command(binary, args)?;
+        if state["agent"] == "claude" {
+            cmd.env(
+                "CLAUDE_CODE_EXECUTABLE",
+                super::driver::discover("claude").ok_or("AGENT_NOT_INSTALLED")?,
+            )
+            .env_remove("NODE_OPTIONS")
+            .env_remove("BUN_OPTIONS");
+        }
         #[cfg(unix)]
         cmd.process_group(0);
         let mut child = cmd

@@ -1,6 +1,6 @@
 # Architecture
 
-Vue + Tauri + Rust provides a single native core for connection state, MCP requests, idempotent receipts, and user logs. The frontend runs in the system WebView; packages include no Node/npm/node_modules.
+Vue + Tauri + Rust provides a single native core for connection state, MCP requests, idempotent receipts, and user logs. The frontend runs in the system WebView; the main application package includes no Node/npm/node_modules. Claude ACP components and a private Bun runtime are downloaded into the application data directory on explicit enable; they reuse the installed Claude executable and run only as task-owned children.
 
 `service::Service` owns the only Control and AgentHost, and a map of `ingress::Ingress` runtimes. Each ingress owns its lifecycle lock, listener, provider child, temporary directory, URL, logs, error and verification challenge. Runtime failure or stop affects only that ingress. Core shutdown closes all ingresses, then AgentHost and Control. Desktop-owned Codex tasks retain Desktop ownership.
 

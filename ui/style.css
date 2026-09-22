@@ -63,18 +63,26 @@ html,body,#app{height:100%;overflow:hidden}.settings-block .card-head{align-item
 .path-link-action{position:relative;border:0;background:transparent;border-radius:8px;padding:7px 0;min-width:0;box-shadow:none;cursor:pointer}.path-link-action:hover{background:color-mix(in srgb,var(--green) 8%,transparent)}.path-link-action:focus-visible{outline:2px solid var(--green);outline-offset:4px}.path-link-caption{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:10px;line-height:16px;white-space:nowrap;color:var(--muted)}.path-link-action.failed .path-link-caption{color:#c34b45}
 
 /* The main connection control feels like a tactile power switch. */
-.connection-action{height:64px;gap:14px;padding:8px 20px 8px 9px;border:1px solid color-mix(in srgb,var(--green) 38%,var(--surface));border-radius:36px;background:var(--accent-soft);color:var(--green);box-shadow:0 5px 0 color-mix(in srgb,var(--green) 30%,var(--surface)),0 9px 18px #1c3d2420;transition:transform .2s,box-shadow .2s,background .2s}
+.connection-action{position:relative;height:64px;padding:8px 9px;overflow:visible;border:1px solid color-mix(in srgb,var(--green) 38%,var(--surface));border-radius:36px;background:var(--accent-soft);color:var(--green);box-shadow:0 5px 0 color-mix(in srgb,var(--green) 30%,var(--surface)),0 9px 18px #1c3d2420;transition:transform .2s,box-shadow .2s,background .2s}
 .connection-action:not(:disabled):hover{background:color-mix(in srgb,var(--green) 14%,var(--surface));transform:translateY(-2px);box-shadow:0 7px 0 color-mix(in srgb,var(--green) 30%,var(--surface)),0 12px 22px #1c3d2426}
 .connection-action:not(:disabled):active{transform:translateY(4px);box-shadow:0 1px 0 color-mix(in srgb,var(--green) 30%,var(--surface))}
-.connection-switch-track{display:block;position:relative;width:76px;height:46px;border-radius:25px;background:var(--accent-soft);box-shadow:inset 0 2px 4px #18392126;flex-shrink:0}
+.connection-switch-track{display:block;position:relative;width:106px;height:46px;border-radius:25px;background:var(--accent-soft);box-shadow:inset 0 2px 4px #18392126;flex-shrink:0}
+.connection-switch-state{position:absolute;inset:0 3px 0 43px;display:grid;place-items:center;font-size:19px;font-weight:800;line-height:1;letter-spacing:1.2px;color:color-mix(in srgb,var(--green) 68%,var(--accent-soft));text-shadow:0 -1px 1px light-dark(#173c354d,#00000080),0 1px 0 light-dark(#ffffffb3,#ffffff26);pointer-events:none}
+.connection-action.is-on .connection-switch-state{inset:0 43px 0 3px}
 .connection-knob{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:light-dark(#fff,#e6eddf);color:var(--green);box-shadow:0 2px 5px #1c362c30;transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
 .connection-switch-track .connection-knob{position:absolute;top:3px;left:3px}
 .connection-action svg{width:21px;height:21px;stroke-width:2}
 .connection-action.is-on .connection-switch-track{background:color-mix(in srgb,var(--green) 42%,var(--surface))}
-.connection-action.is-on .connection-knob{transform:translateX(30px)}
-.connection-action-label{font-size:15px;font-weight:650;letter-spacing:.3px;white-space:nowrap}
-.connection-action.is-busy svg{animation:spin 1.2s linear infinite}
-@media(max-width:450px){.connection-action{height:60px;gap:11px;padding-right:17px}}
+.connection-action.is-on .connection-knob{transform:translateX(60px)}
+.connection-sparks{position:absolute;right:0;top:0;pointer-events:none;height:100%;aspect-ratio:1}
+.connection-spark{position:absolute;left:var(--spark-origin-x);top:var(--spark-origin-y);width:var(--spark-size);height:var(--spark-size);background:var(--green);clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 94%,50% 72%,21% 94%,32% 57%,2% 35%,39% 35%);animation:connection-spark-burst var(--spark-duration) cubic-bezier(.15,.65,.3,1) both}
+@keyframes connection-spark-burst{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(0)}15%{opacity:1;transform:translate(calc(-50% + var(--spark-x) * .2),calc(-50% + var(--spark-y) * .2)) scale(1) rotate(15deg)}65%{opacity:1;transform:translate(calc(-50% + var(--spark-x) * .8),calc(-50% + var(--spark-y) * .8)) scale(.85) rotate(calc(var(--spark-turn) * .8))}100%{opacity:0;transform:translate(calc(-50% + var(--spark-x)),calc(-50% + var(--spark-y))) scale(.1) rotate(var(--spark-turn))}}
+@media(prefers-reduced-motion:reduce){.connection-sparks{display:none}}
+.connection-action:disabled{opacity:1}
+.connection-action:disabled .connection-knob{opacity:.45}
+.connection-action.is-busy .connection-knob{opacity:.75;cursor:wait}
+.connection-action.is-busy .connection-knob svg{animation:spin 1.2s linear infinite}
+@media(max-width:450px){.connection-action{height:60px;padding:8px 9px}}
 
 /* Native window material is revealed only while Translucent is enabled. */
 :root[data-translucent=true][data-theme]{background:transparent}

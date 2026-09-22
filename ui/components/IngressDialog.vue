@@ -63,7 +63,7 @@ if(!form.domain && props.ingress?.url && (form.httpsProvider==='custom' || form.
 const discoveredDomains = computed(() => [...new Set((entry.value?.discoveredUrls || []).map(value => new URL(value).hostname))]);
 if (props.ingress) form.connectionMode=props.ingress.transport==='openai-tunnel' ? 'tunnel' : 'https';
 else if (preset.value) form.connectionMode=preset.value.recommendedTransport==='openai-tunnel' ? 'tunnel' : 'https';
-const auth = ref(props.ingress?.auth === 'bearer' ? 'bearer' : 'none');
+const auth = ref(props.ingress?.auth === 'oauth' ? 'oauth' : props.ingress?.auth === 'bearer' ? 'bearer' : 'none');
 const working = ref(false), error = ref('');
 function generateToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -131,7 +131,7 @@ async function remove() { await action(async () => { await api(`ingress/${entry.
         </template>
       </ConnectionFields>
       <template v-if="form.connectionMode==='https'">
-        <NFormItem :label="t('authentication')" path="auth"><SingleChoice v-model:value="auth" :label="t('authentication')" :disabled="working" :options="[{label:t('authNone'),value:'none'},{label:'Bearer',value:'bearer'}]"/></NFormItem>
+        <NFormItem :label="t('authentication')" path="auth"><SingleChoice v-model:value="auth" :label="t('authentication')" :disabled="working" :options="[{label:t('authNone'),value:'none'},{label:'Bearer',value:'bearer'},{label:'OAuth',value:'oauth'}]"/></NFormItem>
 
       </template>
 

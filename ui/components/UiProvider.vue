@@ -20,6 +20,7 @@ function tint(hex: string, target: number, amount: number) {
 const overrides = computed<GlobalThemeOverrides>(() => ({
   common: { primaryColor: dark.value ? accent.value.dark : accent.value.light, primaryColorHover: tint(dark.value ? accent.value.dark : accent.value.light, 255, .15), primaryColorPressed: tint(dark.value ? accent.value.dark : accent.value.light, 0, .15), borderRadius: '8px', fontFamily: "Inter,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC',sans-serif", fontSize: '13px', heightMedium: '36px' },
   Radio: { buttonBorderRadius: '9px', buttonHeightMedium: '30px', buttonColor: 'transparent', buttonColorActive: dark.value ? tint(accent.value.dark, 32, .78) : '#ffffff', buttonBorderColor: 'transparent', buttonBorderColorActive: 'transparent', buttonBorderColorHover: 'transparent', buttonTextColorActive: dark.value ? accent.value.dark : accent.value.light, buttonBoxShadow: 'none', buttonBoxShadowHover: 'none', buttonBoxShadowFocus: 'none' },
+  InputOtp: { inputWidthMedium: '36px' },
   Tag: { heightTiny: '16px', fontSizeTiny: '10px' },
   Form: { labelFontSizeTop: '13px', labelPaddingVertical: '0 0 8px 0', feedbackFontSizeMedium: '12px' },
   Card: { borderRadius: '16px', paddingMedium: '24px' },

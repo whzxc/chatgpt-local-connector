@@ -51,16 +51,30 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
     match args.as_slice() {
         [] | ["help"] | ["--help"] => Ok(json!({"version":env!("CARGO_PKG_VERSION"),
             "usage":"<应用可执行文件> cli <command> [--json]",
-            "commands":["help","guide","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress doctor <id>","ingress verify <id> [--fresh]"],
+            "commands":["help","guide","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
             "controlSourcePresets":crate::control_sources::presets(),
-            "ingressInput":{"id":"optional on add; immutable","name":"optional display name; defaults to preset name with an available numeric suffix","controlSource":"see ingress presets; any other client label remains valid","transport":"openai-tunnel | https","auth":"openai for OpenAI Tunnel; none | bearer for HTTPS","bearerToken":"32+ printable ASCII characters, stdin only; never returned by list/status","enabled":true,"toolPolicy":"all or {allowlist:[connector_verify,agents,agent_create,agent_read,agent_wait,...]}","config":{"httpsProvider":"cloudflare | ngrok | custom","cloudflareMode":"quick | named","httpsUrl":"https://hostname/mcp; required for named/custom, optional fixed ngrok address","httpsHost":"127.0.0.1 default; custom only","httpsPort":"8787 default; choose distinct ports for named/custom and match the external route","cloudflareToken":"named Tunnel token; stdin only","ngrokAuthtoken":"ngrok credential; stdin only","tunnelId":"official Tunnel ID","apiKey":"official Tunnel runtime key; stdin only","tunnelBinary":"optional executable path"}},
+            "ingressInput":{"id":"optional on add; immutable","name":"optional display name; defaults to preset name with an available numeric suffix","controlSource":"see ingress presets; any other client label remains valid","transport":"openai-tunnel | https","auth":"openai for OpenAI Tunnel; none | bearer | oauth for HTTPS","bearerToken":"32+ printable ASCII characters, stdin only; never returned by list/status","enabled":true,"toolPolicy":"all or {allowlist:[connector_verify,agents,agent_create,agent_read,agent_wait,...]}","config":{"httpsProvider":"cloudflare | ngrok | custom","cloudflareMode":"quick | named","httpsUrl":"https://hostname/mcp; required for named/custom, optional fixed ngrok address","httpsHost":"127.0.0.1 default; custom only","httpsPort":"8787 default; choose distinct ports for named/custom and match the external route","cloudflareToken":"named Tunnel token; stdin only","ngrokAuthtoken":"ngrok credential; stdin only","tunnelId":"official Tunnel ID","apiKey":"official Tunnel runtime key; stdin only","tunnelBinary":"optional executable path"}},
             "waitContract":"create/send → wait(30s default; 20–30s recommended) → timeout → same taskId/threadId and turnId, previous snapshotHash as expectedHash → wait again until terminal/interaction. Event-driven slices, not read/sleep polling. Timeout/cancelling wait never stops or recreates the task; unconfirmed is not failure. Ordinary Chat/general MCP clients should not block for minutes by default. Explicit maximum 300000ms requires upstream support; stdio forwarding budget remains 330s.",
             "update":"Partial merge; stop the target before updating or rotating. Other ingresses remain online. Changes reset only this ingress verification.",
-            "authNote":"none exposes allowed tools to anyone with network access. Prefer fixed URL + bearer for long-lived clients that support it. OAuth/DCR is not implemented.",
+            "authNote":"none exposes allowed tools to anyone with network access. Prefer a fixed URL with OAuth (local owner consent, PKCE, DCR or preregistration) or bearer for clients that support it.",
             "tokenDelivery":"token rotate returns the new secret once in stdout. Redirect to a protected local file (umask 077); do not capture it into chat/logs. Supply an initial bearerToken via stdin when adding.",
             "configureInput":{"tunnelId":"可选；省略保留原值","apiKey":"可选；空字符串保留原值"},
             "networkInput":{"proxyMode":"system | direct | custom","proxyUrl":"自定义 HTTP/HTTPS 地址，其余为空"},
             "note":"所有命令输出 JSON。help、guide、ingress presets 可离线读取；其余命令需要已打开的同版本应用。凭据仅从 stdin 输入，禁止放入命令参数或聊天。"})),
+        ["ingress", "oauth", "list", id] => {
+            forward_request(&format!("ingress/{id}/oauth"), "GET", json!({})).await
+        }
+        ["ingress", "oauth", "register", id, "--stdin"] => {
+            forward_request(
+                &format!("ingress/{id}/oauth/register"),
+                "POST",
+                stdin_json()?,
+            )
+            .await
+        }
+        ["ingress", "oauth", "revoke", id, "--stdin"] => {
+            forward_request(&format!("ingress/{id}/oauth/revoke"), "POST", stdin_json()?).await
+        }
         ["guide"] => Ok(json!({"markdown":GUIDE})),
         ["doctor"] => doctor().await,
         ["onboarding"] => Ok(

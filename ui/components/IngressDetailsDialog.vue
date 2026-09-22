@@ -6,6 +6,7 @@ import { t } from '../i18n';
 import { displayMessage } from '../messages';
 import ElasticPanel from './ElasticPanel.vue';
 import CopyField from './CopyField.vue';
+import OAuthGrants from './OAuthGrants.vue';
 
 const props = defineProps<{ ingress: Ingress; autoConnect?: boolean }>();
 const open = ref(true);
@@ -30,8 +31,8 @@ const reverseProxy = computed(() => {
   return `http://${config.httpsHost.includes(':') ? `[${config.httpsHost}]` : config.httpsHost}:${config.httpsPort}/mcp`;
 });
 const working = ref(false), reading = ref(false), error = ref(''), credentialError = ref(''), bearerToken = ref(''), apiKey = ref('');
-const refreshingUrl = ref(false);
-const connecting = computed(() => working.value || entry.value.state === 'starting');
+const refreshingUrl = ref(false), oauthBusy = ref(false);
+const connecting = computed(() => working.value || oauthBusy.value || entry.value.state === 'starting');
 let disposed = false;
 async function readCredentials() {
   if (!['bearer', 'openai'].includes(entry.value.auth)) return;
@@ -83,7 +84,7 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
 </script>
 
 <template>
-  <ElasticPanel :show="open" :width="600" :title="t('connectionDetails') + ' · ' + entry.name" :busy="working" @close="open=false" @closed="editing ? emit('edit',entry) : emit('close')">
+  <ElasticPanel :show="open" :width="600" :title="t('connectionDetails') + ' · ' + entry.name" :busy="working || oauthBusy" @close="open=false" @closed="editing ? emit('edit',entry) : emit('close')">
     <NForm label-placement="top">
       <NFormItem :label="https ? 'MCP URL' : 'Tunnel ID'" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
         <template #label><span class="detail-heading"><span>{{https ? 'MCP URL' : 'Tunnel ID'}}</span><NButton v-if="https" :aria-label="t('reobtainMcpUrl')" text type="primary" size="tiny" :disabled="connecting || reading || !entry.enabled" @click="updateConnection('url')">{{t('reobtainMcpUrl')}}</NButton></span></template>
@@ -96,6 +97,7 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
       <NFormItem v-if="entry.auth === 'openai'" label="Runtime API Key">
         <CopyField :value="apiKey" label="Runtime API Key" password :placeholder="credentialError || ''"/>
       </NFormItem>
+      <OAuthGrants v-if="entry.auth === 'oauth'" :key="entry.id" :ingress-id="entry.id" :running="entry.running" :disabled="working" @busy="oauthBusy=$event"/>
       <NAlert v-if="credentialError" :show-icon="false" type="error">{{credentialError}} <NButton text :disabled="reading" @click="readCredentials">{{t('retry')}}</NButton></NAlert>
       <NFormItem v-if="https && (entry.config.httpsProvider === 'custom' || entry.config.httpsProvider === 'cloudflare' && entry.config.cloudflareMode === 'named')" :label="t('httpReverseProxyTarget')">
         <CopyField :value="reverseProxy" :label="t('httpReverseProxyTarget')"/>
@@ -107,7 +109,7 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
       <NButton :disabled="connecting" @click="editing=true; open=false">{{t('edit')}}</NButton>
       <span class="action-spacer"/>
       <NButton v-if="!entry.running && !connecting" :disabled="!entry.enabled" @click="connect">{{t('connect')}}</NButton>
-      <NButton type="primary" :disabled="working" @click="open=false">{{t('done')}}</NButton>
+      <NButton type="primary" :disabled="working || oauthBusy" @click="open=false">{{t('done')}}</NButton>
     </template>
   </ElasticPanel>
 </template>

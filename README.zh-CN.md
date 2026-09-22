@@ -99,3 +99,5 @@ npm run dev:ui
 采用 [MIT 许可证](LICENSE)。源码与桌面安装包使用 GitHub 分发，不发布公共 npm 包。
 
 控制源固定为 ChatGPT、Claude、Microsoft Copilot、Notion、Slack、Cursor、GitHub Copilot、Raycast，另保留 Custom。同类型可反复添加，默认名称自动追加数字。认证兼容边界见[支持矩阵](docs/zh-CN/control-sources.md)。
+
+HTTPS 连接支持 OAuth 2.1，包含本机授权确认、PKCE、动态客户端注册、令牌刷新和授权撤销。详见 [OAuth 认证](docs/oauth.md)。
