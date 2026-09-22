@@ -8,7 +8,7 @@ CLC supports concurrent ingress for multiple MCP control sources. OpenAI Tunnel 
 
 CLC did not start as an attempt to give ChatGPT a bigger tool list. It grew out of a workflow problem I kept running into, and each stage solved the next problem that became obvious.
 
-![Local Connector home screen connecting multiple control sources and coding agents](docs/images/local-connector.png)
+![Local Connector home screen connecting multiple control sources and coding agents](docs/images/home-overview.png)
 
 ## Why I built Local Connector
 

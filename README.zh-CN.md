@@ -8,7 +8,7 @@
 
 CLC 并不是从“给 ChatGPT 再加一堆工具”开始的。它来自一个困扰我很久的实际工作问题，而且每一阶段，都是上一个问题解决之后自然长出来的。
 
-![Local Connector 主界面：连接多个控制来源与 coding agent](docs/images/local-connector.png)
+![Local Connector 主界面：连接多个控制来源与 coding agent](docs/images/home-overview.png)
 
 ## 为什么会有 Local Connector
 
