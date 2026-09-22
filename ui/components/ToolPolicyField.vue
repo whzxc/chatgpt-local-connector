@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { NAlert, NButton, NCheckbox, NFormItem, NText, NTooltip } from 'naive-ui';
-import FormDialog from './FormDialog.vue';
+import ElasticPanel from './ElasticPanel.vue';
 import SingleChoice from './SingleChoice.vue';
 import { api } from '../composables/useConnector';
 import { t, locale } from '../i18n';
@@ -74,7 +74,7 @@ function toggle(names: string[], checked: boolean) {
       <NAlert v-if="failure" type="error" :show-icon="false">{{t('toolCatalogFailed')}} <NButton text @click="load">{{t('toolCatalogRetry')}}</NButton></NAlert>
     </div>
   </NFormItem>
-  <FormDialog v-if="detailsOpen && catalog" :show="true" :title="detailTitle" :busy="disabled" @close="detailsOpen=false">
+  <ElasticPanel v-if="catalog" :show="detailsOpen" :width="600" :title="detailTitle" :busy="disabled" @close="detailsOpen=false">
     <div class="tool-details">
       <div v-for="group in groups" :key="group.id" class="tool-group">
         <NCheckbox v-if="mode==='custom'" :disabled="disabled" :checked="group.tools.every(tool=>detailSelection.includes(tool.name))" :indeterminate="group.tools.some(tool=>detailSelection.includes(tool.name)) && !group.tools.every(tool=>detailSelection.includes(tool.name))" @update:checked="toggle(group.tools.map(tool=>tool.name), $event)">{{group.label[locale==='zh-CN' ? 'zh-CN' : 'en']}}</NCheckbox>
@@ -93,7 +93,7 @@ function toggle(names: string[], checked: boolean) {
       <NButton v-if="mode==='custom'" :disabled="disabled" @click="detailsOpen=false">{{t('cancel')}}</NButton>
       <NButton type="primary" :disabled="disabled" @click="mode==='custom' ? applyDetails() : detailsOpen=false">{{mode==='custom' ? t('toolSelectionDone') : t('close')}}</NButton>
     </template>
-  </FormDialog>
+  </ElasticPanel>
 </template>
 <style scoped>
 .tool-policy{display:grid;gap:8px;width:100%;min-width:0}.tool-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}.tool-details{display:grid;gap:16px}.tool-group{display:grid;gap:8px}.tool-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;padding-left:16px}.tool-entry{min-width:0}.tool-name{display:inline-block}

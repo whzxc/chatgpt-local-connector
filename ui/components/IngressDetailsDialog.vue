@@ -4,10 +4,12 @@ import { NAlert, NButton, NForm, NFormItem } from 'naive-ui';
 import { api, useConnector, type Ingress } from '../composables/useConnector';
 import { t } from '../i18n';
 import { displayMessage } from '../messages';
-import FormDialog from './FormDialog.vue';
+import ElasticPanel from './ElasticPanel.vue';
 import CopyField from './CopyField.vue';
 
 const props = defineProps<{ ingress: Ingress; autoConnect?: boolean }>();
+const open = ref(true);
+const editing = ref(false);
 const emit = defineEmits<{ close: []; edit: [ingress: Ingress] }>();
 const { status, refresh } = useConnector();
 const entry = computed(() => status.value?.ingresses.find(i => i.id === props.ingress.id) || props.ingress);
@@ -81,7 +83,7 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
 </script>
 
 <template>
-  <FormDialog :show="true" :title="t('connectionDetails') + ' · ' + entry.name" :busy="working" @close="emit('close')">
+  <ElasticPanel :show="open" :width="600" :title="t('connectionDetails') + ' · ' + entry.name" :busy="working" @close="open=false" @closed="editing ? emit('edit',entry) : emit('close')">
     <NForm label-placement="top">
       <NFormItem :label="https ? 'MCP URL' : 'Tunnel ID'" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
         <template #label><span class="detail-heading"><span>{{https ? 'MCP URL' : 'Tunnel ID'}}</span><NButton v-if="https" :aria-label="t('reobtainMcpUrl')" text type="primary" size="tiny" :disabled="connecting || reading || !entry.enabled" @click="updateConnection('url')">{{t('reobtainMcpUrl')}}</NButton></span></template>
@@ -102,12 +104,12 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
       <NAlert v-if="error || entry.error" :show-icon="false" type="error">{{displayMessage(error || entry.error)}}</NAlert>
     </NForm>
     <template #footer>
-      <NButton :disabled="connecting" @click="emit('edit', entry)">{{t('edit')}}</NButton>
+      <NButton :disabled="connecting" @click="editing=true; open=false">{{t('edit')}}</NButton>
       <span class="action-spacer"/>
       <NButton v-if="!entry.running && !connecting" :disabled="!entry.enabled" @click="connect">{{t('connect')}}</NButton>
-      <NButton type="primary" :disabled="working" @click="emit('close')">{{t('done')}}</NButton>
+      <NButton type="primary" :disabled="working" @click="open=false">{{t('done')}}</NButton>
     </template>
-  </FormDialog>
+  </ElasticPanel>
 </template>
 
 <style scoped>.detail-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}</style>

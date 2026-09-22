@@ -3,13 +3,12 @@ import { computed, onUnmounted } from 'vue';
 import { NFormItem, NInput, NButton, NTooltip, NTag, NText } from 'naive-ui';
 import { t } from '../i18n';
 import SingleChoice from './SingleChoice.vue';
-import { required, httpsUrl, validMcpUrl } from '../formRules';
+import { required, domainRule } from '../formRules';
 import { useConnector, type Config } from '../composables/useConnector';
 import type { ConnectionForm } from '../composables/connectionForm';
 import { openUrl } from '../platform';
 const props = defineProps<{ form: ConnectionForm; config?: Config; disabled?: boolean; allowTunnel: boolean; recommendTunnel?: boolean }>();
 const { run } = useConnector();
-const ngrokUrlWithoutPort = (_rule: unknown, value: string) => !validMcpUrl(value) || !new URL(value).port;
 const https = computed(() => props.form.connectionMode === 'https');
 const named = computed(() => props.form.httpsProvider === 'cloudflare' && props.form.cloudflareMode === 'named');
 const tokenField = computed(() => named.value ? 'cloudflareToken' : 'ngrokAuthtoken');
@@ -34,14 +33,15 @@ onUnmounted(() => { props.form.apiKey=''; props.form.cloudflareToken=''; props.f
     </NFormItem>
   </template>
   <template v-else>
-    <NFormItem :label="t('provider') + (allowTunnel ? '' : ' - HTTPS MCP')" path="httpsProvider"><SingleChoice v-model:value="form.httpsProvider" :label="t('provider')" :disabled="disabled" :options="[{label:'Cloudflare',value:'cloudflare'},{label:'ngrok',value:'ngrok'},{label:t('customDomain'),value:'custom'}]"/></NFormItem>
-    <NFormItem v-if="form.httpsProvider==='cloudflare'" :label="t('cloudflareMode')" path="cloudflareMode"><SingleChoice v-model:value="form.cloudflareMode" :label="t('cloudflareMode')" :disabled="disabled" :options="[{label:t('quickTrial'),value:'quick'},{label:t('fixedDomain'),value:'named'}]"/></NFormItem>
-    <NFormItem v-if="form.httpsProvider==='ngrok'" :label="t('ngrokMode')" path="ngrokMode"><SingleChoice v-model:value="form.ngrokMode" :label="t('ngrokMode')" :disabled="disabled" :options="[{label:t('temporaryDomain'),value:'quick'},{label:t('fixedDomain'),value:'named'}]"/></NFormItem>
+    <NFormItem :label="t('provider') + (allowTunnel ? '' : ' - HTTPS MCP')" path="httpsProvider"><SingleChoice v-model:value="form.httpsProvider" :label="t('provider')" :disabled="disabled" :options="[{label:'ngrok',value:'ngrok'},{label:'Cloudflare',value:'cloudflare'},{label:t('customDomain'),value:'custom'}]"/></NFormItem>
+    <NFormItem v-if="form.httpsProvider==='cloudflare'" :label="t('cloudflareMode')" path="cloudflareMode"><SingleChoice v-model:value="form.cloudflareMode" :label="t('cloudflareMode')" :disabled="disabled" :options="[{label:t('fixedDomain'),value:'named'},{label:t('quickTrial'),value:'quick'}]"/></NFormItem>
+    <NFormItem v-if="form.httpsProvider==='ngrok'" :label="t('ngrokMode')" path="ngrokMode"><SingleChoice v-model:value="form.ngrokMode" :label="t('ngrokMode')" :disabled="disabled" :options="[{label:t('fixedDomain'),value:'named'},{label:t('temporaryDomain'),value:'quick'}]"/></NFormItem>
     <NFormItem v-if="named || form.httpsProvider==='ngrok'" :path="tokenField" :rule="hasToken ? undefined : required()" :show-require-mark="false" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}"><template #label><span class="credential-heading"><span>{{named ? 'Tunnel Token' : 'Authtoken'}} <NText type="error">*</NText></span><NButton text type="primary" size="tiny" :aria-label="t('getToken')" @click="run('provider-help',()=>openUrl(tokenHelp))">{{t('getToken')}}</NButton></span></template><NInput v-model:value="form[tokenField]" type="password" show-password-on="click" :disabled="disabled" :placeholder="hasToken ? t('savedLeaveBlankToKeep') : t('getToken')" :input-props="{autocomplete:'new-password','aria-label':named ? 'Tunnel Token' : 'Authtoken'}"/></NFormItem>
-    <NFormItem v-if="form.httpsProvider==='ngrok' && form.ngrokMode==='named'" label="MCP URL" path="httpsUrl" :rule="[httpsUrl(), {validator:ngrokUrlWithoutPort,message:t('ngrokMcpUrlNoPort'),trigger:['input','blur']}]" :show-require-mark="true">
-      <NInput v-model:value="form.httpsUrl" :disabled="disabled" :input-props="{'aria-label':'MCP URL'}" placeholder="https://your-domain.ngrok-free.dev/mcp"/>
+    <NFormItem v-if="form.httpsProvider==='ngrok' && form.ngrokMode==='named'" :label="t('domain')" path="domain" :rule="domainRule()" :show-require-mark="false" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
+      <template #label><span class="credential-heading"><span>{{t('domain')}} <NText type="error">*</NText></span><NButton text type="primary" :aria-label="t('getDomain')" size="tiny" @click="run('domain-help',()=>openUrl('https://dashboard.ngrok.com/domains'))">{{t('getDomain')}}</NButton></span></template>
+      <NInput v-model:value="form.domain" :disabled="disabled" :input-props="{'aria-label':t('domain')}" placeholder="your-domain.ngrok-free.dev"/>
     </NFormItem>
-    <slot name="mcp-url"/>
+    <slot name="domain"/>
 
   </template>
 </template>

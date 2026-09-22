@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { displayMessage } from '../messages';
 import { t, locale } from '../i18n';
-import { X } from '@lucide/vue';
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { useClipboard, useIntervalFn, usePreferredReducedMotion, useResizeObserver } from '@vueuse/core';
+import ElasticPanel from './ElasticPanel.vue';
+import { computed, ref, watch } from 'vue';
+import { useClipboard, useIntervalFn, useResizeObserver } from '@vueuse/core';
 import { api, useConnector } from '../composables/useConnector';
 import type { TaskRecord, TaskRuntime } from '../composables/useTasks';
 const props = defineProps<{ records: TaskRecord[]; error: string }>();
@@ -79,12 +79,8 @@ async function openTask(id: string) {
 }
 const selectedId = ref<string>();
 const selected = computed(() => groups.value.find(g => g.id === selectedId.value));
-const dialog = ref<HTMLDialogElement>();
-const reducedMotion = usePreferredReducedMotion();
-let source: HTMLElement | undefined;
-let animations: Animation[] = [];
-let closing = false;
-let opening: Promise<void> = Promise.resolve();
+const detailOpen = ref(false);
+const origin = ref({x:0,y:0,size:1,height:1});
 const cards = ref<HTMLElement[]>([]);
 useResizeObserver(cards, entries => {
   for (const { target } of entries) {
@@ -92,87 +88,27 @@ useResizeObserver(cards, entries => {
     card.parentElement!.style.gridRowEnd = `span ${Math.ceil(card.offsetHeight + 22)}`;
   }
 });
-function stopAnimations() { animations.forEach(a => a.cancel()); animations = []; }
-async function morphCard(opening: boolean) {
-  const el = dialog.value!;
-  const sheet = el.querySelector<HTMLElement>('.task-focus-sheet')!;
-  const origin = source!.getBoundingClientRect();
-  const expanded = el.getBoundingClientRect();
-  const preview = source!.cloneNode(true) as HTMLElement;
-  preview.classList.remove('is-focused');
-  preview.classList.add('task-morph-preview');
-  preview.removeAttribute('aria-haspopup');
-  preview.setAttribute('aria-hidden', 'true');
-  preview.tabIndex = -1;
-  preview.style.width = `${origin.width}px`;
-  preview.style.height = `${origin.height}px`;
-  el.append(preview);
-  sheet.style.width = `${el.clientWidth}px`;
-  sheet.style.height = `${el.clientHeight}px`;
-  const frame = (r: DOMRect, radius: string) => ({left:`${r.left}px`, top:`${r.top}px`, width:`${r.width}px`, height:`${r.height}px`, margin:'0', borderRadius:radius});
-  const compactStyle = getComputedStyle(source!);
-  const expandedStyle = getComputedStyle(el);
-  const compactFrame = { ...frame(origin, '22px'), borderColor:compactStyle.borderColor, boxShadow:compactStyle.boxShadow };
-  const expandedFrame = { ...frame(expanded, '24px'), borderColor:expandedStyle.borderColor, boxShadow:expandedStyle.boxShadow };
-  const duration = reducedMotion.value === 'reduce' ? 0 : 380;
-  const options: KeyframeAnimationOptions = { duration, easing:'cubic-bezier(.22,1,.36,1)', fill:'both' };
-  animations = [
-    el.animate(opening ? [compactFrame, expandedFrame] : [expandedFrame, compactFrame], options),
-    sheet.animate(opening ? [{opacity:0,offset:0},{opacity:0,offset:.2},{opacity:1,offset:1}] : [{opacity:1,offset:0},{opacity:0,offset:.45},{opacity:0,offset:1}], {duration,fill:'both'}),
-    preview.animate(opening ? [{opacity:1,offset:0},{opacity:0,offset:.45},{opacity:0,offset:1}] : [{opacity:0,offset:0},{opacity:0,offset:.25},{opacity:1,offset:1}], {duration,fill:'both'}),
-  ];
-  try { await Promise.all(animations.map(a => a.finished)); } catch { /* Closing can interrupt opening. */ }
-  preview.remove();
-  sheet.style.width = ''; sheet.style.height = '';
-}
-async function focusCard(id: string, event: MouseEvent) {
-  if (selectedId.value) return;
+function focusCard(id: string, event: MouseEvent) {
   actionError.value = '';
-  source = event.currentTarget as HTMLElement;
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  origin.value = { x: rect.x, y: rect.y, size: rect.width, height: rect.height };
   selectedId.value = id;
-  await nextTick();
-  const el = dialog.value!;
-  el.showModal();
-  el.querySelector<HTMLElement>('#task-focus-title')?.focus({ preventScroll: true });
-  opening = morphCard(true);
-  await opening;
-  if (!closing) stopAnimations();
+  detailOpen.value = true;
 }
-async function closeCard() {
-  if (closing || !dialog.value) return;
-  closing = true;
-  await opening;
-  if (!dialog.value) return;
-  stopAnimations();
-  dialog.value.classList.add('is-closing');
-  await morphCard(false);
-  dialog.value?.close();
-  selectedId.value = undefined;
-  stopAnimations();
-  await nextTick();
-  source?.focus({ preventScroll: true });
-  closing = false;
-}
-onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
 </script>
 <template>
   <section class="tasks-page" :aria-label="t('cloudTasks')">
     <p v-if="error" class="status-banner warning" role="alert">{{displayMessage(error)}}</p>
     <div class="task-grid">
-      <div v-for="g in visible" :key="g.id" class="task-cell"><button ref="cards" class="task-document" :class="{'is-focused':selectedId===g.id}" aria-haspopup="dialog" @click="focusCard(g.id,$event)">
+      <div v-for="g in visible" :key="g.id" class="task-cell"><button ref="cards" class="task-document" aria-haspopup="dialog" @click="focusCard(g.id,$event)">
         <span class="task-document-heading"><strong class="task-document-title">{{titleOf(g.first)}}</strong><span v-if="g.first.task.model" class="task-tag">{{g.first.task.model}}</span><span v-if="g.first.task.effort" class="task-tag">{{g.first.task.effort}}</span></span>
         <time :datetime="g.first.createdAt">{{createdTime(g.first.createdAt)}}</time>
         <span v-if="g.first.task.prompt" class="task-document-preview">{{g.first.task.prompt}}</span>
         <span class="task-document-bottom"><span v-if="projectOf(g.first)" class="task-document-project" :title="projectOf(g.first)">{{projectName(g.first)}}</span><span v-if="stateOf(g)" class="task-document-state">{{stateOf(g)}}</span></span>
       </button></div>
     </div>
-    <Teleport to="body">
-      <dialog v-if="selected" ref="dialog" class="task-focus" aria-labelledby="task-focus-title" @cancel.prevent="closeCard" @click="($event.target===dialog) && closeCard()">
-        <div class="task-focus-sheet">
-          <header class="task-focus-header">
-            <div><div class="task-document-heading"><h2 id="task-focus-title" tabindex="-1" autofocus>{{titleOf(selected.first)}}</h2><span v-if="selected.first.task.model" class="task-tag">{{selected.first.task.model}}</span><span v-if="selected.first.task.effort" class="task-tag">{{selected.first.task.effort}}</span></div><time class="task-document-time">{{createdTime(selected.first.createdAt)}}</time></div>
-            <button class="task-focus-close" :aria-label="t('closeTaskDetails')" @click="closeCard"><X aria-hidden="true"/></button>
-          </header>
+    <ElasticPanel v-if="selected" :show="detailOpen" :origin="origin" :title="titleOf(selected.first)" :width="720" :busy="!!busy || openingTask" @close="detailOpen=false" @closed="selectedId=undefined">
+      <div class="task-document-heading"><span v-if="selected.first.task.model" class="task-tag">{{selected.first.task.model}}</span><span v-if="selected.first.task.effort" class="task-tag">{{selected.first.task.effort}}</span><time>{{createdTime(selected.first.createdAt)}}</time></div>
           <div class="task-focus-content">
           <p v-if="selected.first.executionOwner === 'connector'" class="hint">{{ t('connectorRunsThisTaskInTheBackgroundDisconnecting') }}</p>
         <section v-for="r in [...selected.records].reverse()" :key="r.requestId" class="task-entry">
@@ -184,10 +120,8 @@ onBeforeUnmount(() => { stopAnimations(); dialog.value?.close(); });
         </section>
           </div>
           <p v-if="actionError" class="status-banner warning" role="alert">{{displayMessage(actionError)}}</p>
-          <footer v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask" @click="openTask(selected.id)">{{openingTask ? t('opening') : t('openInCodex')}}</button></footer>
-        </div>
-      </dialog>
-    </Teleport>
+          <template v-if="projectOf(selected.first) || stateOf(selected) || idOf(selected.first)" #footer><div class="task-focus-footer"><span v-if="projectOf(selected.first)" class="task-document-project" :title="projectOf(selected.first)">{{projectName(selected.first)}}</span><span v-if="stateOf(selected)" class="task-document-state">{{stateOf(selected)}}</span><button v-if="idOf(selected.first) && !runtimes[selected.id]?.archived" class="text-button" :disabled="openingTask" @click="openTask(selected.id)">{{openingTask ? t('opening') : t('openInCodex')}}</button></div></template>
+    </ElasticPanel>
     <p v-if="!visible.length && !error" class="empty">{{ t('noTasksYet') }}</p>
   </section>
 </template>
