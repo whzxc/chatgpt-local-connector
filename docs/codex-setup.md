@@ -30,6 +30,41 @@ Add requires controlSource, transport, auth and config. Name defaults to the pre
 
 Configuration keys and limits are discoverable in help. No secret is accepted as a command argument. Pipe JSON from an authorized secure local source, or redirect a protected file. Do not put secrets in shell literals, chat, screenshots or logs. For rotation, arrange a private destination first (for example `umask 077` and stdout redirection to a local file); do not capture stdout into a conversation. Deliver the secret to the supported client credential field using authorized local interaction. Never substitute the desktop management token or provider credential for the ingress bearer token.
 
+## Subscription and panel access
+
+`subscriptions get` reads the in-memory snapshot without refreshing. `subscriptions
+set --stdin` **replaces the complete settings**: first read `result.settings`, retain
+all intended `enabled`, `refreshMinutes`, `providers` and `pinnedWindows` values, then submit that
+object. `subscriptions refresh [providerId]` requests a real read for the selected,
+eligible source (all such sources if omitted). Its `accepted`/revision receipt is
+not fresh-data success; inspect `observedAt`, `state` and `error` with get.
+`subscriptions open [providerId]` opens this instance's main Agent detail panel; use an ID from the snapshot, or omit it for the Agents panel.
+
+`panel get` returns saved `preferences` separately from a main-thread `runtime`
+snapshot, without creating/showing the panel. `panel set --stdin` partially updates
+only the appearance/position fields listed in help. `resetPosition:true` resets
+placement and takes precedence over `dock` in the same update. Other fields remain
+unchanged. For example, with `CLC_APP` set to the installed executable:
+
+```sh
+"$CLC_APP" cli subscriptions get
+printf '%s' '{"dock":"top","size":"large","ends":"round"}' | "$CLC_APP" cli panel set --stdin
+"$CLC_APP" cli panel get
+"$CLC_APP" cli subscriptions open codex
+```
+
+A panel write reports `saved:true` and `application`: `saved` when there is no
+native panel (including unsupported platforms), `deferred` while a gesture/menu
+owns it, or `controller-applied`. These are not rendering acknowledgements.
+Runtime distinguishes `not-created`, `hidden`, `visible` and `unsupported`; absent
+panels have no invented frame. `expanded` is the controller target, and
+`acceptedGeometry.matches` means only that matching geometry was received.
+Frames use AppKit screen points with a bottom-left origin. Read again to observe
+later state; there is no animation barrier or simulated input. Windows can save
+preferences but reports unsupported native runtime. An unavailable target fails
+without starting a core; a timed-out desktop write requires readback before retry.
+The same local authentication, instance check and update-install write guard apply.
+
 ## Configuration examples
 
 The following are configuration shapes, not real credentials. Replace secret fields through secure stdin input. Each represents a separate entry sharing the same Core and task IDs.

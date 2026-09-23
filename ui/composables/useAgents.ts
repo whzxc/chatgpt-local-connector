@@ -1,11 +1,11 @@
 import { computed, ref } from 'vue';
 import { api } from './useConnector';
+import antigravityIcon from '../assets/brand-reserve/agents/antigravity/mono.svg?raw';
 import codexIcon from '../assets/brand-reserve/agents/codex/mono.svg?raw';
 import piIcon from '../assets/brand-reserve/agents/pi/mono.svg?raw';
 import opencodeIcon from '../assets/brand-reserve/agents/opencode/mono.svg?raw';
 import claudeIcon from '../assets/brand-reserve/agents/claude/color.svg?raw';
 import cursorIcon from '../assets/brand-reserve/agents/cursor/mono.svg?raw';
-import geminiIcon from '../assets/brand-reserve/agents/gemini/color.svg?raw';
 import grokIcon from '../assets/brand-reserve/agents/grok/mono.svg?raw';
 import copilotIcon from '../assets/brand-reserve/agents/copilot/color.svg?raw';
 import kimiIcon from '../assets/brand-reserve/agents/kimi/mono.svg?raw';
@@ -37,7 +37,7 @@ function persist() {
       ({agent, installed, available, enabled, version, displayName}))));
   } catch { /* A storage failure must not discard a successful discovery. */ }
 }
-export const icons: Record<string, string> = { codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: geminiIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon };
+export const icons: Record<string, string> = { antigravity:antigravityIcon, codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: antigravityIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon };
 export const agentLinks: Record<string, string> = {
   codex: 'https://github.com/openai/codex',
   pi: 'https://pi.dev/',
@@ -55,7 +55,7 @@ export const agentLinks: Record<string, string> = {
   junie: 'https://junie.jetbrains.com/',
   hermes: 'https://hermes-agent.nousresearch.com/',
 };
-export const name = (agent: Agent) => agent.displayName || ({ codex: 'Codex', pi: 'Pi', opencode: 'OpenCode' }[agent.agent] || agent.agent);
+export const name = (agent: Agent) => ({codex:'Codex',claude:'Claude',cursor:'Cursor',gemini:'Antigravity',grok:'Grok',opencode:'OpenCode',copilot:'GitHub Copilot',kimi:'Kimi',qwen:'Qwen',kiro:'Kiro',devin:'Devin',cline:'Cline',junie:'Junie',hermes:'Hermes',pi:'Pi'}[agent.agent] || agent.displayName) || ({ codex: 'Codex', pi: 'Pi', opencode: 'OpenCode' }[agent.agent] || agent.agent);
 const orderKey = 'clc.agent-order';
 const order = ref<string[]>([]);
 try {

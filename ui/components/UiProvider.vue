@@ -1,3 +1,18 @@
+<script lang="ts">
+export const usageValueButtonTheme = {
+  textColorText: 'inherit', textColorTextHover: 'inherit',
+  textColorTextPressed: 'inherit', textColorTextFocus: 'inherit',
+};
+export const usagePopoverTheme = (rail: boolean, horizontalGap = 40) => ({
+  borderRadius: '20px',
+  padding: '18px',
+  fontSize: '11.5px',
+  ...(rail ? { color: '#000000', textColor: '#f5f5f7' } : {}),
+  boxShadow: rail ? 'none' : '0 8px 24px rgba(0,0,0,.12)',
+  space: '12px',
+  spaceArrow: rail ? `${horizontalGap}px` : '28px',
+});
+</script>
 <script setup lang="ts">
 import { computed, watch } from 'vue';
 import { usePreferredDark } from '@vueuse/core';
@@ -5,8 +20,9 @@ import { NConfigProvider, darkTheme, enUS, zhCN, dateEnUS, dateZhCN, type Global
 import { locale } from '../i18n';
 import { theme, accent, sceneColors, translucent } from '../theme';
 import { isDesktop } from '../platform';
+const props=defineProps<{forceDark?:boolean}>();
 const systemDark = usePreferredDark();
-const dark = computed(() => theme.value === 'dark' || (theme.value === 'system' && systemDark.value));
+const dark = computed(() => props.forceDark || theme.value === 'dark' || (theme.value === 'system' && systemDark.value));
 if (isDesktop && navigator.platform.toLowerCase().includes('win')) {
   document.documentElement.dataset.nativeWindowsFrame = 'true';
   watch([dark, sceneColors, translucent], async () => {

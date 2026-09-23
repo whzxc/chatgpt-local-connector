@@ -1,0 +1,10 @@
+{
+  "identifier": "usage-rail",
+  "windows": [
+    "usage-rail"
+  ],
+  "permissions": [
+    "core:event:default",
+    "opener:default"
+  ]
+}

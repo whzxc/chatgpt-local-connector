@@ -18,6 +18,9 @@ const version = JSON.parse(await readFile(new URL('../package.json', import.meta
 let directory: string;
 let client: Client;
 let inventory: Awaited<ReturnType<Client['listTools']>>;
+async function writeIfChanged(file: string, content: string) {
+  if (await readFile(file, 'utf8').catch(() => null) !== content) await writeFile(file, content);
+}
 before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), 'chatgpt-local-connector-test-'));
   // A persisted legacy entry with no policy retains the default-all semantics.
@@ -51,10 +54,13 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (params?.delay) setTimeout(reply, params.delay); else reply();
 }
 `);
-  // The existing fake upstream exercises the compiled Rust MCP core, isolated from Desktop.
-  await mkdir(path.join(directory, 'src'));
+  // Keep the Cargo project path stable so each test run reuses its compiled dependencies.
+  // Runtime state and the fake upstream still live in a fresh temporary directory.
+  const target = fileURLToPath(new URL('../native/target/contracts', import.meta.url));
+  const fixtureDirectory = path.join(target, 'fixture');
+  await mkdir(path.join(fixtureDirectory, 'src'), { recursive: true });
   const corePath = fileURLToPath(new URL('../native', import.meta.url)).replaceAll('\\', '/');
-  await writeFile(path.join(directory, 'Cargo.toml'), `[package]
+  await writeIfChanged(path.join(fixtureDirectory, 'Cargo.toml'), `[package]
 name="contract-fixture"
 version="0.1.0"
 edition="2021"
@@ -62,12 +68,15 @@ edition="2021"
 connector-core={path=${JSON.stringify(corePath)},features=["test-fixture"]}
 serde_json="1"
 tokio={version="1",features=["full"]}
+[profile.dev]
+debug=1
+incremental=false
 `);
-  await writeFile(path.join(directory, 'src/main.rs'), `
+  await writeIfChanged(path.join(fixtureDirectory, 'src/main.rs'), `
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[tokio::main] async fn main() {
  let service=connector_core::service::Service::fixture(std::env::var("CLC_FIXTURE_BINARY").unwrap().into()).unwrap();
- let _listener=connector_core::transport::listen(service.clone()).await.unwrap();
+ let _listener=connector_core::transport::listen(service.clone(),None).await.unwrap();
  let mut lines=BufReader::new(tokio::io::stdin()).lines();
  let mut out=tokio::io::stdout();
  while let Some(line)=lines.next_line().await.unwrap() {
@@ -77,8 +86,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
  }
  service.control.close().await;
 }`);
-  const target = fileURLToPath(new URL('../native/target/contracts', import.meta.url));
-  execFileSync('cargo', ['build', '--quiet', '--manifest-path', path.join(directory, 'Cargo.toml'), '--target-dir', target], { stdio: 'inherit' });
+  execFileSync('cargo', ['build', '--quiet', '--manifest-path', path.join(fixtureDirectory, 'Cargo.toml'), '--target-dir', target], { stdio: 'inherit' });
   client = new Client({ name: 'chatgpt-local-connector-test', version: '1' });
   await client.connect(new StdioClientTransport({ command: path.join(target, 'debug', 'contract-fixture' + (process.platform === 'win32' ? '.exe' : '')), env: { ...process.env, CLC_STATE_DIR: directory, CLC_FIXTURE_SCRIPT: fixture, CLC_FIXTURE_BINARY: process.execPath } as Record<string, string>, stderr: 'pipe' }));
   inventory = await client.listTools();
@@ -302,7 +310,7 @@ test('real HTTP ingresses isolate discovery and direct execution; policy PUT pre
     const allowed = await ingressRpc(a, 'tools/call', { name: 'codex_call', arguments: args });
     assert.equal(allowed.result.isError, false);
     // A restricted real read succeeds, not merely schema validation or list filtering.
-    const read = await ingressRpc(b, 'tools/call', { name: 'read', arguments: { project: directory, path: 'Cargo.toml' } });
+    const read = await ingressRpc(b, 'tools/call', { name: 'read', arguments: { project: directory, path: 'app-server.mjs' } });
     assert.equal(read.result.isError, false, JSON.stringify(read));
     const verifyFile = path.join(directory, 'ingresses', b.id, 'verification.json');
     const code = JSON.parse(await readFile(verifyFile, 'utf8')).code;

@@ -11,6 +11,9 @@ if (spawnSync('cargo', ['--version'], { env, stdio: 'ignore' }).status !== 0) {
   if (cargo.status !== 0) throw new Error('请先安装 Rust stable 工具链，并确保 cargo 或 rustup 在 PATH 中。');
   env.PATH = path.dirname(cargo.stdout.trim()) + path.delimiter + (env.PATH || '');
 }
+const prune = spawnSync(process.execPath, [fileURLToPath(new URL('tooling/prune-build-cache.mjs', root))],
+  { cwd: fileURLToPath(root), env, stdio: 'inherit' });
+if (prune.status !== 0) throw new Error('无法检查 Rust 构建缓存');
 const args = [fileURLToPath(new URL('node_modules/@tauri-apps/cli/tauri.js', root)), 'dev'];
 if (process.platform === 'win32') args.push('--config', 'tauri.windows.conf.json');
 args.push('--config', 'tauri.dev.conf.json', ...process.argv.slice(2));

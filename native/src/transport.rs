@@ -5,7 +5,24 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
-pub async fn listen(service: Arc<Service>) -> Result<tokio::task::JoinHandle<()>> {
+pub enum DesktopRequest {
+    PanelGet,
+    PanelSet(Value),
+    SubscriptionsOpen(Value),
+}
+pub trait DesktopAccess: Send + Sync {
+    fn check_write(&self) -> Result<()>;
+    fn request(
+        &self,
+        request: DesktopRequest,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send>>;
+}
+
+pub async fn listen(
+    service: Arc<Service>,
+    desktop: Option<Arc<dyn DesktopAccess>>,
+) -> Result<tokio::task::JoinHandle<()>> {
+    service.subscriptions.start();
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| e.to_string())?;
@@ -26,13 +43,18 @@ pub async fn listen(service: Arc<Service>) -> Result<tokio::task::JoinHandle<()>
                 continue;
             }
             let s = service.clone();
+            let desktop = desktop.clone();
             tokio::spawn(async move {
-                let _ = handle(stream, s).await;
+                let _ = handle(stream, s, desktop).await;
             });
         }
     }))
 }
-async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
+async fn handle(
+    stream: TcpStream,
+    s: Arc<Service>,
+    desktop: Option<Arc<dyn DesktopAccess>>,
+) -> Result<()> {
     let mut reader = BufReader::new(stream);
     let request = tokio::time::timeout(Duration::from_secs(5), async {
         let mut head = String::new();
@@ -108,6 +130,23 @@ async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
             return Ok(());
         }
     };
+    if method == "GET" && path == "/api/subscriptions/events" {
+        let mut changes = s.subscriptions.subscribe();
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").await.map_err(|e|e.to_string())?;
+        loop {
+            let packet = format!(
+                "event: snapshot\ndata: {}\n\n",
+                serde_json::to_string(&*changes.borrow_and_update()).map_err(|e| e.to_string())?
+            );
+            if stream.write_all(packet.as_bytes()).await.is_err() {
+                return Ok(());
+            }
+            tokio::select! {
+                result = changes.changed() => if result.is_err() { return Ok(()); },
+                _ = tokio::time::sleep(Duration::from_secs(15)) => {},
+            }
+        }
+    }
     if method == "GET" && path == "/api/events" {
         stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").await.map_err(|e|e.to_string())?;
         loop {
@@ -137,7 +176,30 @@ async fn handle(stream: TcpStream, s: Arc<Service>) -> Result<()> {
     } else if method == "GET" && path == "/healthz" {
         Ok(json!({"runtime":"rust","instance":s.control.session,"pid":std::process::id()}))
     } else if let Some(route) = path.strip_prefix("/api/") {
-        s.request(route, &method, body).await
+        async {
+            if method != "GET" {
+                if let Some(owner) = &desktop {
+                    owner.check_write()?;
+                }
+            }
+            let operation = match (route, method.as_str()) {
+                ("usage-panel", "GET") => Some(DesktopRequest::PanelGet),
+                ("usage-panel", "PUT") => Some(DesktopRequest::PanelSet(body.clone())),
+                ("subscriptions/open", "POST") => {
+                    Some(DesktopRequest::SubscriptionsOpen(body.clone()))
+                }
+                _ => None,
+            };
+            if let Some(operation) = operation {
+                return desktop
+                    .as_ref()
+                    .ok_or("desktop access unavailable")?
+                    .request(operation)
+                    .await;
+            }
+            s.request(route, &method, body).await
+        }
+        .await
     } else {
         Err("not found".into())
     };

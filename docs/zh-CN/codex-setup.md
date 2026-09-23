@@ -29,6 +29,26 @@ transport 为 `openai-tunnel` 时 auth 为 `openai`；HTTPS 支持 `none` 或 `b
 
 完整字段与 provider 选项见 `cli help` 和[英文配置示例](../codex-setup.md#configuration-examples)。凭据只能来自授权的安全本机来源并经 stdin 传递，不放在命令参数、shell 字面量、聊天、日志或截图中。轮换前先准备受保护的本机输出文件，例如设置 `umask 077` 并重定向 stdout，不让模型读取密钥输出。使用客户端支持的安全凭据输入完成交付。不要拿管理 API token、OpenAI key 或 provider token 代替 ingress bearer。
 
+## 订阅与浮窗
+
+- `subscriptions get`：只读内存快照，不触发刷新。
+- `subscriptions set --stdin`：**完整替换设置**。先取 `result.settings`，保留需要的 `enabled`、`refreshMinutes`、`providers`、`pinnedWindows` 后提交完整对象，不做部分合并。
+- `subscriptions refresh [providerId]`：真实读取已选且有资格的来源；省略 ID 处理所有这些来源。`accepted` 和 revision 不代表新读数成功，之后 get 核对 `observedAt`、`state`、`error`。
+- `subscriptions open [providerId]`：打开目标实例的 Agent 详情面板，可定位快照中的合法来源；省略 ID 打开 Agents 列表。
+- `panel get`：分别返回保存的 `preferences` 和主线程读取的 `runtime`，不创建或显示浮窗。
+- `panel set --stdin`：部分更新 help 所列外观/位置字段，可组合设置。`resetPosition:true` 只恢复位置，在同一更新中优先于 `dock`。
+
+例如将 `CLC_APP` 设为已安装可执行文件后：
+
+```sh
+"$CLC_APP" cli subscriptions get
+printf '%s' '{"dock":"top","size":"large","ends":"round"}' | "$CLC_APP" cli panel set --stdin
+"$CLC_APP" cli panel get
+"$CLC_APP" cli subscriptions open codex
+```
+
+写回执的 `saved:true` 表示已保存；`application` 为 `saved`（无原生浮窗或平台不支持）、`deferred`（等待当前手势/菜单结束）或 `controller-applied`。这些都不证明像素呈现或动画完成。运行态区分 `not-created`、`hidden`、`visible`、`unsupported`，无窗口时不返回虚构 frame。`expanded` 是控制器目标；`acceptedGeometry.matches` 只表示收到匹配该代的几何。frame 使用左下原点的 AppKit 屏幕逻辑点。后续再 get 观察，不提供渲染屏障或输入模拟。Windows 可保存偏好，但原生运行态为 unsupported。目标离线会失败，不另启核心；桌面写入超时后先回读再决定是否重试。沿用本机鉴权、实例核对及更新安装期间的写入拦截。
+
 ## 配置示例
 
 ChatGPT：`controlSource=chatgpt`、`transport=openai-tunnel`、`auth=openai`；config 中填写官方 tunnelId 和 apiKey。保留官方身份申请、工作区关联及客户端接入流程。

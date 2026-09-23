@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 pub struct Service {
+    pub subscriptions: Arc<crate::subscriptions::SubscriptionService>,
     pub control: Arc<Control>,
     pub agents: Arc<crate::agents::AgentHost>,
     pub token: String,
@@ -218,7 +219,10 @@ impl Service {
             let ingress = Ingress::new(entry, control.clone(), agents.clone(), token.clone())?;
             ingresses.insert(ingress.id.clone(), ingress);
         }
+        let subscriptions =
+            crate::subscriptions::SubscriptionService::new(control.clone(), agents.clone())?;
         Ok(Arc::new(Self {
+            subscriptions,
             control,
             agents,
             token,
@@ -346,6 +350,7 @@ impl Service {
     pub async fn stop(&self) -> Result<()> {
         let _configuration = self.configuration.lock().await;
         self.closing.store(true, Ordering::SeqCst);
+        self.subscriptions.stop().await;
         let entries = self.entries().await;
         for ingress in &entries {
             ingress.retired.store(true, Ordering::SeqCst);
@@ -413,6 +418,21 @@ impl Service {
     ) -> Result<Value> {
         if self.closing.load(Ordering::SeqCst) {
             return Err("core shutting down".into());
+        }
+        if route == "agents/activity" && method == "GET" {
+            let selected = self
+                .subscriptions
+                .subscribe()
+                .borrow()
+                .providers
+                .iter()
+                .filter(|p| p.selected && p.eligible)
+                .map(|p| p.agent_id.clone())
+                .collect();
+            return Ok(self.agents.activity(selected).await);
+        }
+        if route == "subscriptions" || route.starts_with("subscriptions/") {
+            return self.subscriptions.request(route, method, body).await;
         }
         if route == "tool-catalog" && method == "GET" {
             let catalog = catalog();
@@ -828,9 +848,18 @@ impl Service {
                 ("POST", "agents/open") => {
                     self.agents.open_interactive(string(&body, "agent")).await
                 }
-                ("GET", "agents") => Ok(self.agents.ui_inventory(false).await),
-                ("POST", "agents") => Ok(self.agents.ui_inventory(true).await),
-                ("PUT", "agents") => self.agents.set_enabled(&body).await,
+                ("GET" | "POST", "agents") => {
+                    let inventory = self.agents.ui_inventory(method == "POST").await;
+                    self.subscriptions.inventory(&inventory).await;
+                    Ok(inventory)
+                }
+                ("PUT", "agents") => {
+                    let result = self.agents.set_enabled(&body).await?;
+                    if let Some(inventory) = self.agents.cached_subscription_inventory().await {
+                        self.subscriptions.inventory(&inventory).await;
+                    }
+                    Ok(result)
+                }
                 ("GET", "codex/login") => {
                     let binary = crate::desktop::installation()
                         .ok_or("请先安装 Codex Desktop")?

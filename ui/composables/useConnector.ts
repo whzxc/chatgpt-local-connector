@@ -2,7 +2,7 @@ import type { ToolPolicy } from '../toolPolicy';
 import { t } from '../i18n';
 import type { CoreSnapshot } from '../types';
 import { onUnmounted } from 'vue';
-import { desktopRequest, isDesktop } from '../platform';
+import { isDesktop } from '../platform';
 import {
   computed,
   inject,
@@ -77,27 +77,8 @@ export interface Diagnostics {
   summary?: string;
 }
 
-export async function api<T = unknown>(
-  path: string,
-  method = "GET",
-  body?: unknown,
-): Promise<T> {
-  if (isDesktop) return desktopRequest<T>(path, method, body);
-  const response = await fetch(`/api/${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", "X-CLC-Request": "1" },
-    ...(method !== "GET" ? { body: JSON.stringify(body ?? {}) } : {}),
-  });
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error(t('unrecognizedServiceResponseMakeSureTheManagementService'));
-  }
-  if (!response.ok)
-    throw new Error(data.error || data.message || t('requestFailedPleaseRetry'));
-  return data as T;
-}
+export { api } from '../api';
+import { api } from '../api';
 
 function createConnector() {
   const status = ref<Status>();

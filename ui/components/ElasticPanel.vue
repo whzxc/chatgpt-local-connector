@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { onClickOutside } from '@vueuse/core';
 import { NButton } from 'naive-ui';
 import { X } from '@lucide/vue';
 import { panelLayers } from '../composables/panels';
 import { t } from '../i18n';
-const props = withDefaults(defineProps<{ show: boolean; title: string; origin?: { x: number; y: number; size: number; height?: number }; busy?: boolean; width?: number }>(), { width: 800 });
+const props = withDefaults(defineProps<{ show: boolean; title: string; origin?: { x: number; y: number; size: number; height?: number }; busy?: boolean; headerless?: boolean; width?: number }>(), { width: 800 });
 const emit = defineEmits<{ close: []; closed: [] }>();
 const panel = ref<HTMLElement>();
 const position = ref({ x: 0, y: 0 });
@@ -112,15 +111,30 @@ function enter(element: Element, done: () => void) {
 }
 const leave = (element: Element, done: () => void) => transition(element, done, false);
 const close = () => { if (props.show && topmost.value && !props.busy) emit('close'); };
-onClickOutside(panel, close, { ignore: ['.v-binder-follower-content'] });
+// Only our backdrop can dismiss the panel. Browser annotation overlays and
+// teleported popovers are outside the panel DOM, but are not backdrop clicks.
+let backdropPressed = false;
+function isBackdrop(event: MouseEvent) {
+  if (event.target !== event.currentTarget) return false;
+  const rect = panel.value?.getBoundingClientRect();
+  return !!rect && (event.clientX < rect.left || event.clientX > rect.right
+    || event.clientY < rect.top || event.clientY > rect.bottom);
+}
+function backdropDown(event: PointerEvent) { backdropPressed = event.button === 0 && isBackdrop(event); }
+function cancelBackdrop() { backdropPressed = false; }
+function backdropClick(event: MouseEvent) {
+  const dismiss = backdropPressed && isBackdrop(event);
+  backdropPressed = false;
+  if (dismiss) close();
+}
 </script>
 <template>
   <Teleport defer to=".app-scene">
     <Transition :css="false" appear @enter="enter" @leave="leave" @after-leave="closed" @enter-cancelled="cancelTransition" @leave-cancelled="cancelTransition">
-      <div v-if="show" class="panel-layer" :class="{ recessed: !topmost }" :style="{zIndex:55 + Math.max(0,panelLayers.indexOf(layer!)) * 2}" :inert="!topmost">
+      <div v-if="show" class="panel-layer" :class="{ recessed: !topmost }" :style="{zIndex:55 + Math.max(0,panelLayers.indexOf(layer!)) * 2}" :inert="!topmost" @pointerdown="backdropDown" @pointercancel="cancelBackdrop" @click="backdropClick">
       <section ref="panel" class="elastic-panel" :style="style" tabindex="-1" role="dialog" aria-modal="true" :aria-label="title" @keydown.esc.stop="close">
-        <header class="panel-header" :class="{ dragging }" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag"><h1>{{title}}</h1><div class="panel-actions"><slot name="actions"/><NButton quaternary circle :disabled="busy" :aria-label="t('close')" :title="t('close')" @click="close"><template #icon><X :size="22"/></template></NButton></div></header>
-        <div class="panel-content"><slot/></div>
+        <header v-if="!headerless" class="panel-header" :class="{ dragging }" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag"><div class="panel-title"><h1>{{title}}</h1><span v-if="$slots['title-actions']" class="panel-actions"><slot name="title-actions"/></span></div><div class="panel-actions"><slot name="actions"/><NButton quaternary circle :disabled="busy" :aria-label="t('close')" :title="t('close')" @click="close"><template #icon><X :size="22"/></template></NButton></div></header>
+        <div class="panel-content" :class="{headerless, 'with-footer':!!$slots.footer}"><slot/></div>
         <footer v-if="$slots.footer" class="panel-footer"><slot name="footer"/></footer>
       </section>
       </div>
@@ -131,9 +145,12 @@ onClickOutside(panel, close, { ignore: ['.v-binder-follower-content'] });
 .panel-layer{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
 .panel-layer.recessed .elastic-panel{box-shadow:0 4px 12px light-dark(#132a2414,#00000024),0 12px 32px light-dark(#132a241c,#00000038)}
 .elastic-panel{position:relative;flex-shrink:0;width:min(var(--preferred-width),calc(100vw - 40px));max-height:calc(100dvh - 40px);box-sizing:border-box;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:28px;box-shadow:0 2px 6px light-dark(#132a2414,#00000033),0 12px 28px light-dark(#132a2426,#0000004d),0 32px 72px -12px light-dark(#132a2438,#00000080);transition:width 320ms cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column;overflow:hidden;outline:none;transform-origin:center;transform:translate(0,0) scale(1,1)}
-.panel-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:24px 28px 12px;flex-shrink:0}.panel-header h1{font-size:22px;font-weight:600;margin:0}.panel-actions{display:flex;align-items:center;gap:8px}
+.panel-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:28px 28px 12px;flex-shrink:0}.panel-header h1{font-size:22px;font-weight:600;margin:0}.panel-actions{display:flex;align-items:center;gap:8px}
+.panel-title{display:flex;align-items:center;gap:10px}
 .panel-header{cursor:grab;user-select:none;touch-action:none}.panel-header.dragging{cursor:grabbing}.panel-actions{cursor:default;touch-action:auto}
-.panel-content{padding:0 28px 12px;overflow:auto;overscroll-behavior:contain;min-height:0;flex:0 1 auto}
-.panel-footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 28px 20px;flex-shrink:0}.panel-footer :slotted(.action-spacer){flex:1}
+.panel-content{padding:0 28px 28px;overflow:auto;overscroll-behavior:contain;min-height:0;flex:0 1 auto}
+.panel-content.headerless{padding-top:28px}
+.panel-content.with-footer{padding-bottom:12px}
+.panel-footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:12px 28px 28px;flex-shrink:0}.panel-footer :slotted(.action-spacer){flex:1}
 @media(prefers-reduced-motion:reduce){.elastic-panel{transition:none}}
 </style>

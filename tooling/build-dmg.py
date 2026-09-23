@@ -43,6 +43,5 @@ dmgbuild.build_dmg(str(output), name, settings={
     "show_toolbar": False,
     "show_pathbar": False,
     "show_sidebar": False,
-    "hide_extensions": [application.name],
 })
 print(f"DMG: {output}")

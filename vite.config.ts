@@ -60,7 +60,7 @@ export default defineConfig({
           // Reconnect EventSource when the native app starts, exits, or is replaced.
           // Otherwise an already-open preview stream can stay attached to its old owner.
           const owner = ownerIdentity();
-          const watchOwner = request.url === '/api/events' ? setInterval(() => {
+          const watchOwner = ['/api/events', '/api/subscriptions/events'].includes(request.url || '') ? setInterval(() => {
             if (ownerIdentity() !== owner) { upstream.destroy(); response.end(); }
           }, 1000) : undefined;
           response.on('close', () => { clearInterval(watchOwner); upstream.destroy(); }); upstream.end(body);
@@ -68,6 +68,6 @@ export default defineConfig({
       });
     },
   }],
-  build: { outDir: '../dist/ui', emptyOutDir: true },
+  build: { outDir: '../dist/ui', emptyOutDir: true, rollupOptions: { input: { main: fileURLToPath(new URL('./ui/index.html', import.meta.url)), usageRail: fileURLToPath(new URL('./ui/usage-rail.html', import.meta.url)) } } },
   server: { host: '127.0.0.1', port: 5187, strictPort: true },
 });

@@ -59,6 +59,18 @@ cargo fmt --manifest-path native/Cargo.toml -- --check
 cargo fmt --manifest-path desktop/Cargo.toml -- --check
 ```
 
+Rust outputs are generated under the ignored `desktop/target`, `native/target`, and
+`tooling/verifier/target` directories. The npm test, Desktop check, dev, and
+build commands prune the oldest inactive output groups when the local total
+exceeds 10 GiB; the current command's output and packaged app/installers under
+`bundle` are retained. CI skips this local
+cleanup. The contract fixture uses a stable Cargo project path, and dev builds
+use limited debug information without incremental compilation to avoid a new
+cache for every test run or source change. Direct `cargo` commands bypass the
+automatic check; run `npm run cache:prune` after them when needed. To reclaim
+all Rust outputs, run `cargo clean --manifest-path desktop/Cargo.toml` and
+`cargo clean --manifest-path native/Cargo.toml`; the next build recompiles them.
+
 Desktop IPC task management supports macOS Unix sockets and Windows named pipes. Windows uses the installed Microsoft Store Codex Desktop.
 
 ## Release builds
@@ -70,6 +82,93 @@ npm run check:package
 
 `desktop:build` rebuilds the frontend before native packaging; a prior `dist/ui` directory is not reused. macOS installers target Apple Silicon (arm64) and are written to `desktop/target/aarch64-apple-darwin/release/bundle/`. macOS builds need `uv` to run a pinned dmgbuild version for the drag-to-install layout without text; build dependencies are excluded from the app. `check:package` checks for Node, npm, node_modules, and old runtime directories and reports size; it accepts another artifact directory. Windows builds use NSIS/MSI.
 
-Packages contain only the native executable, frontend static resources, and icons. Build scripts remap local user/repository paths in Rust source to generic build paths, avoiding private paths in binaries. Official Tunnel Client is downloaded and verified separately on first use. Codex uses the binary bundled in the user's Desktop installation rather than packaging another copy. Building does not overwrite the installed app.
+Packages contain the native executable, frontend static resources, icons, and applicable third-party license notices. Build scripts remap local user/repository paths in Rust source to generic build paths, avoiding private paths in binaries. Official Tunnel Client is downloaded and verified separately on first use. Codex uses the binary bundled in the user's Desktop installation rather than packaging another copy. Building does not overwrite the installed app.
 
 Keep versions synchronized across `package.json`, `native/Cargo.toml`, `desktop/Cargo.toml`, and Tauri configuration. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).
+
+## Subscription development
+
+`npm run dev:ui` renders the same usage rail component inside the browser
+viewport when subscription monitoring has selected providers. Its position is
+saved in browser local storage. Drag the capsule or a ring to move it; hover or
+focus a ring to inspect quota details, and click it to open Agent quota details.
+The browser adapter supplies viewport layout and pointer state; the desktop
+and browser share the rail renderer, shapes, animations, and quota components.
+Drag into a viewport edge zone to preview left/right/top/bottom docking; drag
+back into the interior to restore the floating capsule. Docked rails collapse to a sliver after the pointer leaves and expand when the
+pointer returns to the edge wake zone. Floating rails and active drags stay expanded. This browser-only interaction does not move or configure
+the native panel. Native screen management and notch behavior require the desktop window.
+
+The usage rail is built from `ui/usage-rail.html`. Desktop views receive
+`subscriptions:changed` events; browser previews receive snapshots through the authenticated
+`/api/subscriptions/events` SSE route, proxied by Vite. Each completed provider refresh
+publishes independently. Browser reconnection follows the native backend owner; polling
+is a fallback when the stream is unavailable. Local token scans run with quota refreshes,
+not a continuous log watcher.
+
+ Subscription snapshots expose
+`rawUsage`, the original successful quota API response for each provider. Authentication
+files, request headers, and tokens are not part of this payload. The core retains
+normalized quota windows for scheduling, expiry, and native alerts; display-only
+fields such as plan names and available resets are extracted by the shared frontend
+adapter in `ui/subscriptions/response.ts`. Changing that extraction does not require
+a new native build when the existing endpoint already supplies the data. Account
+changes clear both the normalized reading and the raw response. New native routes need
+a matching build owner. For an isolated desktop check, use the existing Tauri
+build `--config` override with a distinct application identifier/product name,
+launch that build with `--state-dir` pointing to a separate private directory,
+and leave ingress configuration disabled. A development window or Vite preview
+may forward to that isolated owner through `CLC_STATE_DIR`. Do not point an old
+production owner at new routes and silently start a second development core.
+
+
+### Subscription sources and usage estimates
+
+Cursor reads the desktop login from its local state database (or macOS Keychain), then
+queries DashboardService GetPlanInfo and GetCurrentPeriodUsage. REST usage-summary is
+a quota fallback. Free is a reported plan, not an inference from missing usage. Expired
+Cursor credentials require refreshing the login in Cursor.
+
+Antigravity discovers the running language server or agy CLI and reads quota summaries
+over loopback. On macOS it can also use the existing gemini/antigravity Keychain OAuth
+access token with Google Cloud Code. Token renewal is handled by Antigravity; CLC does
+not bundle OAuth client credentials. If the token expires, open Antigravity and refresh
+its login. Only loopback language-server TLS permits a self-signed
+certificate; remote services retain certificate validation. Windows supports running
+language-server discovery; closed-app Keychain fallback is macOS-only. Quota buckets
+remain separate for Gemini and third-party models, with 5h and weekly windows. Legacy
+model responses supply only 5h windows; missing fractions never become a full allowance.
+
+Quota-less successful responses retain their raw data so that plan names remain available.
+Agent management groups Cursor subscription information with Cursor Agent, and Antigravity
+subscription information with Gemini CLI. Execution keeps the original adapter identifiers.
+Usage settings select which history periods appear in both the rail and detail panels.
+
+Codex local rollout accounting, Antigravity conversation SQLite accounting, and Cursor's
+token CSV export supply Today, Yesterday, Last 7 Days, and Last 30 Days (including today). Local sources describe this device's logs, not a complete current-account invoice.
+Only token accounting is retained; prompts and responses are not exposed. Changed local
+files are rescanned, bounded records are used, and skipped records mark estimates incomplete.
+Codex child replay and duplicated rollout events are excluded.
+
+Dollar values are API-equivalent USD estimates, not subscription charges. Input, cache
+reads, cache writes, and output are priced separately; Codex priority and long-context
+rules apply to individual requests. Unknown models retain token counts and mark the
+estimate incomplete rather than receiving an invented price. Cursor CSV rows are
+aggregated and therefore use base rates, without inferring per-request context tiers.
+The bundled pricing snapshot and aliases derive from OpenUsage's MIT-licensed catalogs
+(LiteLLM, models.dev, and its supplement); attribution is in shared/pricing/LICENSE.OpenUsage.
+Prices load from bundled snapshots and the local cache, with background revalidation once
+per hour. Failed sources retry after 30 minutes without replacing last-good prices. The
+OpenUsage supplement takes precedence over LiteLLM, which takes precedence over models.dev.
+Conditional requests use ETags; bounded downloads follow the application network proxy.
+The next usage scan reprices cached token events using a consistent price snapshot; the
+price data timestamp is returned alongside history. No credentials or usage records are
+sent to pricing feeds.
+
+Quota bubbles project consumption from the elapsed reset window and used quota.
+Projection starts after at least 60 seconds or 1% of the window; near-empty meters
+(under 5% used) suppress unstable over-limit warnings. An even-pace tick follows
+the Used/Remaining display mode, and the warning respects countdown/absolute time.
+Expired or stale readings do not produce pace forecasts. Cursor uses reported billing
+cycle dates when available; monthly windows otherwise use the same 30-day convention
+as OpenUsage.

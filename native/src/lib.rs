@@ -17,6 +17,7 @@ pub mod projects;
 pub mod proxy;
 pub mod rpc;
 pub mod service;
+pub mod subscriptions;
 pub mod transport;
 pub mod waiter;
 pub type Result<T> = std::result::Result<T, String>;

@@ -1,14 +1,22 @@
 <script setup lang="ts">
+import { provideAgentActivity } from './composables/useAgentActivity';
+import { useSubscriptions, subscriptionSnapshotKey } from './subscriptions/useSubscriptions';
+import { requestedAgentSettings, requestedProvider } from './subscriptions/navigation';
 import { displayMessage } from './messages';
 import { t } from './i18n';
-import { computed, defineAsyncComponent, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { computed, defineAsyncComponent, provide, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { LayoutDashboard, Logs, Settings, Download, X, Maximize2, Minimize2 } from '@lucide/vue';
 import { NButton } from 'naive-ui';
 import { provideConnector } from './composables/useConnector';
 import { isDesktop, notifyNative } from './platform';
 import { startUpdateChecks, useAppUpdate } from './composables/useAppUpdate';
 import AppUpdateDialog from './components/AppUpdateDialog.vue';
+import AgentDisplaySettings from './components/AgentDisplaySettings.vue';
+import { panelPreferences } from './usage-rail/preferences';
+import type { PanelPreferences } from './usage-rail/layout';
 import { panelLayers } from './composables/panels';
+provide(subscriptionSnapshotKey, useSubscriptions().snapshot);
+provideAgentActivity();
 const appUpdate = useAppUpdate();
 let stopUpdateChecks = () => {};
 onMounted(() => { stopUpdateChecks = startUpdateChecks(); });
@@ -20,6 +28,7 @@ import RecordsPage from './components/RecordsPage.vue';
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'));
 import ChatGuide from './components/ChatGuide.vue';
 import ConnectionOverview from './components/ConnectionOverview.vue';
+const UsageRailPreview = import.meta.env.DEV ? defineAsyncComponent(() => import('./usage-rail/BrowserRailPreview.vue')) : null;
 const { status, feedback, notify } = provideConnector();
 type Page = 'guide' | 'overview' | 'logs' | 'settings' | 'tasks';
 const page = ref<Page>('overview');
@@ -28,6 +37,7 @@ const sheetWide = ref(false);
 const workspace = ref<HTMLElement>();
 watch(page, () => workspace.value?.scrollTo({ top: 0 }));
 const mac = isDesktop && navigator.platform.toLowerCase().includes('mac');
+const browserRailPreview = import.meta.env.DEV && !isDesktop;
 const lastPage = ref<Page>('tasks');
 async function navigate(next: Page) {
   if(next !== 'overview') { lastPage.value = next; sheetWide.value = false; }
@@ -73,6 +83,9 @@ onMounted(async () => {
   if (!isDesktop) return;
   const { listen } = await import('@tauri-apps/api/event');
   unlisteners.push(await listen<string>('navigate', event => { if (['overview','settings','logs','tasks'].includes(event.payload)) navigate(event.payload as Page); }));
+  unlisteners.push(await listen<PanelPreferences>('usage-panel:preferences', event => { panelPreferences.value=event.payload; }));
+  unlisteners.push(await listen('agents:settings', () => { requestedAgentSettings.value=true; }));
+  unlisteners.push(await listen<string>('subscriptions:open', event => { requestedProvider.value=event.payload; navigate('overview'); }));
   unlisteners.push(await listen<string>('connection-error', event => notify(event.payload, true)));
 });
 onUnmounted(() => unlisteners.forEach(stop => stop()));
@@ -110,6 +123,8 @@ onUnmounted(()=>clearTimeout(toastTimer));
     </nav>
     <div v-if="feedback.text && feedback.error" class="status-banner warning app-feedback" role="alert"><span>{{displayMessage(feedback.text)}}</span><button class="ghost banner-dismiss" :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
     <AppUpdateDialog/>
+    <AgentDisplaySettings v-if="requestedAgentSettings" :origin="{x:0,y:0,size:28}" @close="requestedAgentSettings=false"/>
+    <UsageRailPreview v-if="browserRailPreview"/>
     <div v-if="feedback.text && !feedback.error" class="message" role="status">{{displayMessage(feedback.text)}}<button :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
   </div>
 </template>

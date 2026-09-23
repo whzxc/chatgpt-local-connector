@@ -40,7 +40,7 @@ That is the direction of CLC: from “let ChatGPT read my local project” to �
 
 CLC itself requires no Node, npm, Rust, or Cargo installation. External Agents still need their own runtimes. Desktop task integration supports **Apple Silicon Mac** and **Windows x64**.
 
-Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. Settings → Agents lists built-in Agents, detected installation status and versions, and lets you enable installed Agents. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Shared task operations use the `agent_*` tools.
+Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. The home view’s More button opens Agents management, which lists brands, installation status and versions, and lets you enable installed Agents. Its settings button opens appearance, quota, and usage preferences. See [Subscription usage](docs/subscriptions.md) for quota monitoring and usage estimates. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Shared task operations use the `agent_*` tools.
 
 ## Installation
 

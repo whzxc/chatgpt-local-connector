@@ -1,6 +1,7 @@
 //! Common task host. Codex's native Control remains the owner of all native semantics.
 use crate::*;
 use std::collections::{HashMap, HashSet};
+mod activity;
 mod adapter;
 mod driver;
 mod manifest;
@@ -16,6 +17,7 @@ use driver::{AgentDriver, Manifest};
 use process::Process;
 
 pub struct AgentHost {
+    activity: Mutex<activity::Monitor>,
     drivers: HashMap<String, AgentDriver>,
     adapter_job: Mutex<Option<tokio::task::JoinHandle<()>>>,
     adapter_error: Mutex<Option<String>>,
@@ -71,6 +73,7 @@ impl AgentHost {
             HashSet::new()
         };
         Ok(Arc::new(Self {
+            activity: Default::default(),
             disabled: Mutex::new(disabled),
             drivers,
             adapter_job: Default::default(),
@@ -220,6 +223,12 @@ impl AgentHost {
         self.inventory_status(&mut value).await;
         value
     }
+    /// Cached discovery only: subscriptions never probe executables in a GET.
+    pub async fn cached_subscription_inventory(&self) -> Option<Value> {
+        let mut value = self.inventory_cache.lock().await.as_ref()?.1.clone();
+        self.inventory_status(&mut value).await;
+        Some(value)
+    }
     async fn inventory_status(&self, inventory: &mut Value) {
         let preparing = self
             .adapter_job
@@ -250,6 +259,25 @@ impl AgentHost {
                 "unavailable"
             });
         }
+    }
+    pub async fn activity(&self, selected: Vec<String>) -> Value {
+        let processes: Vec<_> = self.processes.lock().await.values().cloned().collect();
+        let mut active = std::collections::BTreeSet::new();
+        for process in processes {
+            if process.alive.load(std::sync::atomic::Ordering::SeqCst) {
+                let state = process.state.lock().await;
+                if state["status"] == "running" {
+                    active.insert(string(&state, "agent").to_owned());
+                }
+            }
+        }
+        let disabled = self.disabled.lock().await.clone();
+        let selected = selected
+            .into_iter()
+            .filter(|id| !disabled.contains(id))
+            .collect();
+        active.extend(self.activity.lock().await.sample(selected).await);
+        json!({"activeAgents":active,"observedAt":now(),"scope":"selected-local-transcripts-and-connector-live-sessions"})
     }
     pub async fn inventory(&self) -> Value {
         let mut rows = Vec::new();

@@ -22,6 +22,8 @@ const flags = env.CARGO_ENCODED_RUSTFLAGS?.split('\x1f') ?? env.RUSTFLAGS?.trim(
 flags.push(`--remap-path-prefix=${homedir()}=/build-user`, `--remap-path-prefix=${fileURLToPath(root)}=/workspace/`);
 env.CARGO_ENCODED_RUSTFLAGS = flags.join('\x1f');
 delete env.RUSTFLAGS;
+const prune = fileURLToPath(new URL('tooling/prune-build-cache.mjs', root));
+execFileSync(process.execPath, [prune], { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 execFileSync(process.execPath, [fileURLToPath(new URL('tooling/prepare-desktop.mjs', root))],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 execFileSync(process.execPath, args, { cwd: fileURLToPath(new URL('desktop/', root)), env, stdio: 'inherit' });
@@ -29,3 +31,8 @@ if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
   execFileSync('uv', ['run', '--script', fileURLToPath(new URL('tooling/build-dmg.py', root)),
     buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release'], { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 }
+const targetAt = buildArgs.findIndex(a => a === '--target' || a.startsWith('--target='));
+const target = targetAt < 0 ? null : buildArgs[targetAt] === '--target' ? buildArgs[targetAt + 1] : buildArgs[targetAt].slice('--target='.length);
+const profile = buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release';
+execFileSync(process.execPath, [prune, `--keep=desktop/target/${target || profile}`],
+  { cwd: fileURLToPath(root), env, stdio: 'inherit' });

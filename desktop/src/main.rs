@@ -5,9 +5,11 @@ use std::sync::Arc;
 use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod appearance;
+mod desktop_access;
 mod i18n;
 mod tray;
 mod updates;
+mod usage_panel;
 #[cfg(target_os = "macos")]
 mod window_controls;
 #[cfg(target_os = "windows")]
@@ -19,17 +21,35 @@ async fn request(
     method: &str,
     body: Value,
 ) -> Result<Value, String> {
-    if method != "GET"
-        && app
-            .state::<updates::UpdateState>()
-            .installing
-            .load(std::sync::atomic::Ordering::SeqCst)
-    {
-        return Err("正在安装更新，请等待应用重启。".into());
+    if method != "GET" {
+        desktop_access::check_write(app)?;
     }
     #[cfg(target_os = "macos")]
     if route == "appearance" {
         return appearance::request(app, method, body).await;
+    }
+    if route == "usage-panel/geometry" && method == "POST" {
+        usage_panel::geometry(app, body).await?;
+        return Ok(json!({"accepted":true}));
+    }
+    if route == "usage-panel/ready" && method == "POST" {
+        usage_panel::ready(app);
+        return Ok(json!({"ready":true}));
+    }
+    if route == "usage-panel" && ["GET", "PUT"].contains(&method) {
+        let operation = if method == "GET" {
+            connector_core::transport::DesktopRequest::PanelGet
+        } else {
+            connector_core::transport::DesktopRequest::PanelSet(body)
+        };
+        return desktop_access::request(app, operation).await;
+    }
+    if route == "subscriptions/open" && method == "POST" {
+        return desktop_access::request(
+            app,
+            connector_core::transport::DesktopRequest::SubscriptionsOpen(body),
+        )
+        .await;
     }
     if cfg!(debug_assertions) {
         return connector_core::transport::forward_request(route, method, body).await;
@@ -88,6 +108,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["usage-rail"])
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         & !(tauri_plugin_window_state::StateFlags::VISIBLE
@@ -110,8 +131,11 @@ fn main() {
             if !cfg!(debug_assertions) {
                 let service = Service::new().map_err(std::io::Error::other)?;
                 app.manage(service.clone());
-                tauri::async_runtime::block_on(connector_core::transport::listen(service.clone()))
-                    .map_err(std::io::Error::other)?;
+                tauri::async_runtime::block_on(connector_core::transport::listen(
+                    service.clone(),
+                    Some(Arc::new(desktop_access::Owner(app.handle().clone()))),
+                ))
+                .map_err(std::io::Error::other)?;
                 let resume = updates::take_resume();
                 if resume.is_some() || std::env::args().any(|arg| arg == "--autostart") {
                     tauri::async_runtime::spawn(async move {
@@ -140,6 +164,7 @@ fn main() {
                 #[cfg(target_os = "macos")]
                 window_controls::align(&window);
             }
+            usage_panel::install(app.handle());
             tray::install(app)?;
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
@@ -150,6 +175,9 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
             #[cfg(target_os = "macos")]
             if matches!(
                 event,
@@ -162,7 +190,12 @@ fn main() {
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if !cfg!(debug_assertions) {
+                if !cfg!(debug_assertions)
+                    || window
+                        .app_handle()
+                        .get_webview_window("usage-rail")
+                        .is_some()
+                {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -172,6 +205,7 @@ fn main() {
         .expect("Local Connector 启动失败")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                usage_panel::close();
                 // The updater already drained the service before replacing the
                 // app. Do not block the event loop on a second async shutdown.
                 if !app

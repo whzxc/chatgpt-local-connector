@@ -40,7 +40,7 @@ CLC 并不是从“给 ChatGPT 再加一堆工具”开始的。它来自一个�
 
 CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使用各自所需的运行环境。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
 
-Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；设置中的 Agents 区域会显示内置项、安装状态和版本，并支持启用已安装的 Agent。native/adapter 类型与能力见[本地 Agents](docs/agents.md)，公共任务操作统一使用 `agent_*` 工具。
+Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；首页右侧的“更多”入口打开 Agents 管理面板，按品牌显示安装状态和版本，并支持启用已安装的 Agent；标题旁的设置按钮打开外观、额度和用量设置。额度监控和用量估算见[订阅用量](docs/subscriptions.md)。native/adapter 类型与能力见[本地 Agents](docs/agents.md)，公共任务操作统一使用 `agent_*` 工具。
 
 ## 安装
 
