@@ -11,7 +11,24 @@ The production app is one Tauri/Rust process owning a single connection core. Th
 
 The home view places control sources on the left, the shared Connector in the center, and installed, supported Agents on the right. Each line shows its own status; an installed Agent can remain on standby. The top Connect/Disconnect button starts enabled ingresses or stops running ingresses. Click a built-in platform icon to open its website, or its line status icon to edit the connection, or use the plus button to add ChatGPT, Notion, Slack, or a custom MCP client. Each source has its own connection dialog with save, connect, disconnect, and remove actions. Applicable authentication and listener fields are displayed directly. Platform and display name are separate: the chosen platform stays fixed, and every source has an editable name; only ChatGPT offers OpenAI Tunnel. The editor reads back that ingress’s API key as a password, while other blank secret fields preserve saved credentials. General Settings contains application preferences; Agents management and its separate settings panel open from the home graph.
 
-The tray uses a transparent brand logo and shows connection state, tasks and pending approval counts, Records, and Settings. Connection, startup, and approval switches share main-window state and APIs. Cloud requests can still approve or bypass optional confirmation according to user intent. Tray labels follow the UI locale on the next status refresh.
+Clicking the menu-bar or tray icon toggles a subscription usage panel. It shows
+scrollable subscription cards.
+Quota blocks, usage rows and warning icons open secondary detail bubbles; the
+header itself has no hover details. Scrolling dismisses open detail bubbles.
+
+The panel follows the application theme and locale. It anchors to the tray icon,
+keeps within the monitor work area and chooses the side with space for details.
+On macOS secondary details use an AppKit NSPopover anchored to the hovered value,
+with system positioning, chrome and animation; hovering never resizes or
+moves the primary panel. A short reveal delay and leave grace allow moving between
+a row and its details. Closing the panel also closes its details. Window screenshots
+match the panel bounds without an outer transparent margin.
+The panel uses 14px content padding and spacing.
+Escape, an outside click or loss of focus closes it. The native Options menu contains connection status, Settings, Share Screenshot,
+Check for Updates, About and Quit. Share Screenshot copies a 4x image of one
+provider’s displayed quota and usage rows to the clipboard, with the current
+appearance and Local Connector branding. It does not capture other windows.
+Update checks use the main window’s existing update flow; errors remain visible.
 
 Automatically open Codex tasks is enabled by default. Creation persists a temporary empty seed before opening the task page for Desktop execution; sending, continuation, and interruption use the Desktop owner's IPC. When disabled, new tasks are created and run directly in Connector's app-server, without Desktop IPC or guaranteed Desktop continuation/interruption. Existing tasks retain their owner. Read-only background task queries do not resume execution. After Connector restarts, explicitly sending new input resumes the session; unconfirmed requests are never replayed automatically.
 
@@ -23,8 +40,11 @@ Development builds use a separate identifier and icon and forward reads/writes t
 
 First use requires Codex Desktop installation/sign-in, official Tunnel or HTTPS configuration, and adding/enabling the connection in ChatGPT. The app prepares the selected connection components. Existing Codex sign-in can be reused but does not replace provider credentials or web connection setup. See the [README](../README.md#let-codex-set-it-up-recommended) and [connection guide](tunnel.md).
 
-Selected subscriptions are monitored by the shared core independently of
-connections. macOS can show an independent non-activating edge rail after the
+Available subscriptions are monitored by default by the shared core independently
+of connections and Agent execution permissions. Enabling the quota panel enables
+monitoring of supported sources. When none are available, its settings explain
+why the panel is absent. macOS can show an independent non-activating edge rail after the
 feature is enabled. Closing the main window keeps monitoring and the rail alive;
-hiding the rail leaves monitoring active; disabling subscription monitoring stops quota refreshes. Both preserve the usual
+The rail window follows the visible capsule and bubble bounds for window screenshots.
+Hiding the rail leaves monitoring active; disabling subscription monitoring stops quota refreshes. Both preserve the usual
 Dock/menu-bar entry points. See [Subscription usage](subscriptions.md).

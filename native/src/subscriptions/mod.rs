@@ -36,11 +36,17 @@ pub struct SubscriptionService {
 impl SubscriptionService {
     pub fn new(control: Arc<Control>, agents: Arc<AgentHost>) -> Result<Arc<Self>> {
         let path = root().join("subscriptions/settings.json");
-        let settings: Settings = if path.exists() {
+        let mut settings: Settings = if path.exists() {
             serde_json::from_value(load(&path)?).map_err(|_| "invalid subscription settings")?
         } else {
             Settings::default()
         };
+        // Repair the former first-run defaults, which had no UI path to enable monitoring.
+        if !settings.enabled && settings.providers.is_empty() {
+            settings.enabled = true;
+            settings.providers = Settings::default().providers;
+            save(&path, &serde_json::to_value(&settings).unwrap())?;
+        }
         validate(&settings)?;
         let slots = REGISTRY
             .iter()
@@ -183,11 +189,8 @@ impl SubscriptionService {
         for slot in state.slots.values_mut() {
             let eligible = providers::standalone_available(&slot.view.provider_id)
                 || inventory["agents"].as_array().is_some_and(|rows| {
-                    rows.iter().any(|r| {
-                        r["agent"] == slot.view.agent_id
-                            && r["installed"] == true
-                            && r["enabled"] == true
-                    })
+                    rows.iter()
+                        .any(|r| r["agent"] == slot.view.agent_id && r["installed"] == true)
                 });
             if slot.view.eligible != eligible {
                 slot.view.eligible = eligible;

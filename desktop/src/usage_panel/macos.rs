@@ -31,6 +31,7 @@ struct Interaction {
 }
 struct Panel {
     native: Retained<UsagePanel>,
+    canvas: Retained<NSView>,
     app: tauri::AppHandle,
     count: usize,
     preferences: Value,
@@ -89,13 +90,17 @@ pub fn install(window: &tauri::WebviewWindow, count: usize) -> tauri::Result<()>
         panel.setAcceptsMouseMovedEvents(true);
         panel.setIgnoresMouseEvents(true);
         panel.setCollectionBehavior(NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::FullScreenNone);
-        if let Some(content) = original.contentView() {
+        let content = original.contentView().expect("usage canvas");
+        {
             // Tao still reads the original window's contentView when AppKit
             // changes its backing scale, even after the window is hidden.
             // Keep a view there so a display change cannot panic in Tao.
             let placeholder = NSView::initWithFrame(NSView::alloc(mtm), content.frame());
             original.setContentView(Some(&placeholder));
-            panel.setContentView(Some(&content));
+            let viewport = NSView::initWithFrame(NSView::alloc(mtm), content.frame());
+            content.setAutoresizingMask(NSAutoresizingMaskOptions::empty());
+            viewport.addSubview(&content);
+            panel.setContentView(Some(&viewport));
         }
         original.orderOut(None);
         // Mouse-only monitors don't request keyboard/accessibility permission.
@@ -108,7 +113,7 @@ pub fn install(window: &tauri::WebviewWindow, count: usize) -> tauri::Result<()>
         let local = RcBlock::new(move |event: NonNull<NSEvent>| { pointer(&local_app); event.as_ptr() });
         let monitors = [NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &global),
             NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &local)].into_iter().flatten().collect();
-        PANEL.with(|cell| *cell.borrow_mut() = Some(Panel {native:panel,app:app.clone(),count,preferences:super::preferences(),placement:Placement::load(&super::preferences()["placement"]),layout:None,screen:None,generation:0,expanded:false,slot:None,provider_id:None,left:None,geometry:Value::Null,monitors,interaction:None,menu_open:false,pending_preferences:None}));
+        PANEL.with(|cell| *cell.borrow_mut() = Some(Panel {native:panel,canvas:content,app:app.clone(),count,preferences:super::preferences(),placement:Placement::load(&super::preferences()["placement"]),layout:None,screen:None,generation:0,expanded:false,slot:None,provider_id:None,left:None,geometry:Value::Null,monitors,interaction:None,menu_open:false,pending_preferences:None}));
         tick(&app,count,super::preferences()["autoCollapse"]!=false);
     })
 }
@@ -124,7 +129,11 @@ pub fn height(count: usize) -> f64 {
         + 24.
 }
 fn local(p: &Panel, mouse: NSPoint) -> NSPoint {
-    let f = p.native.frame();
+    let f = p
+        .layout
+        .as_ref()
+        .map(|l| l.frame)
+        .unwrap_or_else(|| p.native.frame());
     NSPoint::new(mouse.x - f.origin.x, f.size.height - (mouse.y - f.origin.y))
 }
 fn ring(p: &Panel, point: NSPoint) -> Option<(usize, String)> {
@@ -145,22 +154,12 @@ fn place(p: &mut Panel, mut screen: ScreenGeometry, at: Option<NSPoint>) {
     }
     let size = placement::rail_size(&p.preferences, p.count, &p.placement, &screen);
     let origin = at.unwrap_or_else(|| placement::origin(&p.placement, &screen, size));
-    let mut layout = placement::layout(&p.preferences, p.count, &p.placement, &screen, origin);
+    let layout = placement::layout(&p.preferences, p.count, &p.placement, &screen, origin);
     p.native.setLevel(if p.placement.dock == "top" {
         NSStatusWindowLevel
     } else {
         NSFloatingWindowLevel
     });
-    if p.native.frame() != layout.frame {
-        p.native.setFrame_display(layout.frame, true);
-    }
-    p.native.orderFrontRegardless();
-    // AppKit may constrain on orderFront, not just setFrame. Compensate with
-    // the local rail offset against the frame actually granted by the server.
-    let actual = p.native.frame();
-    layout.rail.origin.x += layout.frame.origin.x - actual.origin.x;
-    layout.rail.origin.y += layout.frame.origin.y - actual.origin.y;
-    layout.frame = actual;
     let changed = p.layout.as_ref() != Some(&layout) || p.screen.as_ref() != Some(&screen);
     if changed {
         p.generation += 1;
@@ -168,9 +167,79 @@ fn place(p: &mut Panel, mut screen: ScreenGeometry, at: Option<NSPoint>) {
     }
     p.layout = Some(layout);
     p.screen = Some(screen);
+    fit_visible_frame(p);
+    p.native.orderFrontRegardless();
     if changed {
         emit(&p.app, p);
     }
+}
+// Keep the WebView's layout canvas stable while the native window crops to
+// the pixels Vue actually presents. Hit testing and dragging stay in canvas coordinates.
+fn fit_visible_frame(p: &Panel) {
+    let Some(layout) = &p.layout else { return };
+    let canvas = layout.frame;
+    let points: Vec<(f64, f64)> = ["rail", "detail", "controls", "corridor"]
+        .iter()
+        .filter_map(|key| p.geometry[*key].as_array())
+        .flatten()
+        .filter_map(|point| Some((point[0].as_f64()?, point[1].as_f64()?)))
+        .collect();
+    let (x, y, w, h) = if points.is_empty() {
+        (
+            layout.rail.origin.x,
+            canvas.size.height - layout.rail.origin.y - layout.rail.size.height,
+            layout.rail.size.width,
+            layout.rail.size.height,
+        )
+    } else {
+        let left = points
+            .iter()
+            .map(|v| v.0)
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.);
+        let top = points
+            .iter()
+            .map(|v| v.1)
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.);
+        let right = points
+            .iter()
+            .map(|v| v.0)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .min(canvas.size.width);
+        let bottom = points
+            .iter()
+            .map(|v| v.1)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .min(canvas.size.height);
+        (left, top, (right - left).max(1.), (bottom - top).max(1.))
+    };
+    let left = (x - 2.).max(0.);
+    let top = (y - 2.).max(0.);
+    let right = (x + w + 2.).min(canvas.size.width);
+    let bottom = (y + h + 2.).min(canvas.size.height);
+    let frame = NSRect::new(
+        NSPoint::new(
+            canvas.origin.x + left,
+            canvas.origin.y + canvas.size.height - bottom,
+        ),
+        NSSize::new((right - left).max(1.), (bottom - top).max(1.)),
+    );
+    if p.native.frame() != frame {
+        p.native.setFrame_display(frame, false);
+    }
+    let actual = p.native.frame();
+    p.canvas.setFrame(NSRect::new(
+        NSPoint::new(
+            canvas.origin.x - actual.origin.x,
+            canvas.origin.y - actual.origin.y,
+        ),
+        canvas.size,
+    ));
 }
 pub fn configure(app: &tauri::AppHandle, preferences: Value) {
     PANEL.with(|cell| {
@@ -243,11 +312,7 @@ pub fn tick(app: &tauri::AppHandle, count: usize, _auto_collapse: bool) {
         if p.preferences["notchFusion"] == false {
             screen.notch = None;
         }
-        if p.layout
-            .as_ref()
-            .is_none_or(|l| l.frame != p.native.frame())
-            || p.screen.as_ref() != Some(&screen)
-        {
+        if p.layout.is_none() || p.screen.as_ref() != Some(&screen) {
             p.placement.display = screen.id.clone();
             place(p, screen, None);
         }
@@ -381,7 +446,7 @@ fn input(event: &NSEvent) -> bool {
                 return false;
             }
             let Some(l) = &p.layout else { return false };
-            let f = p.native.frame();
+            let f = l.frame;
             p.interaction = Some(Interaction {
                 start: mouse,
                 grab: NSPoint::new(
@@ -604,7 +669,8 @@ pub fn geometry(app: &tauri::AppHandle, body: Value) {
     }
     PANEL.with(|cell| {
         if let Some(p) = cell.borrow_mut().as_mut() {
-            let s = p.native.frame().size;
+            let Some(layout) = &p.layout else { return };
+            let s = layout.frame.size;
             if body["generation"] == p.generation
                 && body["display"] == p.placement.display
                 && body["dock"] == p.placement.dock
@@ -612,6 +678,7 @@ pub fn geometry(app: &tauri::AppHandle, body: Value) {
                 && body["height"].as_f64() == Some(s.height)
             {
                 p.geometry = body;
+                fit_visible_frame(p);
             }
         }
     });

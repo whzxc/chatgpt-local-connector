@@ -82,6 +82,7 @@ const unlisteners: (() => void)[] = [];
 onMounted(async () => {
   if (!isDesktop) return;
   const { listen } = await import('@tauri-apps/api/event');
+  unlisteners.push(await listen('updates:check', () => { appUpdate.showUpdate(); void appUpdate.check(); }));
   unlisteners.push(await listen<string>('navigate', event => { if (['overview','settings','logs','tasks'].includes(event.payload)) navigate(event.payload as Page); }));
   unlisteners.push(await listen<PanelPreferences>('usage-panel:preferences', event => { panelPreferences.value=event.payload; }));
   unlisteners.push(await listen('agents:settings', () => { requestedAgentSettings.value=true; }));

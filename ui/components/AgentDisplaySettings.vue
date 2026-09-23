@@ -26,7 +26,12 @@ async function setRefresh(value:string) {
 onMounted(() => { readPanelPreferences().catch(e => error.value=String(e)); });
 async function setAppearance(patch: Partial<PanelPreferences>) {
   saving.value=true;error.value='';
-  try { await savePanelPreferences(patch); }
+  try {
+    if (patch.visible && saveSettings && snapshot?.value) {
+      await saveSettings({enabled:true,providers:snapshot.value.providers.map(p=>p.providerId)});
+    }
+    await savePanelPreferences(patch);
+  }
   catch(e) { error.value=String(e); }
   finally { saving.value=false; }
 }
@@ -37,8 +42,9 @@ async function setAppearance(patch: Partial<PanelPreferences>) {
     <NAlert v-if="error" type="error">{{error}}</NAlert>
     <div class="agent-settings-groups">
     <SettingsGroup :title="t('usageAppearance')">
+      <NAlert v-if="panelPreferences.visible !== false && snapshot && !snapshot.providers.some(p=>p.eligible)" type="info" :show-icon="false">{{t('usageNoAvailableProviders')}}</NAlert>
       <SettingsRow :title="t('usageShow')">
-        <NSwitch :value="panelPreferences.visible !== false" :disabled="saving" :aria-label="t('usageShow')" @update:value="setAppearance({visible:$event})"/>
+        <NSwitch :value="panelPreferences.visible !== false && !!snapshot?.settings.enabled && snapshot.settings.providers.length > 0" :disabled="saving || !snapshot || !saveSettings" :aria-label="t('usageShow')" @update:value="setAppearance({visible:$event})"/>
       </SettingsRow>
       <SettingsRow :title="t('usageSize')" :description="t('usageSizeDescription')">
         <SingleChoice :value="panelPreferences.size" :disabled="saving" :label="t('usageSize')" :options="[{value:'small',label:t('usageSmall')},{value:'standard',label:t('usageStandard')},{value:'large',label:t('usageLarge')}] as const" @update:value="setAppearance({size:$event})"/>

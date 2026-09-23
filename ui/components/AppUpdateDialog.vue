@@ -10,7 +10,8 @@ const { update, announcement, checking, phase, active, available, progress, down
 
 <template>
   <ElasticPanel :show="dialogOpen" :width="600" :title="available ? t('versionValueIsAvailable',{version:update?.version}) : t('appUpdates')" :busy="active" @close="dismissUpdate">
-    <p class="hint">{{t('installationRestartsTheAppAndRestoresThePrevious')}}</p>
+    <p v-if="checking" role="status">{{t('checkingLabel')}}</p>
+    <p v-if="available" class="hint">{{t('installationRestartsTheAppAndRestoresThePrevious')}}</p>
     <p v-if="available && update?.notes" class="update-notes">{{update.notes}}</p>
     <p v-else-if="available" class="hint">{{t('aNewVersionIsReadyToDownloadAnd')}}</p>
     <div v-if="active" role="status" aria-live="polite"><p>{{phase==='installing' ? t('installingRestartingSoon') : progress===undefined ? t('downloadingValueMb',{size:(downloaded/1048576).toFixed(1)}) : t('downloadingValue',{percent:progress})}}</p><NProgress v-if="phase==='downloading'" type="line" :percentage="progress ?? 0" :processing="progress===undefined" :show-indicator="false" :aria-label="t('updateDownloadProgress')"/></div>

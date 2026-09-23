@@ -1,0 +1,5 @@
+{
+  "identifier": "tray-panel",
+  "windows": ["tray-panel"],
+  "permissions": ["core:event:default", "core:menu:default", "core:image:default", "core:resources:default", "clipboard-manager:allow-write-image", "opener:default"]
+}

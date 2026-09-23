@@ -15,9 +15,12 @@ fn default_refresh_minutes() -> u64 {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             refresh_minutes: default_refresh_minutes(),
-            providers: Vec::new(),
+            providers: super::providers::REGISTRY
+                .iter()
+                .map(|r| r.id.to_owned())
+                .collect(),
             pinned_windows: BTreeMap::new(),
         }
     }

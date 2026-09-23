@@ -36,6 +36,10 @@ beside its title. Settings have three groups:
 - **Usage:** independently show Today, Yesterday, Last 7 Days and Last 30 Days. The latter
   two include today and use local calendar days.
 
+Subscription monitoring is enabled by default for supported sources detected on the device.
+Agent execution permissions do not disable quota monitoring. Enabling the rail also
+enables monitoring; with no available sources, settings display an explanation.
+
 Each quota bubble has a manual refresh button. Plan titles open the provider's usage page or service homepage. OpenCode currently opens
 Console because its usage response does not supply a workspace identity.
 Quota windows are named 5h, weekly or monthly. Remaining display uses 额度 in Chinese;

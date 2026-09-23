@@ -1,261 +1,182 @@
-use crate::i18n::t;
-use crate::{request, show_main_window};
-use serde_json::{json, Value};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc,
 };
-use std::time::Duration;
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
-    tray::TrayIconBuilder,
-    Emitter,
+    tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager,
 };
 
+#[derive(Default)]
+struct PanelInteraction(AtomicBool);
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
-    let heading = MenuItem::with_id(
+    app.manage(PanelInteraction::default());
+    crate::tray_detail::install(app)?;
+    let window = tauri::WebviewWindowBuilder::new(
         app,
-        "status",
-        t("serviceLocalConnectorChecking"),
-        false,
-        None::<&str>,
-    )?;
-    let desktop = MenuItem::with_id(
-        app,
-        "desktop-status",
-        t("serviceCodexChecking"),
-        false,
-        None::<&str>,
-    )?;
-    let verification = MenuItem::with_id(
-        app,
-        "verification",
-        t("serviceChatgptChecking"),
-        false,
-        None::<&str>,
-    )?;
-    let connection = CheckMenuItem::with_id(
-        app,
-        "connection",
-        t("serviceConnect"),
-        false,
-        false,
-        None::<&str>,
-    )?;
-    let startup = CheckMenuItem::with_id(
-        app,
-        "startup",
-        t("serviceConnectAtSystemSignIn"),
-        false,
-        false,
-        None::<&str>,
-    )?;
-    let approval = CheckMenuItem::with_id(
-        app,
-        "approval",
-        t("serviceTaskApprovalMode"),
-        false,
-        false,
-        None::<&str>,
-    )?;
-    let tasks = MenuItem::with_id(app, "tasks", t("serviceTasks"), true, None::<&str>)?;
-    let home = MenuItem::with_id(app, "overview", t("serviceOpenHome"), true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", t("serviceSettings"), true, None::<&str>)?;
-    let records = MenuItem::with_id(app, "logs", t("serviceRecords"), true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", t("serviceQuitApp"), true, None::<&str>)?;
-    let separator1 = PredefinedMenuItem::separator(app)?;
-    let separator2 = PredefinedMenuItem::separator(app)?;
-    let separator3 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(
-        app,
-        &[
-            &heading,
-            &desktop,
-            &verification,
-            &separator1,
-            &connection,
-            &startup,
-            &approval,
-            &separator2,
-            &home,
-            &tasks,
-            &records,
-            &settings,
-            &separator3,
-            &quit,
-        ],
-    )?;
-    let busy = Arc::new(AtomicBool::new(false));
-    let error = Arc::new(Mutex::new(None::<String>));
-    let action_busy = busy.clone();
-    let action_error = error.clone();
-    let action_connection = connection.clone();
-    let action_startup = startup.clone();
-    let action_approval = approval.clone();
+        "tray-panel",
+        tauri::WebviewUrl::App("tray-panel.html".into()),
+    )
+    .title("Local Connector — Usage")
+    .inner_size(380., 704.)
+    .visible(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .resizable(false)
+    .skip_taskbar(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .build()?;
+    window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
+    let skip_click = Arc::new(AtomicBool::new(false));
+    let focus_skip = skip_click.clone();
+    let handle = window.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Focused(false))
+            && !crate::tray_detail::detail_visible()
+            && !handle
+                .app_handle()
+                .state::<PanelInteraction>()
+                .0
+                .load(Ordering::Relaxed)
+        {
+            // Clicking the tray icon can blur the panel before its mouse-up event.
+            if let (Ok(point), Some(tray)) = (
+                handle.cursor_position(),
+                handle.app_handle().tray_by_id("main-tray"),
+            ) {
+                if let Ok(Some(rect)) = tray.rect() {
+                    let scale = handle.scale_factor().unwrap_or(1.);
+                    let pos = rect.position.to_physical::<f64>(scale);
+                    let size = rect.size.to_physical::<f64>(scale);
+                    focus_skip.store(
+                        point.x >= pos.x
+                            && point.x <= pos.x + size.width
+                            && point.y >= pos.y
+                            && point.y <= pos.y + size.height,
+                        Ordering::Relaxed,
+                    );
+                }
+            }
+            crate::tray_detail::dismiss(handle.app_handle());
+            let _ = handle.hide();
+        }
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            crate::tray_detail::dismiss(handle.app_handle());
+            let _ = handle.hide();
+        }
+    });
     TrayIconBuilder::with_id("main-tray")
         .icon(tauri::include_image!("icons/tray-logo.png"))
         .icon_as_template(false)
         .tooltip("Local Connector")
-        .menu(&menu)
-        .show_menu_on_left_click(true)
-        .on_menu_event(move |app, event| {
-            let action = event.id.as_ref();
-            match action {
-                "overview" | "settings" | "logs" | "tasks" => {
-                    show_main_window(app);
-                    let _ = app.emit("navigate", action);
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(move |tray, event| {
+            if let TrayIconEvent::Click {
+                position,
+                rect,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if skip_click.swap(false, Ordering::Relaxed) {
+                    return;
                 }
-                "quit" => app.exit(0),
-                "connection" | "startup" | "approval" => {
-                    if action_busy.swap(true, Ordering::SeqCst) { return; }
-                    let _ = action_connection.set_enabled(false);
-                    let _ = action_startup.set_enabled(false);
-                    let _ = action_approval.set_enabled(false);
-                    let action = action.to_owned();
-                    let app = app.clone();
-                    let busy = action_busy.clone();
-                    let error = action_error.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let result: Result<Value, String> = async {
-                            if action == "approval" {
-                                let current = request(&app, "task-settings", "GET", json!({})).await?;
-                                request(&app, "task-settings", "PUT", json!({"enabled": !current["enabled"].as_bool().unwrap_or(false)})).await
-                            } else if action == "startup" {
-                                let current = request(&app, "service", "GET", json!({})).await?;
-                                request(&app, "service", "POST", json!({"enabled": !current["enabled"].as_bool().unwrap_or(false)})).await
-                            } else {
-                                let current = request(&app, "status", "GET", json!({})).await?;
-                                let active = current["connection"]["running"].as_bool().unwrap_or(false);
-                                request(&app, if active { "stop" } else { "start" }, "POST", json!({})).await
-                            }
-                        }.await;
-                        *error.lock().unwrap() = result.err();
-                        if let Some(message) = error.lock().unwrap().as_ref() {
-                            let _ = app.emit("connection-error", message);
-                            show_main_window(&app);
-                        }
-                        busy.store(false, Ordering::SeqCst);
-                    });
+                if let Err(error) = toggle(tray.app_handle(), position, rect) {
+                    eprintln!("Tray panel: {error}");
                 }
-                _ => (),
             }
         })
         .build(app)?;
-    let app = app.handle().clone();
-    std::thread::spawn(move || loop {
-        if !busy.load(Ordering::SeqCst) {
-            let _ = home.set_text(t("serviceOpenHome"));
-            let _ = settings.set_text(t("serviceSettings"));
-            let _ = records.set_text(t("serviceRecords"));
-            let _ = quit.set_text(t("serviceQuitApp"));
-            let _ = startup.set_text(t("serviceConnectAtSystemSignIn"));
-            let _ = approval.set_text(t("serviceTaskApprovalMode"));
-            let status = tauri::async_runtime::block_on(request(&app, "status", "GET", json!({})));
-            let service =
-                tauri::async_runtime::block_on(request(&app, "service", "GET", json!({})));
-            let task_records =
-                tauri::async_runtime::block_on(request(&app, "tasks", "GET", json!({})));
-            if !busy.load(Ordering::SeqCst) {
-                let pending = task_records
-                    .as_ref()
-                    .ok()
-                    .and_then(|v| v["records"].as_array())
-                    .map(|records| {
-                        records
-                            .iter()
-                            .filter(|r| r["state"] == "awaiting-approval")
-                            .count()
-                    });
-                let _ = tasks.set_text(match pending {
-                    Some(n) if n > 0 => {
-                        t("serviceTasksValueAwaitingApproval").replace("{n}", &n.to_string())
-                    }
-                    _ => t("serviceTasks").to_owned(),
-                });
-                match status {
-                    Ok(value) => {
-                        let state = value["tunnel"]["state"].as_str().unwrap_or("unknown");
-                        let active = value["connection"]["running"]
-                            .as_bool()
-                            .unwrap_or(matches!(state, "ready" | "starting" | "degraded"));
-                        let codex_ready = value["core"]["desktop"]["state"] == "ready";
-                        let verified = value["core"]["chatgpt"]["verifiedAt"].is_string();
-                        let label = match state {
-                            "ready" if !codex_ready => {
-                                t("serviceConnectionNeedsAttentionCodexNotReady")
-                            }
-                            "ready" if verified => t("serviceConnected"),
-                            "ready" => t("serviceTunnelReadyAwaitingChatgpt"),
-                            "starting" => t("serviceConnecting"),
-                            "stopping" => t("serviceDisconnecting"),
-                            "error" | "degraded" => t("serviceConnectionNeedsAttention"),
-                            _ => t("serviceConnectionClosed"),
-                        };
-                        let failure = error.lock().unwrap().take();
-                        let _ = heading.set_text(
-                            failure
-                                .as_ref()
-                                .map(|_| t("serviceActionIncompleteCheckTheApp"))
-                                .unwrap_or(label),
-                        );
-                        let codex = match state {
-                            "starting" | "stopping" => t("serviceConnecting"),
-                            "error" | "degraded" => t("serviceConnectionError"),
-                            "ready" => match value["core"]["desktop"]["state"].as_str() {
-                                Some("ready") => t("serviceReady"),
-                                Some("running") => t("serviceOpen"),
-                                Some("connecting") => t("servicePreparing"),
-                                Some("unavailable") => t("serviceUnavailable"),
-                                Some("error") => t("serviceConnectionError"),
-                                Some("disconnected") => t("serviceNotReady"),
-                                _ => t("serviceCheckRequired"),
-                            },
-                            _ => t("serviceDisconnected"),
-                        };
-                        let _ = desktop.set_text(format!("Codex · {codex}"));
-                        let _ = verification.set_text(if state != "ready" {
-                            t("serviceChatgptDisconnected")
-                        } else if verified {
-                            t("serviceChatgptVerified")
-                        } else {
-                            t("serviceChatgptAwaitingVerification")
-                        });
-                        let _ = approval
-                            .set_checked(value["taskApprovalEnabled"].as_bool().unwrap_or(false));
-                        let _ = approval.set_enabled(!cfg!(debug_assertions));
-                        let _ = connection.set_text(if active {
-                            t("serviceDisconnect")
-                        } else {
-                            t("serviceConnect")
-                        });
-                        let _ = connection.set_checked(active);
-                        let configured = value["config"]["configured"].as_bool().unwrap_or(false);
-                        let _ = connection.set_enabled(
-                            !cfg!(debug_assertions)
-                                && configured
-                                && !matches!(state, "starting" | "stopping"),
-                        );
-                    }
-                    Err(_) => {
-                        let _ = heading.set_text(t("serviceConnectionStatusErrorOpenTheApp"));
-                        let _ = desktop.set_text(t("serviceCodexStatusUnknown"));
-                        let _ = verification.set_text(t("serviceChatgptStatusUnknown"));
-                        let _ = connection.set_checked(false);
-                        let _ = connection.set_enabled(false);
-                        let _ = approval.set_enabled(false);
-                    }
-                }
-                if let Ok(value) = service {
-                    let _ = startup.set_checked(value["enabled"].as_bool().unwrap_or(false));
-                    let _ = startup.set_enabled(
-                        !cfg!(debug_assertions) && value["supported"].as_bool().unwrap_or(false),
-                    );
-                } else {
-                    let _ = startup.set_enabled(false);
-                }
-            }
-        }
-        std::thread::sleep(Duration::from_secs(2));
-    });
     Ok(())
+}
+fn toggle(
+    app: &tauri::AppHandle,
+    point: tauri::PhysicalPosition<f64>,
+    rect: tauri::Rect,
+) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window("tray-panel") else {
+        return Ok(());
+    };
+    if window.is_visible()? {
+        crate::tray_detail::dismiss(app);
+        return window.hide();
+    }
+    let monitors = window.available_monitors()?;
+    let monitor = monitors.iter().find(|m| {
+        let p = m.position();
+        let s = m.size();
+        point.x >= p.x as f64
+            && point.x < p.x as f64 + s.width as f64
+            && point.y >= p.y as f64
+            && point.y < p.y as f64 + s.height as f64
+    });
+    if let Some(monitor) = monitor {
+        let scale = monitor.scale_factor();
+        let area = monitor.work_area();
+        let width = (380. * scale).min(area.size.width as f64);
+        let height = (704. * scale).min(area.size.height as f64);
+        let left = area.position.x as f64;
+        let top = area.position.y as f64;
+        let right = left + area.size.width as f64;
+        let side = if point.x > left + area.size.width as f64 / 2. {
+            "left"
+        } else {
+            "right"
+        };
+        let x = (point.x - width / 2.).clamp(left, right - width);
+        let icon_pos = rect.position.to_physical::<f64>(scale);
+        let icon_size = rect.size.to_physical::<f64>(scale);
+        let y = (icon_pos.y + icon_size.height).clamp(top, top + area.size.height as f64 - height);
+        window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
+        window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32))?;
+        window.emit("tray-panel:open", serde_json::json!({"side":side}))?;
+    }
+    window.show()?;
+    window.set_focus()
+}
+#[tauri::command]
+pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), String> {
+    if window.label() != "tray-panel" {
+        return Err("invalid window".into());
+    }
+    let app = window.app_handle();
+    crate::tray_detail::dismiss(app);
+    match action.as_str() {
+        "menu-open" => {
+            app.state::<PanelInteraction>()
+                .0
+                .store(true, Ordering::Relaxed);
+            Ok(())
+        }
+        "menu-close" => {
+            app.state::<PanelInteraction>()
+                .0
+                .store(false, Ordering::Relaxed);
+            if !window.is_focused().map_err(|e| e.to_string())? {
+                window.hide().map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+        "updates" => {
+            window.hide().map_err(|e| e.to_string())?;
+            crate::show_main_window(app);
+            app.emit_to("main", "updates:check", ())
+                .map_err(|e| e.to_string())
+        }
+        "hide" => window.hide().map_err(|e| e.to_string()),
+        "quit" => {
+            app.exit(0);
+            Ok(())
+        }
+        "overview" | "settings" | "logs" | "tasks" => {
+            window.hide().map_err(|e| e.to_string())?;
+            crate::show_main_window(app);
+            app.emit_to("main", "navigate", action)
+                .map_err(|e| e.to_string())
+        }
+        _ => Err("invalid action".into()),
+    }
 }
