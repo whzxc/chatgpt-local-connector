@@ -2,8 +2,7 @@
 import { t, language, languageOptions, setLanguage } from '../i18n';
 import { NButton, NSwitch, NInput } from 'naive-ui';
 import SingleChoice from './SingleChoice.vue';
-import { theme, themeColor, themeColors, translucent } from '../theme';
-import { controlSourceClick } from '../behavior';
+import { theme, themeColor, themeColors } from '../theme';
 import { Monitor, Sun, Moon } from '@lucide/vue';
 import { useIntervalFn } from '@vueuse/core';
 import { computed, onMounted, ref } from 'vue';
@@ -71,9 +70,6 @@ async function setApproval(enabled: boolean) {
 
 
     <SettingsGroup :title="t('behavior')">
-      <SettingsRow :title="t('clickControlSource')">
-        <SingleChoice v-model:value="controlSourceClick" :label="t('clickControlSource')" :options="[{value:'service',label:t('goToService')},{value:'settings',label:t('connectionSettings')}] as const"/>
-      </SettingsRow>
       <SettingsRow :title="t('automaticallyOpenCodexTasks')" :description="t('whenDisabledNewTasksRunInTheBackground')" control-id="settings-auto-open">
         <NSwitch id="settings-auto-open" :aria-label="t('automaticallyOpenCodexTasks')"  :value="status?.autoOpenCodex !== false" :disabled="!!busy || !status" @update:value="setAutoOpen" />
       </SettingsRow>
@@ -97,9 +93,6 @@ async function setApproval(enabled: boolean) {
       </SettingsRow>
       <SettingsRow :title="t('themeColor')">
         <SingleChoice appearance="swatches" v-model:value="themeColor" :label="t('themeColor')" :options="Object.entries(themeColors).map(([value, color]) => ({value,label:t(color.label),color:color.light}))"/>
-      </SettingsRow>
-      <SettingsRow title="Translucent">
-        <NSwitch v-model:value="translucent" aria-label="Translucent"/>
       </SettingsRow>
       <SettingsRow v-if="mac" :title="t('showAppIn')">
         <SingleChoice :value="displayPosition" :disabled="!!busy || !appearanceReady" :label="t('showAppIn')" @update:value="setAppearance" :options="[{value:'all',label:t('all')},{value:'menu',label:t('menuBarOnly')},{value:'dock',label:t('dockOnly')}] as const"/>

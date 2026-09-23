@@ -8,6 +8,8 @@ import {t} from '../i18n';
 import {isDesktop} from '../platform';
 import QuotaRing from '../subscriptions/QuotaRing.vue';
 import QuotaBubble from '../subscriptions/QuotaBubble.vue';
+import {fixedColors} from '../colors';
+import {accent} from '../theme';
 import {surfaceStatus} from '../subscriptions/presentation';
 import type {ProviderSnapshot} from '../subscriptions/types';
 import {useSubscriptions,subscriptionSnapshotKey} from '../subscriptions/useSubscriptions';
@@ -55,9 +57,9 @@ const scale=computed(()=>l.value?.metrics.scale||1);
 const openness=computed(()=>clamp(rail.value.value[0]!,0,1));
 const reveal=computed(()=>clamp(card.value.value[0]!,0,1));
 const status=computed(()=>surfaceStatus(rows.value,prefs.value?.warningAt??75));
-const alert=computed(()=>prefs.value?.alertColor&&status.value.alert?status.value.color:'#000');
+const alert=computed(()=>prefs.value?.alertColor&&status.value.alert?status.value.color:accent.value.dark);
 const tint=useSpring([0,0,0],m.railResponse,m.railDamping);
-watch([alert,()=>pointer.value?.expanded,()=>pointer.value?.dock],()=>{const color=pointer.value?.expanded||pointer.value?.dock==='floating'?'#000000':alert.value==='#000'?'#000000':alert.value;tint.to([1,3,5].map(i=>parseInt(color.slice(i,i+2),16)));});
+watch([alert,()=>pointer.value?.expanded,()=>pointer.value?.dock],()=>{const color=pointer.value?.expanded||pointer.value?.dock==='floating'?fixedColors.black:alert.value;tint.to([1,3,5].map(i=>parseInt(color.slice(i,i+2),16)));},{immediate:true});
 const railFill=computed(()=>`rgb(${tint.value.value.map(v=>Math.round(clamp(v,0,255))).join(',')})`);
 const railPoints=computed<Point[]>(()=>{
  const layout=l.value;if(!layout)return [];const [o,length,thickness,,,round,floating]=rail.value.value as [number,number,number,number,number,number,number];
@@ -69,6 +71,17 @@ const railPoints=computed<Point[]>(()=>{
   const dx=(x-w/2+(thickness-w)/2)*mirror,dy=y-h/2;
   return [r.x+r.width/2+c*dx+sn*dy+turnOffset.value.value[0]!,r.y+r.height/2-sn*dx+c*dy+turnOffset.value.value[1]!];
  });
+});
+// Only the exposed contour is stroked; the screen-facing edge stays open.
+const railOutline=computed(()=>{
+ const points=railPoints.value;
+ if(!points.length)return '';
+ if(l.value?.notch)return `M${points.map(p=>p.join(',')).join('L')}`;
+ if(rail.value.value[6]!>0)return path(points);
+ // berth's first flare ends at 17; 18 starts the opposite flare.
+ // Walk around the exposed side, omitting the segment joining those tips.
+ const exposed=[...points.slice(18),...points.slice(0,18)];
+ return `M${exposed.map(p=>p.join(',')).join('L')}`;
 });
 const ringPositions=computed<Point[]>(()=>{
  const layout=l.value;if(!layout)return [];const r=layout.rail,s=scale.value,v=rail.value.value;
@@ -142,11 +155,12 @@ const activityTrack=computed(()=>{
  return layout.metrics.horizontal?`M ${x-length/2+3*s} ${y} h ${length-6*s}`:`M ${x} ${y-length/2+3*s} v ${length-6*s}`;
 });
 </script>
-<template><div class="usage-surface" @contextmenu.prevent><svg class="surface-shapes" :viewBox="`0 0 ${width} ${height}`" aria-hidden="true"><path class="rail-hit-target" :d="path(railPoints)" :fill="railFill"/><rect v-if="l?.notch && openness<.99 && alert!=='#000'" :x="l.rail.x+(l.rail.width-l.notch.width)/2+12*scale" :y="l.rail.y+l.notch.height" :width="Math.max(0,l.notch.width-24*scale)" :height="2*scale" :rx="scale" :fill="alert" :opacity="1-openness"/><path v-if="working && openness<.99" class="rail-activity" :d="activityTrack" pathLength="100" :opacity="1-openness" :stroke-width="2*scale"/><path v-if="active" :d="path(bubble)" :opacity="reveal"/></svg><div class="ring-layer" :style="{clipPath:`path('${path(railPoints)}')`}"><div v-for="(p,i) in rows" :key="p.providerId" class="ring-group" :style="{left:`${(ringPositions[i]?.[0]??0)-20*scale}px`,top:`${(ringPositions[i]?.[1]??0)-18*scale}px`,transform:`scale(${scale})`,opacity:openness,visibility:openness<.01?'hidden':'visible'}"><button class="ring-button" :data-provider-id="p.providerId" :style="{pointerEvents:openness>.9?'auto':'none'}" :aria-label="`${p.name} · ${t('usageOpenDetails')}`" @click="open(p.providerId)"><QuotaRing :provider="p" :warning-at="prefs?.warningAt" :show-percentage="l?.metrics.percentages"/></button></div><button v-if="pages>1 && openness>.9" class="rail-page" :aria-label="t('usageNextPage')" :style="{left:`${pageRect.x}px`,top:`${pageRect.y}px`,width:`${pageRect.width}px`,height:`${pageRect.height}px`,fontSize:`${11*scale}px`}" @click="nextPage">{{page+1}}/{{pages}} ›</button></div><aside v-if="active" class="bubble" :style="{left:`${cardX}px`,top:`${cardY}px`,height:`${cardHeight/scale}px`,transform:`scale(${scale})`,opacity:reveal,pointerEvents:reveal>.015?'auto':'none'}"><div ref="content" :style="{opacity:contentFade.value.value[0]}"><QuotaBubble :detail-placement="l?.edge==='right'?'left':'right'" @popover="popover=$event" :provider="active" :warning-at="prefs?.warningAt"/></div></aside></div></template>
+<template><div class="usage-surface" @contextmenu.prevent><svg class="surface-shapes" :viewBox="`0 0 ${width} ${height}`" aria-hidden="true"><path class="rail-hit-target" :d="path(railPoints)" :fill="railFill"/><rect v-if="l?.notch && openness<.99 && alert" :x="l.rail.x+(l.rail.width-l.notch.width)/2+12*scale" :y="l.rail.y+l.notch.height" :width="Math.max(0,l.notch.width-24*scale)" :height="2*scale" :rx="scale" :fill="alert" :opacity="1-openness"/><path v-if="working && openness<.99" class="rail-activity" :d="activityTrack" pathLength="100" :opacity="1-openness" :stroke-width="2*scale"/><path class="rail-outline" :d="railOutline" :opacity="openness"/><path v-if="active" class="bubble-shape" :d="path(bubble)" :opacity="reveal"/></svg><div class="ring-layer" :style="{clipPath:`path('${path(railPoints)}')`}"><div v-for="(p,i) in rows" :key="p.providerId" class="ring-group" :style="{left:`${(ringPositions[i]?.[0]??0)-20*scale}px`,top:`${(ringPositions[i]?.[1]??0)-18*scale}px`,transform:`scale(${scale})`,opacity:openness,visibility:openness<.01?'hidden':'visible'}"><button class="ring-button" :data-provider-id="p.providerId" :style="{pointerEvents:openness>.9?'auto':'none'}" :aria-label="`${p.name} · ${t('usageOpenDetails')}`" @click="open(p.providerId)"><QuotaRing :provider="p" :warning-at="prefs?.warningAt" :show-percentage="l?.metrics.percentages"/></button></div><button v-if="pages>1 && openness>.9" class="rail-page" :aria-label="t('usageNextPage')" :style="{left:`${pageRect.x}px`,top:`${pageRect.y}px`,width:`${pageRect.width}px`,height:`${pageRect.height}px`,fontSize:`${11*scale}px`}" @click="nextPage">{{page+1}}/{{pages}} ›</button></div><aside v-if="active" class="bubble" :style="{left:`${cardX}px`,top:`${cardY}px`,height:`${cardHeight/scale}px`,transform:`scale(${scale})`,opacity:reveal,pointerEvents:reveal>.015?'auto':'none'}"><div ref="content" :style="{opacity:contentFade.value.value[0]}"><QuotaBubble :detail-placement="l?.edge==='right'?'left':'right'" @popover="popover=$event" :provider="active" :warning-at="prefs?.warningAt"/></div></aside></div></template>
 <style scoped>
-.rail-activity{fill:none;stroke:#f5f5f7;stroke-linecap:round;stroke-dasharray:33.333 100;animation:rail-working 1.8s linear infinite;pointer-events:none}
+.rail-activity{fill:none;stroke:var(--rail-ink);stroke-linecap:round;stroke-dasharray:33.333 100;animation:rail-working 1.8s linear infinite;pointer-events:none}
 @keyframes rail-working{from{stroke-dashoffset:33.333}to{stroke-dashoffset:-100}}
 @media(prefers-reduced-motion:reduce){.rail-activity{animation:none;stroke-dashoffset:0}}
 
-.usage-surface{position:fixed;inset:0;color:#f5f5f7;pointer-events:none;user-select:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:normal;color-scheme:dark}.surface-shapes{position:absolute;inset:0;width:100%;height:100%;fill:#000;pointer-events:none}.rail-hit-target{pointer-events:fill;cursor:grab;touch-action:none}.rail-page{box-sizing:border-box;line-height:normal;transition:none;position:absolute;background:none;border:0;color:#ddd;pointer-events:auto;cursor:pointer;padding:0}.rail-page:hover,.rail-page:active{background:transparent;transform:none}.ring-layer{position:absolute;inset:0}.ring-group{position:absolute;width:40px;height:58px;transform-origin:top left}.ring-button{box-sizing:border-box;display:block;touch-action:none;line-height:normal;transition:none;vertical-align:baseline;border:0;border-radius:50%;background:transparent;color:inherit;width:40px;height:40px;margin:-2px 0 0;padding:2px 0 0;cursor:grab}.ring-button:hover,.ring-button:active{background:transparent;transform:none}.ring-button:active{cursor:grabbing}.ring-button:focus-visible{outline:2px solid #fff;outline-offset:3px}.ring-button .quota-ring{pointer-events:none}.bubble{position:absolute;width:250px;overflow:auto;transform-origin:top left;border-radius:20px}.bubble>div{width:250px}
+.rail-outline{fill:none;stroke:var(--rail-border);stroke-width:2;pointer-events:none}.bubble-shape{stroke:var(--rail-border);stroke-width:2;pointer-events:none}
+.usage-surface{--accent:var(--accent-dark);position:fixed;inset:0;color:var(--rail-ink);pointer-events:none;user-select:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:normal;color-scheme:dark}.surface-shapes{position:absolute;inset:0;width:100%;height:100%;fill:var(--black);pointer-events:none}.rail-hit-target{pointer-events:fill;cursor:grab;touch-action:none}.rail-page{box-sizing:border-box;line-height:normal;transition:none;position:absolute;background:none;border:0;color:var(--rail-ink);pointer-events:auto;cursor:pointer;padding:0}.rail-page:hover,.rail-page:active{background:transparent;transform:none}.ring-layer{position:absolute;inset:0}.ring-group{position:absolute;width:40px;height:58px;transform-origin:top left}.ring-button{box-sizing:border-box;display:block;touch-action:none;line-height:normal;transition:none;vertical-align:baseline;border:0;border-radius:50%;background:transparent;color:inherit;width:40px;height:40px;margin:-2px 0 0;padding:2px 0 0;cursor:grab}.ring-button:hover,.ring-button:active{background:transparent;transform:none}.ring-button:active{cursor:grabbing}.ring-button:focus-visible{outline:2px solid var(--white);outline-offset:3px}.ring-button .quota-ring{pointer-events:none}.bubble{position:absolute;width:280px;overflow:auto;transform-origin:top left;border-radius:20px}.bubble>div{width:280px}
 </style>

@@ -41,7 +41,10 @@ export function notchOutline(o:number,width:number,housingWidth:number,housingHe
  p.push([x+w,fh]);curve(p,[x+w,fh*.45],[x+w+fw*.45,0],[x+w+fw,0]);return p;
 }
 export function bubbleShape(x:number,y:number,w:number,h:number,side:'left'|'right'|'top'|'bottom',anchor:number,scale:number):Point[]{
- const r=Math.min(m.cardRadius*scale,h/2),tail=m.pointerWidth*scale,half=m.pointerHeight*scale;
+ const vertical=side==='left'||side==='right';
+ const r=Math.min(m.cardRadius*scale,w/2,h/2);
+ const half=Math.max(0,Math.min(m.pointerHeight*scale,(vertical?h:w)/2-r));
+ const tail=Math.min(m.pointerWidth*scale,half/2);
  const p:Point[]=[[x+r,y]];
  function flank(base:Point,tip:Point,end:Point){
   const vertical=side==='left'||side==='right';

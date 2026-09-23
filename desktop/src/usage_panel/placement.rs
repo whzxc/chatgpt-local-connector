@@ -338,7 +338,8 @@ pub fn layout(
                 } else {
                     0.
                 })
-            .max(card + 2. * pad)
+            .max(size.width + 2. * (card + gap) + 2. * pad)
+            .min(a.size.width)
             .max(turn),
             (size.height + gap + metric("cardBudgetHeight") * s + pad)
                 .max(turn)
@@ -346,7 +347,9 @@ pub fn layout(
         )
     } else {
         (
-            (size.width + gap + card + pad).max(turn).min(a.size.width),
+            (size.width + 2. * gap + 2. * card.max(metric("cardWidth")) + 2. * pad)
+                .max(turn)
+                .min(a.size.width),
             size.height
                 .max(metric("cardBudgetHeight") * s + 2. * pad)
                 .min(a.size.height),

@@ -1,92 +1,141 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect, onUnmounted } from 'vue';
-import { useElementBounding } from '@vueuse/core';
+import { computed, ref, watch, watchEffect, nextTick, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue';
+import { useElementBounding, useResizeObserver, useWindowSize } from '@vueuse/core';
 import { NButton, NProgress, NPopover } from 'naive-ui';
 import { usagePopoverTheme, usageValueButtonTheme } from '../components/UiProvider.vue';
 import type { UsageHistory, ProviderSnapshot } from './types';
 import { t } from '../i18n';
+import { isDesktop } from '../platform';
 import { usagePeriods, usagePeriodLabels as labels } from './displayPreferences';
 import { preciseTime, resetText } from './presentation';
 import railMetrics from '../../shared/usage-panel.json';
-import { bubbleShape, path } from '../usage-rail/geometry';
+import { useSpring } from '../usage-rail/spring';
 const props=defineProps<{rail?:boolean;detailPlacement?:'left'|'right';history?:UsageHistory;resetCount?:number|null;resetCredits?:ProviderSnapshot['resetCredits'];now:number}>();
-const expanded = ref('');
-const arrowStyle = {
-  width: 'var(--usage-tail-width)', height: 'var(--usage-tail-height)',
-  top: 'var(--usage-tail-top)', bottom: 'var(--usage-tail-bottom)',
-  left: 'var(--usage-tail-left)', right: 'var(--usage-tail-right)',
-  transform: 'var(--usage-tail-transform)', clipPath: 'var(--usage-tail-shape)',
-  boxShadow: 'none',
-  '--tail-left': `path('${path(bubbleShape(20,0,250,120,'left',60,1))}')`,
-  '--tail-right': `path('${path(bubbleShape(-250,0,250,120,'right',60,1))}')`,
-  '--tail-top': `path('${path(bubbleShape(0,20,120,250,'top',60,1))}')`,
-  '--tail-bottom': `path('${path(bubbleShape(0,-250,120,250,'bottom',60,1))}')`,
-};
-const horizontalGap=ref(40);
-function alignPopover(event:Event) {
-  if(!props.rail)return;
-  const trigger=event.currentTarget as HTMLElement;
-  const card=trigger.closest('.quota-bubble')?.getBoundingClientRect();
-  if(!card)return;
-  const rect=trigger.getBoundingClientRect(), scale=card.width/railMetrics.cardWidth;
-  const inset=props.detailPlacement==='left' ? rect.left-card.left : card.right-rect.right;
-  horizontalGap.value=inset+(railMetrics.cardGap+railMetrics.pointerWidth)*scale;
-}
 const emit=defineEmits<{popover:[points:[number,number][]]}>();
-const details=ref<Record<string,HTMLElement|undefined>>({});
-const detail=computed(()=>details.value[expanded.value]?.closest<HTMLElement>('.history-popover') ?? details.value[expanded.value]);
-const bounds=useElementBounding(detail);
+const expanded=ref(false), displayed=ref('');
+const period=computed(()=>props.history?.periods?.find(p=>p.id===displayed.value));
+const triggers=ref<Record<string,HTMLElement|undefined>>({});
+const content=ref<HTMLElement>();
+const detail=computed(()=>content.value?.closest<HTMLElement>('.history-popover'));
+const trigger=computed(()=>triggers.value[displayed.value]);
+const triggerBounds=useElementBounding(trigger), bounds=useElementBounding(detail);
+const {height:viewportHeight}=useWindowSize();
+const motion=useSpring([0,0,80],railMetrics.cardResponse,railMetrics.cardDamping,()=>bounds.update());
+const fade=useSpring([1],.18,.9);
+const horizontalGap=ref(28);
+function geometry() {
+  const el=trigger.value;if(!el)return;
+  const r=el.getBoundingClientRect(), card=el.closest('.quota-bubble')?.getBoundingClientRect();
+  const scale=card?card.width/railMetrics.cardWidth:1;
+  horizontalGap.value=(railMetrics.cardGap+railMetrics.pointerWidth)*scale;
+  const x=props.rail&&card?(props.detailPlacement==='left'?card.left:card.right):r.left;
+  const y=r.top+r.height/2;
+  const height=Math.min(content.value?.offsetHeight||80,Math.max(0,Math.min(396,viewportHeight.value*.6+36)-36));
+  return [x,y,height];
+}
+function retarget(){const next=geometry();if(next&&expanded.value)motion.to(next);}
+useResizeObserver(content,retarget);
+watch([triggerBounds.left,triggerBounds.top,triggerBounds.width,triggerBounds.height,viewportHeight],retarget);
+let hoverTimer:ReturnType<typeof setTimeout>|undefined, hoverTarget='', disposeHover:(()=>void)|undefined, disposed=false;
+async function show(key:string) {
+  if(!key){expanded.value=false;return;}
+  const opening=!expanded.value, switching=displayed.value!==key;
+  displayed.value=key;
+  // Keep the same popover mounted and retain its contents throughout leave.
+  await nextTick();
+  if(disposed||hoverTarget!==key)return;
+  const next=geometry();if(!next)return;
+  if(opening)motion.jump(next);else motion.to(next);
+  if(switching&&!opening){fade.jump([.35]);fade.to([1]);}
+  expanded.value=true;
+}
+function schedule(key:string) {
+  if(key===hoverTarget)return;
+  hoverTarget=key;clearTimeout(hoverTimer);
+  hoverTimer=setTimeout(()=>void show(key),key?(expanded.value?0:120):180);
+}
+function hover(key:string){if(!(isDesktop&&props.rail))schedule(key);}
+function focus(key:string){schedule(key);}
+function nativeHover({x,y}:{x:number;y:number}) {
+  const contains=(el:HTMLElement|null|undefined)=>{const r=el?.getBoundingClientRect();return r && x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;};
+  schedule(Object.keys(triggers.value).find(key=>contains(triggers.value[key])) ?? (expanded.value&&contains(detail.value)?displayed.value:''));
+}
 watchEffect(()=>{
   const {left,top,right,bottom,width,height}=bounds;
-  emit('popover', expanded.value && width.value && height.value ? [[left.value-24,top.value-24],[right.value+24,top.value-24],[right.value+24,bottom.value+24],[left.value-24,bottom.value+24]] : []);
+  emit('popover', expanded.value&&width.value&&height.value?[[left.value-24,top.value-24],[right.value+24,top.value-24],[right.value+24,bottom.value+24],[left.value-24,bottom.value+24]]:[]);
 });
-onUnmounted(()=>emit('popover',[]));
+onMounted(async()=>{
+  if(!isDesktop||!props.rail)return;
+  const {listen}=await import('@tauri-apps/api/event');
+  const off=await listen<{x:number;y:number}>('usage-panel:hover',event=>nativeHover(event.payload));
+  if(disposed)off();else disposeHover=off;
+});
+onUnmounted(()=>{disposed=true;disposeHover?.();clearTimeout(hoverTimer);emit('popover',[]);});
 const tokens=new Intl.NumberFormat(undefined,{notation:'compact',maximumFractionDigits:1});
 const dollars=new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',maximumFractionDigits:2});
+// Keep the tail roots within the straight edge, clear of both rounded corners.
+const arrowStyle = computed(() => {
+  const verticalSpan=Math.max(4,Math.min(80,motion.value.value[2]!+36-40));
+  const horizontalSpan=Math.max(4,Math.min(80,(bounds.width.value||250)-40));
+  function tail(span:number,side:'left'|'right'|'top'|'bottom') {
+    const depth=Math.min(20,span/2), half=span/2;
+    const point=(x:number,y:number)=>side==='left'?`${20-x},${y}`:side==='right'?`${x},${y}`:side==='top'?`${y},${20-x}`:`${y},${x}`;
+    return `path('M${point(0,0)} C${point(0,half*.72)} ${point(depth*.58,half*.78)} ${point(depth,half)} C${point(depth*.58,half*1.22)} ${point(0,span-half*.72)} ${point(0,span)} Z')`;
+  }
+  return {
+    width: 'var(--usage-tail-width)', height: 'var(--usage-tail-height)',
+    top: 'var(--usage-tail-top)', bottom: 'var(--usage-tail-bottom)',
+    left: 'var(--usage-tail-left)', right: 'var(--usage-tail-right)',
+    transform: 'var(--usage-tail-transform)', clipPath: 'var(--usage-tail-shape)',
+    boxShadow: 'none',
+    '--tail-vertical-span': `${verticalSpan}px`, '--tail-horizontal-span': `${horizontalSpan}px`,
+    '--tail-left': tail(verticalSpan,'left'), '--tail-right': tail(verticalSpan,'right'),
+    '--tail-top': tail(horizontalSpan,'top'), '--tail-bottom': tail(horizontalSpan,'bottom'),
+  };
+});
+
 </script>
 <template>
   <div class="usage-history" v-if="resetCount!=null || usagePeriods.length">
     <div v-if="resetCount!=null" class="history-period">
       <span>{{t('usageResetCount')}}</span>
-      <NPopover class="history-popover" scrollable arrow-class="usage-detail-arrow" :arrow-style="arrowStyle" trigger="hover" :delay="120" :duration="180" :keep-alive-on-hover="true" :theme-overrides="usagePopoverTheme(!!rail,horizontalGap)" :placement="rail ? detailPlacement ?? 'right' : 'top'" :show="expanded==='resets'" @update:show="expanded=$event?'resets':expanded==='resets'?'':expanded" :style="{maxWidth:'calc(100vw - 32px)',maxHeight:'min(396px, calc(60vh + 36px))'}">
-      <template #trigger><NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="alignPopover" @focus="alignPopover" :aria-expanded="expanded==='resets'" @click.stop>
+      <NButton :ref="el=>triggers.resets=(el as ComponentPublicInstance|null)?.$el" text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="hover('resets')" @mouseleave="hover('')" @focus="focus('resets')" @blur="focus('')" :aria-expanded="expanded&&displayed==='resets'" @click.stop>
         <span>{{t('usageResetCountValue',{count:resetCount})}}</span>
-      </NButton></template>
-      <div :ref="el=>details.resets=el as HTMLElement|undefined" class="history-detail" :aria-label="t('usageExpires')">
-        <div v-for="(credit,index) in resetCredits" :key="index" class="history-period expiry-row">
-          <span><span class="credit-number">{{index+1}}</span>{{preciseTime(credit.expiresAt)||t('usageExpiryUnknown')}}</span>
-          <span>{{resetText(credit.expiresAt,now)}}</span>
-        </div>
-        <span v-if="!resetCredits?.length">{{t('usageExpiryUnknown')}}</span>
-      </div>
-      </NPopover>
+      </NButton>
     </div>
     <template v-if="usagePeriods.length">
-      <div v-for="period in history?.periods?.filter(p=>usagePeriods.includes(p.id))" :key="period.id" class="history-period">
-        <span>{{t(labels[period.id])}}</span>
-        <NPopover class="history-popover" scrollable arrow-class="usage-detail-arrow" :arrow-style="arrowStyle" trigger="hover" :delay="120" :duration="180" :keep-alive-on-hover="true" :theme-overrides="usagePopoverTheme(!!rail,horizontalGap)" :placement="rail ? detailPlacement ?? 'right' : 'top'" :show="expanded===period.id" @update:show="expanded=$event?period.id:expanded===period.id?'':expanded" :style="{maxWidth:'calc(100vw - 32px)',maxHeight:'min(396px, calc(60vh + 36px))'}">
-        <template #trigger><NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="alignPopover" @focus="alignPopover" :aria-expanded="expanded===period.id" @click.stop>
-          <span v-if="period.tokens" :title="period.tokens.toLocaleString()+' tokens'">{{period.estimatedUsd==null?'—':dollars.format(period.estimatedUsd)}} · {{tokens.format(period.tokens)}} tokens</span>
-          <span v-else>{{t('usageNoHistory')}}</span>
-        </NButton></template>
-        <div :ref="el=>details[period.id]=el as HTMLElement|undefined" class="history-detail" :aria-label="t(labels[period.id])">
+      <div v-for="row in history?.periods?.filter(p=>usagePeriods.includes(p.id))" :key="row.id" class="history-period">
+        <span>{{t(labels[row.id])}}</span>
+        <NButton :ref="el=>triggers[row.id]=(el as ComponentPublicInstance|null)?.$el" text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="hover(row.id)" @mouseleave="hover('')" @focus="focus(row.id)" @blur="focus('')" :aria-expanded="expanded&&displayed===row.id" @click.stop>
+          <span>{{row.tokens?`${row.estimatedUsd==null?'—':dollars.format(row.estimatedUsd)} · ${tokens.format(row.tokens)} tokens`:'-'}}</span>
+        </NButton>
+      </div>
+    </template>
+    <NPopover class="history-popover" scrollable arrow-class="usage-detail-arrow" :arrow-style="arrowStyle" trigger="manual" :x="motion.value.value[0]" :y="motion.value.value[1]" :theme-overrides="usagePopoverTheme(!!rail,horizontalGap)" :placement="rail ? detailPlacement ?? 'right' : 'left'" :show="expanded" display-directive="show" @mouseenter="hover(displayed)" @mouseleave="hover('')" :style="{width:'250px',height:`${motion.value.value[2]!+36}px`,boxSizing:'border-box',maxWidth:'calc(100vw - 32px)'}">
+      <div ref="content" class="history-detail" :style="{opacity:fade.value.value[0]}" :aria-label="displayed==='resets'?t('usageExpires'):period?t(labels[period.id]):undefined">
+        <template v-if="displayed==='resets'">
+          <div v-for="(credit,index) in resetCredits" :key="index" class="history-period expiry-row">
+            <span><span class="credit-number">{{index+1}}</span>{{preciseTime(credit.expiresAt)||t('usageExpiryUnknown')}}</span>
+            <span>{{resetText(credit.expiresAt,now)}}</span>
+          </div>
+          <span v-if="!resetCredits?.length">{{t('usageExpiryUnknown')}}</span>
+        </template>
+        <template v-else-if="period">
           <strong>{{t(labels[period.id])}}</strong>
           <div v-for="model in period.models" :key="model.model" class="model-reading">
             <div class="history-period"><strong>{{model.model}}</strong><span class="model-share">{{period.tokens ? Math.round(model.tokens/period.tokens*100) : 0}}%</span></div>
-            <NProgress type="line" :percentage="period.tokens ? model.tokens/period.tokens*100 : 0" :show-indicator="false" :height="6" color="#00e68c" :rail-color="rail?'#29292c':'var(--line)'"/>
+            <NProgress type="line" :percentage="period.tokens ? model.tokens/period.tokens*100 : 0" :show-indicator="false" :height="6" color="var(--accent)" :rail-color="rail?'var(--rail-track)':'var(--line)'"/>
             <div class="history-period model-meta"><span>{{model.estimatedUsd==null?'—':dollars.format(model.estimatedUsd)}}</span><span :title="model.tokens.toLocaleString()+' tokens'">{{tokens.format(model.tokens)}} tokens</span></div>
           </div>
-          <span v-if="!period.models?.length">{{t('usageNoHistory')}}</span>
-        </div>
-        </NPopover>
+          <span v-if="!period.models?.length">-</span>
+        </template>
       </div>
-      <p v-if="history?.error" role="status">{{t('usageHistoryUnavailable')}}</p>
-    </template>
+    </NPopover>
   </div>
 </template>
 <style scoped>
 .usage-history{display:flex;flex-direction:column;gap:9px;font-size:12px;line-height:1.4}
-.history-toggle{flex-shrink:0;font:inherit;color:inherit;padding:3px 6px;margin:-3px -6px;border-radius:7px;transition:filter 120ms}.history-toggle:hover,.history-toggle:focus-visible{font-weight:600;filter:brightness(1.18)}
+.history-toggle{flex-shrink:0;font:inherit;color:inherit;padding:3px 6px;margin:-3px -6px;border-radius:7px}
 .history-period{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums;width:100%}
 .history-period>span:last-child{text-align:right;flex-shrink:0}
 .history-detail{display:flex;flex-direction:column;gap:14px;width:214px;max-width:calc(100vw - 68px);font-size:11.5px;line-height:14px;font-family:ui-rounded,'SF Pro Rounded',-apple-system,sans-serif}
@@ -94,13 +143,13 @@ const dollars=new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',m
 .model-reading{display:flex;flex-direction:column;gap:7px}
 .model-reading strong{overflow-wrap:anywhere;min-width:0;font-weight:400}
 .model-meta{font-size:11.5px}.model-meta>span:last-child,.model-share{opacity:.65}
-.credit-number{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:50%;margin-right:8px;background:#008aff;color:white;font-size:10px}
+.credit-number{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:50%;margin-right:8px;background:var(--accent);color:var(--white);font-size:10px}
 .expiry-row{font-size:11px;gap:6px}.expiry-row>span:first-child{min-width:0;overflow-wrap:anywhere}
 .usage-history p{font-size:10px;margin:0;color:var(--quota-muted,var(--muted))}
 </style>
 <style>
-[v-placement^="right"] .usage-detail-arrow{--usage-tail-width:20px;--usage-tail-height:120px;--usage-tail-top:50%;--usage-tail-bottom:auto;--usage-tail-right:0;--usage-tail-left:auto;--usage-tail-transform:translateY(-50%);--usage-tail-shape:var(--tail-left)}
-[v-placement^="left"] .usage-detail-arrow{--usage-tail-width:20px;--usage-tail-height:120px;--usage-tail-top:50%;--usage-tail-bottom:auto;--usage-tail-left:0;--usage-tail-right:auto;--usage-tail-transform:translateY(-50%);--usage-tail-shape:var(--tail-right)}
-[v-placement^="top"] .usage-detail-arrow{--usage-tail-width:120px;--usage-tail-height:20px;--usage-tail-left:50%;--usage-tail-right:auto;--usage-tail-top:0;--usage-tail-bottom:auto;--usage-tail-transform:translateX(-50%);--usage-tail-shape:var(--tail-bottom)}
-[v-placement^="bottom"] .usage-detail-arrow{--usage-tail-width:120px;--usage-tail-height:20px;--usage-tail-left:50%;--usage-tail-right:auto;--usage-tail-bottom:0;--usage-tail-top:auto;--usage-tail-transform:translateX(-50%);--usage-tail-shape:var(--tail-top)}
+[v-placement^="right"] .usage-detail-arrow{--usage-tail-width:20px;--usage-tail-height:var(--tail-vertical-span);--usage-tail-top:50%;--usage-tail-bottom:auto;--usage-tail-right:0;--usage-tail-left:auto;--usage-tail-transform:translateY(-50%);--usage-tail-shape:var(--tail-left)}
+[v-placement^="left"] .usage-detail-arrow{--usage-tail-width:20px;--usage-tail-height:var(--tail-vertical-span);--usage-tail-top:50%;--usage-tail-bottom:auto;--usage-tail-left:0;--usage-tail-right:auto;--usage-tail-transform:translateY(-50%);--usage-tail-shape:var(--tail-right)}
+[v-placement^="top"] .usage-detail-arrow{--usage-tail-width:var(--tail-horizontal-span);--usage-tail-height:20px;--usage-tail-left:50%;--usage-tail-right:auto;--usage-tail-top:0;--usage-tail-bottom:auto;--usage-tail-transform:translateX(-50%);--usage-tail-shape:var(--tail-bottom)}
+[v-placement^="bottom"] .usage-detail-arrow{--usage-tail-width:var(--tail-horizontal-span);--usage-tail-height:20px;--usage-tail-left:50%;--usage-tail-right:auto;--usage-tail-bottom:0;--usage-tail-top:auto;--usage-tail-transform:translateX(-50%);--usage-tail-shape:var(--tail-top)}
 </style>

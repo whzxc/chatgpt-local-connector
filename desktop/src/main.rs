@@ -179,6 +179,12 @@ fn main() {
                 return;
             }
             #[cfg(target_os = "macos")]
+            if matches!(event, tauri::WindowEvent::ThemeChanged(_)) {
+                if let Err(error) = appearance::update_dock_icon(window.app_handle()) {
+                    eprintln!("{error}");
+                }
+            }
+            #[cfg(target_os = "macos")]
             if matches!(
                 event,
                 tauri::WindowEvent::Resized(_)

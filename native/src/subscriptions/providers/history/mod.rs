@@ -258,7 +258,10 @@ fn summarize(
     incomplete: bool,
     prices: &pricing::Pricing,
 ) -> Value {
-    let today = Local::now().date_naive();
+    let observed = Utc::now();
+    let coverage_start = observed - chrono::Duration::days(32);
+    let mut timeline: BTreeMap<i64, (u64, f64, u64)> = BTreeMap::new();
+    let today = observed.with_timezone(&Local).date_naive();
     let since = today - chrono::Duration::days(29);
     let yesterday = today - chrono::Duration::days(1);
     let mut buckets: BTreeMap<&str, (u64, f64, u64, BTreeSet<String>)> =
@@ -273,7 +276,7 @@ fn summarize(
             continue;
         };
         let day = at.with_timezone(&Local).date_naive();
-        if day < since || day > today || e.tokens() == 0 {
+        if at < coverage_start || at > observed || e.tokens() == 0 {
             continue;
         }
         if provider == "codex"
@@ -282,6 +285,15 @@ fn summarize(
             continue;
         }
         let dollars = cost(&e, provider, prices);
+        let entry = timeline.entry(e.at).or_default();
+        entry.0 = entry.0.saturating_add(e.tokens());
+        if let Some(d) = dollars {
+            entry.1 += d;
+            entry.2 = entry.2.saturating_add(e.tokens());
+        }
+        if day < since {
+            continue;
+        }
         for key in ["today", "yesterday", "last7", "last30"] {
             if key == "today" && day != today
                 || key == "yesterday" && day != yesterday
@@ -319,6 +331,10 @@ fn summarize(
         details.sort_by(|a,b| b["tokens"].as_u64().cmp(&a["tokens"].as_u64()));
         let b=&buckets[id];json!({"models":details,"id":id,"tokens":b.0,"estimatedUsd":if b.2>0{Some(b.1)}else{None},"pricedTokens":b.2,"unknownModels":b.3})
     }).collect();
-    json!({"periods":periods,"currency":"USD","estimated":true,"scope":if provider=="cursor"{"account-export"}else{"local-device"},
-        "incomplete":incomplete,"pricingUpdatedAt":prices.data["updatedAt"],"observedAt":Utc::now().to_rfc3339()})
+    let timeline: Vec<_> = timeline
+        .into_iter()
+        .map(|(at, (tokens, usd, priced))| json!([at, tokens, usd, priced]))
+        .collect();
+    json!({"timeline":timeline,"coverageStart":coverage_start.to_rfc3339(),"periods":periods,"currency":"USD","estimated":true,"scope":if provider=="cursor"{"account-export"}else{"local-device"},
+        "incomplete":incomplete,"pricingUpdatedAt":prices.data["updatedAt"],"observedAt":observed.to_rfc3339()})
 }

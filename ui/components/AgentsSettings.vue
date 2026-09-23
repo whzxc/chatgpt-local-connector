@@ -81,18 +81,18 @@ onMounted(() => { void refresh(); });
 .agent-card{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px;min-width:0;display:grid;grid-template-columns:40px minmax(0,1fr) auto;column-gap:10px;row-gap:4px;align-items:center;align-content:center;transition:border-color 160ms,box-shadow 160ms}
 .agent-card[draggable="true"]{cursor:grab}
 .agent-card.dragging{opacity:.5}
-.agent-card.drop-target{border-color:var(--green);box-shadow:0 0 0 2px var(--green)}
+.agent-card.drop-target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
 .agent-switch{grid-column:3;grid-row:1}
-.agent-card:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.agent-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .agent-info{display:contents}
 .agent-icon{display:flex;width:40px;height:40px;padding:0;border:0;background:transparent;box-shadow:none;cursor:pointer;grid-column:1;grid-row:1 / 3;align-self:center}
 .agent-icon :deep(svg){width:100%;height:100%}
 .agent-copy{display:contents}
 .agent-name{grid-column:2;grid-row:1;min-width:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.agent-link{text-decoration:none;cursor:pointer}.agent-link:hover{text-decoration:underline;color:var(--green)}
+.agent-link{text-decoration:none;cursor:pointer}.agent-link:hover{text-decoration:underline;color:var(--accent)}
 .agent-version{grid-column:2 / 4;grid-row:2;min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:480px){.agent-grid{grid-template-columns:1fr}}
 
 .agent-adapter{grid-column:2 / 4;grid-row:3;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
-.agent-error { color: #a46651; font-size: 12px; padding: 0 0 10px; margin: 0; }
+.agent-error { color: var(--danger); font-size: 12px; padding: 0 0 10px; margin: 0; }
 </style>

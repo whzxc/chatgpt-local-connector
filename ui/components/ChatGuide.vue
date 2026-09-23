@@ -51,7 +51,7 @@ const reset = () => run('chatgpt-verify', async () => { await api('verification/
 h1{font-size:26px;line-height:1.35;letter-spacing:-.6px;margin-bottom:26px}
 .guide-steps{padding:0;margin:0;list-style:none;display:grid;gap:24px}
 .guide-steps>li{display:flex;gap:14px;align-items:flex-start}
-.guide-step-number{display:grid;place-items:center;flex:0 0 26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--green) 8%,transparent);color:var(--green);font-size:12px}
+.guide-step-number{display:grid;place-items:center;flex:0 0 26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent);font-size:12px}
 .guide-steps li>div{flex:1;min-width:0}
 .guide-steps strong{font-size:14px;font-weight:550;line-height:26px}
 .guide-steps p{font-size:12px;color:var(--muted);line-height:1.7;margin:3px 0 9px}

@@ -25,7 +25,7 @@ const label = computed(() => weekly.value ? `${windowLabel('weekly')} · ${quota
 const color = computed(() => provider.value && weekly.value ? readingStatus(weekly.value, provider.value).color : undefined);
 </script>
 <template>
-  <span class="agent-quota-icon" :class="{running,'has-quota':!!weekly}" :aria-busy="running" :title="label" :aria-label="label" :role="label ? 'img' : undefined">
+  <span class="agent-quota-icon" :class="{running,'has-quota':!!weekly}" :aria-busy="running" :aria-label="label" :role="label ? 'img' : undefined">
     <svg v-if="weekly" class="quota-outline" viewBox="0 0 48 48" aria-hidden="true">
       <circle class="quota-track" cx="24" cy="24" r="21"/>
       <circle cx="24" cy="24" r="21" pathLength="100" :stroke="color" :stroke-dasharray="`${quotaValue(weekly)} 100`" transform="rotate(-90 24 24)"/>
@@ -40,5 +40,5 @@ const color = computed(() => provider.value && weekly.value ? readingStatus(week
 .agent-logo{display:flex;width:65%;height:65%;align-items:center;justify-content:center}.agent-logo :deep(svg){width:100%;height:100%}
 .has-quota .agent-logo{width:55%;height:55%}
 .running .agent-logo{width:45%;height:45%}
-.quota-outline{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke-width:2.4;stroke-linecap:round;pointer-events:none}.quota-track{stroke:var(--line)}
+.quota-outline{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke-width:var(--quota-ring-width);stroke-linecap:round;pointer-events:none}.quota-outline circle{vector-effect:non-scaling-stroke}.quota-track{stroke:var(--line)}
 </style>

@@ -143,8 +143,8 @@ function backdropClick(event: MouseEvent) {
 </template>
 <style scoped>
 .panel-layer{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
-.panel-layer.recessed .elastic-panel{box-shadow:0 4px 12px light-dark(#132a2414,#00000024),0 12px 32px light-dark(#132a241c,#00000038)}
-.elastic-panel{position:relative;flex-shrink:0;width:min(var(--preferred-width),calc(100vw - 40px));max-height:calc(100dvh - 40px);box-sizing:border-box;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:28px;box-shadow:0 2px 6px light-dark(#132a2414,#00000033),0 12px 28px light-dark(#132a2426,#0000004d),0 32px 72px -12px light-dark(#132a2438,#00000080);transition:width 320ms cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column;overflow:hidden;outline:none;transform-origin:center;transform:translate(0,0) scale(1,1)}
+.panel-layer.recessed .elastic-panel{box-shadow:var(--shadow-recessed)}
+.elastic-panel{position:relative;flex-shrink:0;width:min(var(--preferred-width),calc(100vw - 40px));max-height:calc(100dvh - 40px);box-sizing:border-box;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:28px;box-shadow:var(--shadow-panel);transition:width 320ms cubic-bezier(.22,1,.36,1);display:flex;flex-direction:column;overflow:hidden;outline:none;transform-origin:center;transform:translate(0,0) scale(1,1)}
 .panel-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:28px 28px 12px;flex-shrink:0}.panel-header h1{font-size:22px;font-weight:600;margin:0}.panel-actions{display:flex;align-items:center;gap:8px}
 .panel-title{display:flex;align-items:center;gap:10px}
 .panel-header{cursor:grab;user-select:none;touch-action:none}.panel-header.dragging{cursor:grabbing}.panel-actions{cursor:default;touch-action:auto}

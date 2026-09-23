@@ -36,17 +36,17 @@ const emit = defineEmits<{ 'update:value':[value:T] }>();
 .color-choices{display:inline-flex;align-items:center;gap:6px;padding:3px;max-width:100%;flex-wrap:wrap}
 .color-choice.color-choice{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--surface);line-height:1;box-shadow:none;transition:box-shadow 160ms ease,transform 160ms ease}
 .color-dot{display:block;width:20px;height:20px;border-radius:50%;background:var(--swatch)}
-.color-choice.selected{border-color:var(--swatch);box-shadow:0 0 0 1px var(--swatch)}
+.color-choice.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .color-choice:not(.n-radio-button--disabled):hover{transform:translateY(-1px)}
 .color-choice:focus-within{outline:2px solid var(--ink);outline-offset:5px}
 @media(prefers-reduced-motion:reduce){.color-choice.color-choice{transition:none}}
 
-.choice-track.choice-track{display:inline-flex;height:auto;min-height:38px;align-items:center;max-width:100%;padding:4px;gap:2px;border-radius:12px;background:var(--accent-soft,light-dark(#eef1ed,#26372f));vertical-align:middle;isolation:isolate}
+.choice-track.choice-track{display:inline-flex;height:auto;min-height:38px;align-items:center;max-width:100%;padding:4px;gap:2px;border-radius:12px;background:var(--accent-soft);vertical-align:middle;isolation:isolate}
 .choice-option.choice-option{border:0;border-radius:9px;min-width:64px;text-align:center;flex:1 1 auto;white-space:nowrap;transition:background-color 160ms ease,box-shadow 160ms ease,color 160ms ease}
 .choice-track.compact .choice-option{padding-inline:10px}
-.choice-option.selected{box-shadow:0 1px 3px #142e2114,0 0 0 1px light-dark(#1935250d,#ffffff0c)}
-.choice-option:not(.selected):not(.is-disabled):hover{background:light-dark(#ffffff70,#ffffff08)}
-.choice-option:focus-within{outline:2px solid var(--primary-color,#63927d);outline-offset:1px;z-index:1}
+.choice-option.selected{box-shadow:0 1px 3px color-mix(in srgb,var(--black) 7.84%,transparent),0 0 0 1px light-dark(color-mix(in srgb,var(--black) 5.1%,transparent),color-mix(in srgb,var(--white) 4.71%,transparent))}
+.choice-option:not(.selected):not(.is-disabled):hover{background:var(--hover-surface)}
+.choice-option:focus-within{outline:2px solid var(--accent);outline-offset:1px;z-index:1}
 .choice-option.is-disabled{cursor:default}
 .choice-icon{display:inline-flex;width:16px;height:16px;object-fit:contain;vertical-align:middle;margin-right:5px;flex-shrink:0}
 @media(prefers-reduced-motion:reduce){.choice-option.choice-option{transition:none}}

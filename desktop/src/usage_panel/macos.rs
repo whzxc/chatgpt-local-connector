@@ -310,6 +310,11 @@ fn pointer(app: &tauri::AppHandle) {
         let old = (p.expanded, p.slot, p.provider_id.clone());
         let point = local(p, NSEvent::mouseLocation());
         let (x, y) = (point.x, point.y);
+        // A non-key WKWebView does not reliably receive DOM hover events.
+        // Forward observed pointer coordinates without activating the panel.
+        if p.slot.is_some() {
+            let _ = app.emit_to("usage-rail", "usage-panel:hover", json!({"x": x, "y": y}));
+        }
         let rail = hit(&p.geometry["rail"], x, y);
         let detail = hit(&p.geometry["detail"], x, y);
         let corridor = p.slot.is_some() && hit(&p.geometry["corridor"], x, y);

@@ -202,7 +202,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); cancelAnimationFrame(f
 
 <style scoped>
 .mascot { position: relative; z-index: 1; isolation: isolate; width: 174px; height: 174px; }
-.mascot::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 42px; background: linear-gradient(145deg, #d4e4dc, #e4eee4); box-shadow: 0 24px 50px #3f614b12; transform: rotate(-7deg); pointer-events: none; }
+.mascot::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 42px; background: var(--accent-soft); box-shadow: 0 24px 50px color-mix(in srgb,var(--black) 7.06%,transparent); transform: rotate(-7deg); pointer-events: none; }
 .mascot-button { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 42px; background: transparent; cursor: grab; transition: none; touch-action: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .mascot-button:hover, .mascot-button:active { background: transparent; }
 .mascot-button.dragging { cursor: grabbing; }

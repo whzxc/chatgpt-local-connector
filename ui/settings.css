@@ -1,10 +1,5 @@
 /* Settings surfaces and connection controls. */
 .settings-preferences {
-  --ink: light-dark(#292c2a, #e5e7e5);
-  --muted: light-dark(#717672, #a1a6a2);
-  --line: light-dark(#e3e5e1, #3d423e);
-  --surface: light-dark(#fff, #272c28);
-  --soft: light-dark(#f0f2ee, #353c36);
   display: grid;
   gap: 24px;
   width: 100%;

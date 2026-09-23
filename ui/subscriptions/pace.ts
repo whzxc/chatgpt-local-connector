@@ -3,7 +3,7 @@ import type {ProviderSnapshot, QuotaWindow} from './types';
 import {quotaDisplay, resetDisplay} from './displayPreferences';
 import {duration, preciseTime, usageColors} from './presentation';
 import {t} from '../i18n';
-function period(w:QuotaWindow,p:ProviderSnapshot):number|undefined {
+export function quotaPeriod(w:QuotaWindow,p:ProviderSnapshot):number|undefined {
   const numeric=/^(\d+) (min|s)$/.exec(w.label);
   if(numeric)return Number(numeric[1])*(numeric[2]==='min'?60000:1000);
   if(['rolling','five_hour','session'].includes(w.label))return 5*3600000;
@@ -24,7 +24,7 @@ export function quotaPace(w:QuotaWindow,p:ProviderSnapshot,now:number) {
   if(p.state!=='ready'||p.error||!Number.isFinite(w.usedPercent))return;
   const used=w.usedPercent;
   if(used>=100||w.exhausted||p.accountBlocked||p.blockedPoolIds.includes(w.poolId))return {color:usageColors.exhausted,label:t('usagePaceReached'),tooltip:t('usagePaceReached'),flame:true};
-  const length=period(w,p),reset=Date.parse(w.resetsAt??'');
+  const length=quotaPeriod(w,p),reset=Date.parse(w.resetsAt??'');
   if(!length||!Number.isFinite(reset)||now>=reset||used<=0)return;
   const elapsed=now-(reset-length);
   if(elapsed<Math.max(60000,length*.01))return;

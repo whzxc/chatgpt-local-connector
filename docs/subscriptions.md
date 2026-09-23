@@ -84,3 +84,16 @@ Prices load from bundled data and local caches, with hourly background revalidat
 A subsequent usage refresh reprices token records. Price requests transmit no account
 credentials or usage records. OpenUsage-derived data and logic retain MIT attribution in
 `shared/pricing/LICENSE.OpenUsage`. Implementation details are in [Development](development.md#subscription-development).
+
+Quota-bar tooltips estimate the full-cycle API-equivalent USD value by dividing
+observed cost since the inferred cycle start by the used quota fraction. The
+cycle start is the reported reset time minus its window duration (including
+5-hour, weekly and monthly windows). Timestamped history is retained for 32 days;
+calendar-day history totals are not used for this calculation. The sample ends
+at the earlier quota/history observation, with a maximum five-minute timestamp
+skew. Estimates require at least 1% usage, a current unsaturated quota, and priced
+tokens throughout the sample. Separate model quota pools are excluded when their
+usage cannot be isolated. Incomplete logs are explicitly marked; other devices,
+account switches, early resets and changes in model mix can skew the estimate.
+This is an inferred API-price equivalent, not a subscription balance or a promise
+of future capacity.

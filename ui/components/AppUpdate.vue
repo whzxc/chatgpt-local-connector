@@ -35,7 +35,7 @@ const openRepository = () => openUrl('https://github.com/whzxc/chatgpt-local-con
     <SettingsRow :title="t('manualDownload')">
       <NButton text type="primary" @click="openDownloads">{{ t('openDownloads') }}</NButton>
     </SettingsRow>
-    <SettingsRow :title="t('openSourceRepository')" :description="t('mitLicense')">
+    <SettingsRow title="whzxc/chatgpt-local-connector">
       <NButton text type="primary" @click="openRepository">GitHub ↗</NButton>
     </SettingsRow>
   </SettingsGroup>

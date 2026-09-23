@@ -1,7 +1,8 @@
+import { decorativeSvg } from '../assets/brand-reserve/decorative';
 import { computed, ref } from 'vue';
 import { api } from './useConnector';
 import antigravityIcon from '../assets/brand-reserve/agents/antigravity/mono.svg?raw';
-import codexIcon from '../assets/brand-reserve/agents/codex/mono.svg?raw';
+import codexIcon from '../assets/agents/openai.svg?raw';
 import piIcon from '../assets/brand-reserve/agents/pi/mono.svg?raw';
 import opencodeIcon from '../assets/brand-reserve/agents/opencode/mono.svg?raw';
 import claudeIcon from '../assets/brand-reserve/agents/claude/color.svg?raw';
@@ -37,7 +38,7 @@ function persist() {
       ({agent, installed, available, enabled, version, displayName}))));
   } catch { /* A storage failure must not discard a successful discovery. */ }
 }
-export const icons: Record<string, string> = { antigravity:antigravityIcon, codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: antigravityIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon };
+export const icons: Record<string, string> = Object.fromEntries(Object.entries({ antigravity:antigravityIcon, codex: codexIcon, pi: piIcon, opencode: opencodeIcon, claude: claudeIcon, cursor: cursorIcon, gemini: antigravityIcon, grok: grokIcon, copilot: copilotIcon, kimi: kimiIcon, qwen: qwenIcon, kiro: kiroIcon, devin: devinIcon, cline: clineIcon, junie: junieIcon, hermes: hermesIcon }).map(([name, svg]) => [name, decorativeSvg(svg)]));
 export const agentLinks: Record<string, string> = {
   codex: 'https://github.com/openai/codex',
   pi: 'https://pi.dev/',

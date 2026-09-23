@@ -3,7 +3,8 @@ import { locale } from '../i18n';
 import { type QuotaWindow,type ProviderSnapshot } from './types';
 const icons=import.meta.glob('../assets/brand-reserve/agents/*/*.svg',{eager:true,query:'?url',import:'default'}) as Record<string,string>;
 export const brandIcon=(id:string)=>{const agent=id==='gemini'?'antigravity':id;return agent==='codex'?openaiIcon:icons[`../assets/brand-reserve/agents/${agent}/mono.svg`]||icons[`../assets/brand-reserve/agents/${agent}/color.svg`];};
-export const usageColors={unknown:'#67676b',good:'#00e68c',caution:'#ffc226',warning:'#ff4f42',exhausted:'#d91721'};
+export { usageColors } from '../colors';
+import { usageColors } from '../colors';
 export function readingStatus(w:QuotaWindow|undefined,p:ProviderSnapshot,warningAt=75){
  // Old quota numbers are displayable as stale, but cannot colour the surface.
  const valid=p.state==='ready'&&!p.error;

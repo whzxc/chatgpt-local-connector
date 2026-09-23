@@ -17,29 +17,10 @@ use windows_sys::Win32::{
 };
 
 #[tauri::command]
-pub fn set_windows_appearance(
-    window: tauri::WebviewWindow,
-    color: [u8; 3],
-    dark: bool,
-    translucent: bool,
-) -> Result<(), String> {
-    use tauri::window::{Color, Effect, EffectsBuilder};
-    let [r, g, b] = color;
-    let effects = translucent.then(|| {
-        EffectsBuilder::new()
-            .effect(Effect::Acrylic)
-            .color(Color(r, g, b, 200))
-            .build()
-    });
-    window.set_effects(effects).map_err(|e| e.to_string())?;
+pub fn set_windows_appearance(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as HWND;
     // DWM keeps ownership of the glyphs, hover states and Snap Layouts.
-    // Opaque mode shares the canvas color; Acrylic mode has no caption fill.
-    let caption = if translucent {
-        DWMWA_COLOR_NONE
-    } else {
-        r as u32 | (g as u32) << 8 | (b as u32) << 16
-    };
+    let caption: u32 = if dark { 0x000000 } else { 0xffffff };
     let dark = i32::from(dark);
     unsafe {
         DwmSetWindowAttribute(
