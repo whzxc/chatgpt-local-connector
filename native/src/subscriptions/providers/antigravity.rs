@@ -265,6 +265,8 @@ pub async fn read(
         .or(oauth["accessToken"].as_str())
         .filter(|token| !token.is_empty())
         .ok_or_else(|| Failure::from("credentials-missing"))?;
+    let mut failure = Failure::from("no-limits-reported");
+    let mut received_response = false;
     for host in [
         "https://daily-cloudcode-pa.googleapis.com",
         "https://cloudcode-pa.googleapis.com",
@@ -272,29 +274,45 @@ pub async fn read(
         let call = |method: &str| {
             client
                 .post(format!("{host}/v1internal:{method}"))
-                .bearer_auth(&token)
+                .bearer_auth(token)
                 .header("User-Agent", "antigravity")
                 .json(&json!({}))
         };
-        if let Ok(v) = get(call("retrieveUserQuotaSummary")).await {
-            if let Some(q) = windows(&v) {
+        for method in ["retrieveUserQuotaSummary", "fetchAvailableModels"] {
+            let value = match get(call(method)).await {
+                Ok(value) => {
+                    received_response = true;
+                    value
+                }
+                Err(error) => {
+                    if failure.code != "credentials-expired" {
+                        failure = error;
+                    }
+                    continue;
+                }
+            };
+            let quotas = if method == "retrieveUserQuotaSummary" {
+                windows(&value)
+            } else {
+                let quotas = legacy(&value);
+                (!quotas.is_empty()).then_some(quotas)
+            };
+            if let Some(quotas) = quotas {
                 let plan = get(call("loadCodeAssist")).await.unwrap_or(Value::Null);
-                return Reading::new(
-                    q,
-                    json!({"quotaSummary":v,"plan":plan,"history":history::local("antigravity").await}),
-                );
-            }
-        }
-        if let Ok(v) = get(call("fetchAvailableModels")).await {
-            let q = legacy(&v);
-            if !q.is_empty() {
-                let plan = get(call("loadCodeAssist")).await.unwrap_or(Value::Null);
-                return Reading::new(
-                    q,
-                    json!({"models":v,"plan":plan,"history":history::local("antigravity").await}),
-                );
+                let key = if method == "retrieveUserQuotaSummary" {
+                    "quotaSummary"
+                } else {
+                    "models"
+                };
+                let mut raw = json!({"plan":plan,"history":history::local("antigravity").await});
+                raw[key] = value;
+                return Reading::new(quotas, raw);
             }
         }
     }
-    Err("no-limits-reported".into())
+    Err(if received_response {
+        "no-limits-reported".into()
+    } else {
+        failure
+    })
 }

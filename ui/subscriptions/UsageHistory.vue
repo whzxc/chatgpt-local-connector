@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, watchEffect, nextTick, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue';
+import { computed, ref, watch, watchEffect, nextTick, onMounted, onUnmounted } from 'vue';
 import { useElementBounding, useResizeObserver, useWindowSize } from '@vueuse/core';
 import { NButton, NProgress, NPopover } from 'naive-ui';
 import { usagePopoverTheme, usageValueButtonTheme } from '../components/UiProvider.vue';
@@ -10,9 +10,11 @@ import { usagePeriods, usagePeriodLabels as labels } from './displayPreferences'
 import { preciseTime, resetText } from './presentation';
 import railMetrics from '../../shared/usage-panel.json';
 import { useSpring } from '../usage-rail/spring';
-const props=defineProps<{rail?:boolean;detailPlacement?:'left'|'right';history?:UsageHistory;resetCount?:number|null;resetCredits?:ProviderSnapshot['resetCredits'];now:number}>();
+const props=defineProps<{rail?:boolean;detailPlacement?:'left'|'right';history?:UsageHistory;resetCount?:number|null;resetCredits?:ProviderSnapshot['resetCredits'];now:number;details?:{id:string;lines:string[]}[]}>();
 const emit=defineEmits<{popover:[points:[number,number][]]}>();
 const expanded=ref(false), displayed=ref('');
+const detailEntry=computed(()=>props.details?.find(item=>item.id===displayed.value));
+function register(key:string,element:unknown){triggers.value[key]=element instanceof HTMLElement?element:undefined;}
 const period=computed(()=>props.history?.periods?.find(p=>p.id===displayed.value));
 const triggers=ref<Record<string,HTMLElement|undefined>>({});
 const content=ref<HTMLElement>();
@@ -96,24 +98,27 @@ const arrowStyle = computed(() => {
 
 </script>
 <template>
-  <div class="usage-history" v-if="resetCount!=null || usagePeriods.length">
-    <div v-if="resetCount!=null" class="history-period">
+  <slot :register="register" :hover="hover" :focus="focus" :expanded="expanded" :displayed="displayed"/>
+  <div class="usage-history" v-if="resetCount!=null || history?.periods?.some(p=>usagePeriods.includes(p.id))">
+    <div v-if="resetCount!=null" :ref="el=>register('resets',el)" class="history-period" @mouseenter="hover('resets')" @mouseleave="hover('')">
       <span>{{t('usageResetCount')}}</span>
-      <NButton :ref="el=>triggers.resets=(el as ComponentPublicInstance|null)?.$el" text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="hover('resets')" @mouseleave="hover('')" @focus="focus('resets')" @blur="focus('')" :aria-expanded="expanded&&displayed==='resets'" @click.stop>
+      <NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @focus="focus('resets')" @blur="focus('')" :aria-expanded="expanded&&displayed==='resets'" @click.stop>
         <span>{{t('usageResetCountValue',{count:resetCount})}}</span>
       </NButton>
     </div>
     <template v-if="usagePeriods.length">
-      <div v-for="row in history?.periods?.filter(p=>usagePeriods.includes(p.id))" :key="row.id" class="history-period">
+      <div v-for="row in history?.periods?.filter(p=>usagePeriods.includes(p.id))" :key="row.id" :ref="el=>register(row.id,el)" class="history-period" @mouseenter="hover(row.id)" @mouseleave="hover('')">
         <span>{{t(labels[row.id])}}</span>
-        <NButton :ref="el=>triggers[row.id]=(el as ComponentPublicInstance|null)?.$el" text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="hover(row.id)" @mouseleave="hover('')" @focus="focus(row.id)" @blur="focus('')" :aria-expanded="expanded&&displayed===row.id" @click.stop>
+        <NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @focus="focus(row.id)" @blur="focus('')" :aria-expanded="expanded&&displayed===row.id" @click.stop>
           <span>{{row.tokens?`${row.estimatedUsd==null?'—':dollars.format(row.estimatedUsd)} · ${tokens.format(row.tokens)} tokens`:'-'}}</span>
         </NButton>
       </div>
     </template>
+  </div>
     <NPopover class="history-popover" scrollable arrow-class="usage-detail-arrow" :arrow-style="arrowStyle" trigger="manual" :x="motion.value.value[0]" :y="motion.value.value[1]" :theme-overrides="usagePopoverTheme(!!rail,horizontalGap)" :placement="rail ? detailPlacement ?? 'right' : 'left'" :show="expanded" display-directive="show" @mouseenter="hover(displayed)" @mouseleave="hover('')" :style="{width:'250px',height:`${motion.value.value[2]!+36}px`,boxSizing:'border-box',maxWidth:'calc(100vw - 32px)'}">
       <div ref="content" class="history-detail" :style="{opacity:fade.value.value[0]}" :aria-label="displayed==='resets'?t('usageExpires'):period?t(labels[period.id]):undefined">
-        <template v-if="displayed==='resets'">
+        <template v-if="detailEntry"><div v-for="line in detailEntry.lines" :key="line">{{line}}</div></template>
+        <template v-else-if="displayed==='resets'">
           <div v-for="(credit,index) in resetCredits" :key="index" class="history-period expiry-row">
             <span><span class="credit-number">{{index+1}}</span>{{preciseTime(credit.expiresAt)||t('usageExpiryUnknown')}}</span>
             <span>{{resetText(credit.expiresAt,now)}}</span>
@@ -131,7 +136,6 @@ const arrowStyle = computed(() => {
         </template>
       </div>
     </NPopover>
-  </div>
 </template>
 <style scoped>
 .usage-history{display:flex;flex-direction:column;gap:9px;font-size:12px;line-height:1.4}

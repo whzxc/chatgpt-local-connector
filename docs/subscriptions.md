@@ -41,8 +41,8 @@ Console because its usage response does not supply a workspace identity.
 Quota windows are named 5h, weekly or monthly. Remaining display uses 额度 in Chinese;
 used display uses 限额. Countdown text uses units such as `4d 2h`; 5h windows also show minutes.
 
-Hover the reset-count value to see individual credit expiry dates. Hover a period's
-numeric value to see model-level tokens and estimated cost. The rail uses horizontal
+Hover anywhere on the reset-count row to see individual credit expiry dates. Hover
+anywhere on a period row to see model-level tokens and estimated cost. The rail uses horizontal
 secondary bubbles matching its colors. Missing subscription information is shown as
 “未获取到订阅信息”; a reported plan can still appear without quotas.
 
@@ -58,7 +58,7 @@ For a known reset window, average consumption is used quota divided by elapsed t
 The bubble projects when the remaining quota would run out at that rate. A reference
 tick marks even consumption across the cycle and flips with Used/Remaining mode.
 Green means at least 10% is projected to remain at reset, amber means less headroom,
-and red warns of exhaustion. Hovering the warning or bar shows the projected outcome.
+and red warns of exhaustion. Hovering anywhere in the quota block (label, bar or remaining/reset row) opens its secondary bubble.
 
 Projection waits for at least 60 seconds or 1% of the cycle. Under 5% used, unstable
 near-limit/over-limit projections are suppressed. Zero usage, stale readings and unknown
@@ -85,7 +85,10 @@ A subsequent usage refresh reprices token records. Price requests transmit no ac
 credentials or usage records. OpenUsage-derived data and logic retain MIT attribution in
 `shared/pricing/LICENSE.OpenUsage`. Implementation details are in [Development](development.md#subscription-development).
 
-Quota-bar tooltips estimate the full-cycle API-equivalent USD value by dividing
+The header does not open hover details. When present, the warning/error icon opens
+a secondary bubble containing the notices. Quota blocks and history rows use secondary
+bubbles; native title tooltips are not used. Quota blocks share the usage-detail
+animation and hover handling. These bubbles estimate the full-cycle API-equivalent USD value by dividing
 observed cost since the inferred cycle start by the used quota fraction. The
 cycle start is the reported reset time minus its window duration (including
 5-hour, weekly and monthly windows). Timestamped history is retained for 32 days;
@@ -93,7 +96,7 @@ calendar-day history totals are not used for this calculation. The sample ends
 at the earlier quota/history observation, with a maximum five-minute timestamp
 skew. Estimates require at least 1% usage, a current unsaturated quota, and priced
 tokens throughout the sample. Separate model quota pools are excluded when their
-usage cannot be isolated. The tooltip contains the pace forecast, full-cycle
+usage cannot be isolated. The secondary bubble contains the pace forecast, full-cycle
 estimate and observed sample only. Incomplete logs, other devices, account switches,
 early resets and changes in model mix can skew the estimate.
 This is an inferred API-price equivalent, not a subscription balance or a promise
