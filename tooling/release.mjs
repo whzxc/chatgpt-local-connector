@@ -41,6 +41,9 @@ async function check() {
   }
   const lock = await json('package-lock.json');
   if (lock.version !== version || lock.packages[''].version !== version) throw new Error('package-lock version mismatch');
+  for (const [name, entry] of Object.entries(lock.packages)) {
+    if (entry.resolved && !entry.resolved.startsWith('https://registry.npmjs.org/')) throw new Error(`${name}: package-lock requires a non-public npm registry`);
+  }
   for (const [file, name] of [['native/Cargo.lock','connector-core'],['desktop/Cargo.lock','connector-core'],['desktop/Cargo.lock','local-connector-desktop']]) {
     if (!(await readFile(file,'utf8')).includes(`name = "${name}"\nversion = "${version}"`)) throw new Error(`${file}: ${name} version mismatch`);
   }
