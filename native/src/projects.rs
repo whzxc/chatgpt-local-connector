@@ -124,6 +124,15 @@ fn strings(v: &[&str]) -> Vec<String> {
 }
 async fn state(p: &Value) -> Result<Value> {
     let root = string(p, "root");
+    if !Path::new(root)
+        .ancestors()
+        .any(|path| path.join(".git").symlink_metadata().is_ok())
+        && !(Path::new(root).join("HEAD").is_file() && Path::new(root).join("objects").is_dir())
+    {
+        return Ok(
+            json!({"project":p["id"],"root":root,"git":false,"sha":null,"statusHash":null,"observedAt":now()}),
+        );
+    }
     match git(root, strings(&["rev-parse", "--git-dir"])).await {
         Ok(_) => (),
         Err(e) if e == "NOT_GIT_REPOSITORY" => {
