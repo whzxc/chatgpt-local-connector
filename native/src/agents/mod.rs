@@ -303,6 +303,12 @@ impl AgentHost {
         self.inventory_status(&mut inventory).await;
         inventory
     }
+    pub(crate) async fn context_task(&self, agent: &str, task: &str) -> Result<Value> {
+        if !self.drivers.contains_key(agent) {
+            return Err("UNKNOWN_AGENT".into());
+        }
+        self.task(agent, task).await
+    }
     async fn task(&self, agent: &str, task: &str) -> Result<Value> {
         let p = self.processes.lock().await.get(task).cloned();
         let mut value = if let Some(p) = p {

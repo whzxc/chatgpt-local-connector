@@ -141,3 +141,7 @@ ID 必须非空且仅包含 ASCII 字母、数字、下划线或连字符；与�
 新增符合 ACP v1 的 Agent 优先增加 manifest/compatibility metadata，不增加品牌工具或 Rust Driver。内置和 Custom ACP 都自动复用现有 agent_wait，没有单独等待逻辑或品牌协议 shim。
 
 协议参考：[ACP v1](https://agentclientprotocol.com/protocol/v1/initialization)、[OpenCode ACP](https://opencode.ai/docs/acp/)、[Pi 官方 RPC](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc.md)。
+
+## 只读审查与交接
+
+`agent_context({agent, taskId, turnId?, project?, view?: "review" | "handoff"})` 为已有任务生成有界、可追溯的材料，详见[工具语义](tools.md#任务上下文)。它不续接、不迁移任务、不执行验证。Codex 使用原生 thread/turn/item；其他驱动仅读取已有任务记录，缺失的命令证据与实时状态明确表示未知。交接材料不是新授权，继续前应重读任务、原回执和当前代码。

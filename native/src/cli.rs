@@ -7,7 +7,7 @@ fn onboarding(ingress: &Value) -> Value {
     json!({"ingressId":ingress["id"],"controlSource":ingress["controlSource"],
         "stage":if ingress["config"]["configured"]!=true {"configure"}else if ingress["state"]!="ready" {"start"}else if ingress["verification"]["challengeVerifiedAt"].is_string(){"inbound_verified"}else{"client_setup_or_verify"},
         "transport":ingress["transport"],"authentication":ingress["auth"],"url":ingress["url"],"tunnelId":ingress["config"]["tunnelId"],
-        "verification":ingress["verification"],
+        "verification":ingress["verification"],"diagnostics":crate::diagnostics::ingress(ingress),
         "preset":crate::control_sources::preset(string(ingress,"controlSource")),
         "verificationPrompt":format!("调用 connector_verify，code 为 {}。只验证连接，不创建任务。",string(&ingress["verification"],"code")),
         "executionPrompt":"创建一个无害 Agent 任务：不调用工具，不读取或修改文件，只回复 CLC_ONBOARDING_OK。使用唯一 UUID requestId，读取回执、taskId、turnId，再用默认 30 秒的 agent_wait/codex_wait；timeout 后沿用原 ID 和上一轮 snapshotHash 作为 expectedHash 继续 wait 至终态或交互，读取最终输出。timeout 不终止任务，不重新创建。未知状态回读原 requestId，不重复创建。",
@@ -22,11 +22,11 @@ async fn doctor() -> crate::Result<Value> {
     let status = forward_request("status", "GET", json!({})).await?;
     let mut items = Vec::new();
     for ingress in status["ingresses"].as_array().into_iter().flatten() {
-        items.push(json!({"id":ingress["id"],"configured":ingress["config"]["configured"],"state":ingress["state"],"error":ingress["error"],"verification":ingress["verification"],
+        items.push(json!({"id":ingress["id"],"configured":ingress["config"]["configured"],"state":ingress["state"],"error":ingress["error"],"verification":ingress["verification"],"diagnostics":crate::diagnostics::ingress(ingress),
         "preset":crate::control_sources::preset(string(ingress,"controlSource")),"onboarding":onboarding(ingress)}));
     }
     Ok(
-        json!({"ingresses":items,"summary":status["ingressSummary"],"desktop":status["core"]["desktop"],"appServer":status["core"]["appServer"],"executionVerified":false}),
+        json!({"ingresses":items,"summary":status["ingressSummary"],"desktop":status["core"]["desktop"],"appServer":status["core"]["appServer"],"executionVerified":false,"diagnostics":status["diagnostics"]}),
     )
 }
 fn stdin_json() -> crate::Result<Value> {
@@ -51,7 +51,7 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
     match args.as_slice() {
         [] | ["help"] | ["--help"] => Ok(json!({"version":env!("CARGO_PKG_VERSION"),
             "usage":"<应用可执行文件> cli <command> [--json]",
-            "commands":["subscriptions get","subscriptions set --stdin","subscriptions refresh [providerId]","subscriptions open [providerId]","panel get","panel set --stdin","help","guide","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
+            "commands":["subscriptions get","subscriptions set --stdin","subscriptions refresh [providerId]","subscriptions open [providerId]","panel get","panel set --stdin","help","guide","context --stdin","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
             "subscriptionsInput":{"enabled":"boolean; required","providers":"complete array of IDs from subscriptions get; required","pinnedWindows":"complete provider-to-window map; required"},
             "subscriptionsNote":"get reads memory only. set replaces the complete settings: read get.settings first and preserve all intended selections/pins. refresh requests an online read for a selected eligible provider, or all such providers when omitted; accepted is not fresh-data success. Read observedAt/state/error afterwards. open activates the target instance's Agent detail panel, or the Agents panel when omitted.",
             "panelInput":{"autoCollapse":"boolean","size":"small | standard | large","spacing":"compact | standard | roomy","ends":"softened | round","horizontalPercentages":"boolean","alertColor":"boolean","notchFusion":"boolean","warningAt":"60 | 70 | 75 | 80 | 85 | 90 percent used","dock":"left | right | top | bottom | floating","resetPosition":"true; resets placement, takes precedence over dock"},
@@ -98,6 +98,7 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
         }
         ["guide"] => Ok(json!({"markdown":GUIDE})),
         ["doctor"] => doctor().await,
+        ["context", "--stdin"] => forward_request("context", "POST", stdin_json()?).await,
         ["onboarding"] => Ok(
             json!({"ingresses":ingresses().await?.as_array().into_iter().flatten().map(onboarding).collect::<Vec<_>>()}),
         ),
@@ -127,7 +128,24 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
         ["ingress", "token", "rotate", id] => {
             forward_request(&format!("ingress/{id}/token"), "POST", json!({})).await
         }
-        ["ingress", "doctor", id] | ["ingress", "verify", id] => {
+        ["ingress", "doctor", id] => {
+            let status = forward_request("status", "GET", json!({})).await?;
+            let i = status["ingresses"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|i| i["id"] == *id)
+                .ok_or("ingress not found")?;
+            let findings: Vec<_> = status["diagnostics"]["findings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|f| f["scope"]["id"] == *id || f["scope"]["ingressId"] == *id)
+                .cloned()
+                .collect();
+            Ok(json!({"ingress":i,"onboarding":onboarding(i),"findings":findings}))
+        }
+        ["ingress", "verify", id] => {
             let i = forward_request(&format!("ingress/{id}"), "GET", json!({})).await?;
             Ok(json!({"ingress":i,"onboarding":onboarding(&i)}))
         }

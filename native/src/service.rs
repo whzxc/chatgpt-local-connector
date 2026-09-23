@@ -314,6 +314,11 @@ impl Service {
         let running = items.iter().filter(|i| i["running"] == true).count();
         let ready = items.iter().filter(|i| i["state"] == "ready").count();
         status["ingresses"] = json!(items);
+        status["diagnostics"] = crate::diagnostics::status(&status);
+        crate::diagnostics::receipts(
+            &mut status["diagnostics"],
+            self.control.task_records().await,
+        );
         status["ingressSummary"] = json!({"running":running,"ready":ready,"total":items.len()});
         status["core"]["transport"] =
             json!({"state":if ready>0{"ready"}else if running>0{"starting"}else{"stopped"}});
@@ -583,6 +588,9 @@ impl Service {
                 return draft.summary().await;
             }
             return Err("UNKNOWN_ROUTE".into());
+        }
+        if route == "context" && method == "POST" {
+            return crate::context::read(&self.agents, &self.control, body, json!("all")).await;
         }
         if route == "status" || route == "core" {
             let v = self.status().await?;

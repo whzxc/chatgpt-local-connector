@@ -59,7 +59,7 @@ Cursor：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=clou
 
 Cloudflare token 模式路由保存在服务端，CLC 不用 token 改写路由。Quick 模式自动分配临时地址，仅用于试用；长期入口优先固定地址加认证。Custom Domain 使用 httpsHost/httpsPort 接收自管 TLS 反向代理请求。不要公开桌面管理端口。
 
-先查看[控制源矩阵](control-sources.md)。Slackbot 不支持静态 Bearer，目前仅无认证与 CLC 相交；不要自动降级。Claude 组织静态请求头 Beta 与 Copilot Studio API-key Header 是有条件路径，不代表已实现 OAuth。CLI help、ingress presets（离线）、list 和 onboarding 均提供 preset metadata。不能把本机探针成功报告为官方客户端已接入。
+先查看[控制源矩阵](control-sources.md)。Slackbot 不支持静态 Bearer，可使用带本机所有者同意的 OAuth；不要自动降级。Claude 组织静态请求头 Beta 与 Copilot Studio API-key Header 是有条件的 Bearer 路径；OAuth 是独立选项。CLI help、ingress presets（离线）、list 和 onboarding 均提供 preset metadata。不能把本机探针成功报告为官方客户端已接入。
 
 ## 完整执行流程
 
@@ -73,7 +73,7 @@ Cloudflare token 模式路由保存在服务端，CLC 不用 token 改写路由�
 
 ## 边界
 
-none 允许所有可达调用方调用已授权工具。bearer 只证明持有凭据；task namespace 全局共享，没有用户/组织 RBAC。本轮不实现 OAuth/DCR、Slack Identity、Notion API 或消息编排。listener 不提前截断 300 秒等待；外部代理和服务商限制需另行核对。重复短等待可沿用 taskId，超时不停止任务。
+none 允许所有可达调用方调用已授权工具。bearer 只证明持有凭据；task namespace 全局共享，没有用户/组织 RBAC。OAuth 支持 PKCE、DCR 或预注册、本机所有者同意、刷新与撤销；不实现 Slack Identity、Notion API 或消息编排。listener 不提前截断 300 秒等待；外部代理和服务商限制需另行核对。重复短等待可沿用 taskId，超时不停止任务。
 
 入口失败只影响自身。先读该入口错误与脱敏日志。停止入口只释放其进程、listener 和临时资源；退出 Core 才关闭 AgentHost/Control，Desktop-owned 任务沿用 Desktop 生命周期。UI 仅展示入口数量和每入口一行状态及基本动作，主要配置通过 CLI 完成。
 
@@ -82,3 +82,9 @@ none 允许所有可达调用方调用已授权工具。bearer 只证明持有�
 Codex 在 create/send 后从回执取得原 taskId/threadId、turnId，默认以 30 秒（建议 20–30 秒）一个 slice 调用 agent_wait/codex_wait。收到 timeout 后保留原 ID，将上一轮 snapshotHash 作为 expectedHash 再次 wait，直到 completed/failed/cancelled 或 interaction-required。timeout/取消 wait 只结束当前等待，不终止源任务，不应重新创建任务或重发 prompt；unconfirmed 不代表失败。expectedHash 只控制 changed 比较，不屏蔽终态或交互。
 
 这是 bounded event-driven long poll；每个 slice 内仍由事件唤醒和真实 owner 状态复核驱动，不使用 read/sleep 高频轮询。ChatGPT、Notion、Slack 及其他 MCP Client 可能具有不同的外层工具超时，统一默认 timeoutMs=30000，不引入 per-client 配置。普通 Chat / 通用 MCP Client 不推荐默认阻塞数分钟。确认上游支持时仍可显式传 timeoutMs=300000；这是上限而非推荐值。OpenAI Tunnel stdio adapter 保留 330 秒转发预算，HTTPS MCP 没有更短的等待执行限时；CLC 无法延长外部客户端或代理的超时。
+
+## 只读上下文与诊断
+
+`cli context --stdin` 接收与 `agent_context` 相同的 JSON，例如 `{"agent":"codex","taskId":"<existing-task-id>","view":"handoff"}`。它使用经过认证的本机管理通道，保留 CLI JSON envelope，不写文件、不创建或恢复任务。运行中的应用需要包含此实现。
+
+`status`、`doctor`、`ingress doctor <id>` 与 `onboarding` 共享结构化 `diagnostics.findings`，包含稳定代码、目标范围和建议的人工操作。`checks.execution.state=not_checked` 表示缺少执行验收证据；不能只根据旧字段 `executionVerified:false` 判定失败。入口 ready、认证已配置、真实入站已验证、任务执行已验证是不同观察。远端客户端无证据时仍为 unknown。诊断不重启、不旋转凭据、不重放未知写操作；应先回读原 requestId。全局诊断复用现有 Codex 任务回执读取，遇到 unconfirmed 时给出该原请求的读取入口；其他驱动回执未纳入此检查。

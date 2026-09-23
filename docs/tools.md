@@ -10,6 +10,7 @@
 | 工具 | 用途 |
 | --- | --- |
 | agents / agent_capabilities / agent_tasks / agent_create / agent_read / agent_wait / agent_send / agent_interrupt / agent_events / agent_pending / agent_respond / agent_request | 多 Agent 公共任务与幂等入口，详见[本地 Agents](agents.md) |
+| agent_context | 已有任务的只读 Review/Handoff；声明、原生证据和当前工作区变化分开返回 |
 | connector_verify | 回传引导中的验证码，确认连接调用到达本机，不执行任务 |
 | projects / overview / tree / search / read / git | 实时 Codex 本机项目、目录文件事实和只读 Git 查询 |
 | fs | 主机绝对路径的文件读写、目录、元数据、复制、删除和监听 |
@@ -280,3 +281,31 @@ MCP notifications/cancelled 可取消对应 wait，返回 unconfirmed / wait-can
 这是有界同步等待，不是持久化监控订阅、定时任务或后台推送。普通 Chat 结束当前回复后不会继续执行等待。
 
 所有内置 ACP 与 Custom ACP 自动进入相同的 `agent_*` 和 `agent_wait` 路径，不提供品牌化工具。`agents` 返回 displayName、integration、installed、available、status、version、discoveryError 和 descriptor；静态 `agent_capabilities` 不承诺会话能力，传 taskId 才读取 initialize 及 session 协商快照。完整启动和支持边界见[内置 ACP 矩阵](agents.md#内置-acp-支持矩阵)。
+
+## Review 事实视图与完整性
+
+`overview/tree/search/read/git` 默认行为不变。显式传入 `view: "review"` 时，以真实工作区路径为边界，统一过滤环境变量文件、私钥、凭据目录及运行状态私有目录。忽略规则开关不能解除此筛选；正常 root 内符号链接仍可读取。Git diff 在取得正文前核对 NUL 分隔的路径元数据和重命名两侧。若 Git 将敏感文件重命名报告为无法配对的删除与新增，则保守省略同次新增文件正文并给出 POSSIBLE_SENSITIVE_RENAME。Review 的 Git log 提交消息暂不返回，show 仅返回版本及筛选后的路径。过滤为空不代表工作区干净。
+
+`data.coverage` 说明分页、筛选和跳过原因；`read.nextLine` 非空代表尚未读完，即使 `truncated` 为 false。搜索的 `matchesComplete` 表示单文件片段完整性，超出 5 处命中或 500 字符片段时用 `read` 继续读取。tree/search 续页可携带上一页 `listingHash` 作为 `expectedHash`；read 使用 `sha256`。哈希变化时重新分页。列表哈希只验证列表，不能验证搜索期间各文件内容。
+
+`source` 包括观察窗口、HEAD 和 Git 状态文本哈希。`statusHash` 不是全仓库内容哈希；同为 M 的文件可以改变而不改变该值。`changedDuringRead` 仅表示已观察到的 Git 状态变化，不能证明全仓库不变。一致性为 best-effort，文件读取另有正文哈希及前后元数据核对。非 Git 目录与 Git 查询失败分别处理，不在失败后扩大遍历范围。
+
+```json
+{"project":"<workspace>","path":"src/main.rs","view":"review","startLine":1,"lineCount":80}
+```
+
+Review 不改变原生 fs/command/process 权限，不是用户隔离或完整 DLP。调用方收到的内容会进入其服务；文件名筛选不能保证普通源码不含秘密。
+
+## 任务上下文
+
+```json
+{"agent":"codex","taskId":"<existing-task-id>","view":"handoff"}
+```
+
+`agent_context` 默认 view=review；可传 `turnId` 和 `project`。省略轮次时选择最新可确认轮次；显式轮次只在有界窗口内查找，查不到明确失败，不切换轮次。任务 cwd 优先，显式项目不一致返回 `TASK_WORKSPACE_MISMATCH`。无 cwd 的显式项目关联标为 caller-unconfirmed。
+
+结果按 runtime、workspace、evidence、claims、coverage、readNext 分组；Handoff 另给可再生 Markdown。命令退出码仅证明该命令退出结果，Agent 文本不证明测试通过，回执完成不证明任务完成。工作区变化不归因给该任务，也不能用历史命令给当前代码背书。
+
+读取不启动或恢复任务、不执行命令、不推理、不写 checkpoint。聚合采用 12 秒截止时间、最多 20 个条目及 100 个变化路径；摘录先脱敏再限制至 1 KiB，输出预算 32 KiB。原生读取本身仍受已有协议分页/快照能力限制。缺失、超时、未采集回执/交互会明确标为 partial；非 Codex 驱动只投影已有任务记录，不补建进程或猜测结构化命令结果。原始存储保持不变。
+
+入口策略按模块生效：agent_read 控制任务事实、codex_items 控制 Codex 条目、git 控制工作区；readNext 仅推荐允许的工具。四档预设及默认全部不变，已有显式 allowlist 不自动扩容。

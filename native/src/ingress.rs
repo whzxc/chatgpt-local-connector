@@ -164,9 +164,9 @@ impl Ingress {
         let status = self.status().await?;
         let meta = self.meta.lock().await;
         let config = status["config"].clone();
-        Ok(
-            json!({"discoveredUrls":status["discoveredUrls"],"id":self.id,"name":meta["name"],"controlSource":meta["controlSource"],"transport":meta["transport"],"provider":config["httpsProvider"],"enabled":meta["enabled"],"auth":meta["auth"],"toolPolicy":meta["toolPolicy"],"config":config,"running":status["connection"]["running"],"state":status["tunnel"]["state"],"error":status["tunnel"]["error"],"url":status["connection"]["mcpUrl"],"verification":status["core"]["chatgpt"],"logs":status["logs"]}),
-        )
+        let mut result = json!({"discoveredUrls":status["discoveredUrls"],"id":self.id,"name":meta["name"],"controlSource":meta["controlSource"],"transport":meta["transport"],"provider":config["httpsProvider"],"enabled":meta["enabled"],"auth":meta["auth"],"toolPolicy":meta["toolPolicy"],"config":config,"running":status["connection"]["running"],"state":status["tunnel"]["state"],"error":status["tunnel"]["error"],"url":status["connection"]["mcpUrl"],"verification":status["core"]["chatgpt"],"logs":status["logs"]});
+        result["diagnostics"] = crate::diagnostics::ingress(&result);
+        Ok(result)
     }
     pub async fn network_proxy(&self) -> Result<crate::proxy::NetworkProxy> {
         let settings = self.settings.lock().await.clone();
@@ -793,6 +793,9 @@ impl Ingress {
             save(&self.dir.join("verification.json"), &next)?;
             *v = next;
             Ok(json!({"code":args["code"],"received":true,"origin":self.origin().await}))
+        } else if name == "agent_context" {
+            let policy = self.meta.lock().await["toolPolicy"].clone();
+            crate::context::read(&self.agents, &self.control, args, policy).await
         } else if name == "agents" || name.starts_with("agent_") {
             self.agents.tool(&self.control, name, args).await
         } else {
