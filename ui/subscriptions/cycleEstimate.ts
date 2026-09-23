@@ -21,8 +21,5 @@ export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):strin
   const money=new Intl.NumberFormat(locale.value,{style:'currency',currency:'USD',maximumFractionDigits:2});
   const compact=new Intl.NumberFormat(locale.value,{notation:'compact',maximumFractionDigits:1});
   return [t('usageCycleEstimate',{amount:money.format(usd*100/w.usedPercent)}),
-    t('usageCycleSample',{tokens:compact.format(tokens),amount:money.format(usd),percent:w.usedPercent}),
-    t('usageCycleRange',{start:new Date(start).toLocaleString(locale.value),end:new Date(end).toLocaleString(locale.value)}),
-    ...(h.incomplete ? [t('usageCycleIncomplete')] : []),
-    t(h.scope==='local-device'?'usageCycleLocalCaveat':'usageCycleCaveat')];
+    t('usageCycleSample',{tokens:compact.format(tokens),amount:money.format(usd),percent:w.usedPercent})];
 }

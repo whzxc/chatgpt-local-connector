@@ -1,10 +1,6 @@
 {
-  "usageCycleIncomplete": "日志样本不完整，估值可能偏低。",
   "usageCycleEstimate": "整周期额度估值 ≈ {amount}",
   "usageCycleSample": "已观测：{tokens} tokens · {amount} / 已用 {percent}%",
-  "usageCycleRange": "推算周期采样：{start} – {end}",
-  "usageCycleLocalCaveat": "按 API 价格换算，非可用余额。仅含本机日志；其他设备、切换账号、提前重置及模型配比变化均会影响估算。",
-  "usageCycleCaveat": "按 API 价格换算，非可用余额；周期起点由重置时间推算，提前重置和模型配比变化会影响估算。",
   "showSecret": "显示内容",
   "hideSecret": "隐藏内容",
   "reobtainMcpUrl": "重新获取",

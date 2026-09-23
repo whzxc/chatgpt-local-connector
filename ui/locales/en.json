@@ -1,10 +1,6 @@
 {
-  "usageCycleIncomplete": "Incomplete history: this estimate may be understated.",
   "usageCycleEstimate": "Estimated full-cycle value ≈ {amount}",
   "usageCycleSample": "Observed: {tokens} tokens · {amount} / {percent}% used",
-  "usageCycleRange": "Inferred cycle sample: {start} – {end}",
-  "usageCycleLocalCaveat": "API-price equivalent, not a spending balance. Local logs only; other devices, account changes, early resets and model mix can skew this estimate.",
-  "usageCycleCaveat": "API-price equivalent, not a spending balance. Cycle start is inferred from reset time; early resets and model mix can skew the estimate.",
   "showSecret": "Show value",
   "hideSecret": "Hide value",
   "reobtainMcpUrl": "Get again",

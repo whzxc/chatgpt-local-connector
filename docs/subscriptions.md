@@ -93,7 +93,8 @@ calendar-day history totals are not used for this calculation. The sample ends
 at the earlier quota/history observation, with a maximum five-minute timestamp
 skew. Estimates require at least 1% usage, a current unsaturated quota, and priced
 tokens throughout the sample. Separate model quota pools are excluded when their
-usage cannot be isolated. Incomplete logs are explicitly marked; other devices,
-account switches, early resets and changes in model mix can skew the estimate.
+usage cannot be isolated. The tooltip contains the pace forecast, full-cycle
+estimate and observed sample only. Incomplete logs, other devices, account switches,
+early resets and changes in model mix can skew the estimate.
 This is an inferred API-price equivalent, not a subscription balance or a promise
 of future capacity.

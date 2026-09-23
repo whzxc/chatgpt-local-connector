@@ -10,8 +10,6 @@ mod i18n;
 mod tray;
 mod updates;
 mod usage_panel;
-#[cfg(target_os = "macos")]
-mod window_controls;
 #[cfg(target_os = "windows")]
 mod windows_frame;
 
@@ -161,8 +159,6 @@ fn main() {
                 // Clear the live WebView backing as well as the window configuration.
                 // On macOS this disables WKWebView's own opaque background.
                 window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
-                #[cfg(target_os = "macos")]
-                window_controls::align(&window);
             }
             usage_panel::install(app.handle());
             tray::install(app)?;
@@ -182,17 +178,6 @@ fn main() {
             if matches!(event, tauri::WindowEvent::ThemeChanged(_)) {
                 if let Err(error) = appearance::update_dock_icon(window.app_handle()) {
                     eprintln!("{error}");
-                }
-            }
-            #[cfg(target_os = "macos")]
-            if matches!(
-                event,
-                tauri::WindowEvent::Resized(_)
-                    | tauri::WindowEvent::Focused(true)
-                    | tauri::WindowEvent::ScaleFactorChanged { .. }
-            ) {
-                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
-                    window_controls::align(&webview);
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
