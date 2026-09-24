@@ -11,6 +11,7 @@ import squeezed from '../assets/mascot/squeezed.png';
 import dizzy from '../assets/mascot/dizzy.png';
 
 const props = defineProps<{ state: 'connected' | 'offline' | 'connecting' | 'stopping' | 'degraded' | 'error' | 'unavailable' | 'working' }>();
+const emit = defineEmits<{ displacement: [position: { x: number; y: number }] }>();
 const stateExpressions = { connected: logo, offline: closed, connecting: surprised, stopping: squeezed,
   degraded: pout, error: cross, unavailable: dizzy, working: happy };
 const expressions = [happy, surprised, pout, closed, cross, squeezed, dizzy];
@@ -54,6 +55,7 @@ function restoreExpressionLater() {
 }
 
 const position = ref({ x: 0, y: 0 });
+watch(position, value => emit('displacement', value), { flush: 'sync' });
 const dragging = ref(false);
 const headStyle = computed(() => ({
   transform: `translate(${position.value.x}px, ${position.value.y}px) rotate(${position.value.x * .08}deg)`,
@@ -201,16 +203,14 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); cancelAnimationFrame(f
 </template>
 
 <style scoped>
-.mascot { position: relative; z-index: 1; isolation: isolate; width: 174px; height: 174px; }
-.mascot::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 42px; background: var(--accent-soft); box-shadow: 0 24px 50px color-mix(in srgb,var(--black) 7.06%,transparent); transform: rotate(-7deg); pointer-events: none; }
+.mascot { position: relative; z-index: 1; isolation: isolate; width: calc(var(--graph-ring-radius, 130px) * 1.8); height: calc(var(--graph-ring-radius, 130px) * 1.8); }
 .mascot-button { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 42px; background: transparent; cursor: grab; transition: none; touch-action: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .mascot-button:hover, .mascot-button:active { background: transparent; }
 .mascot-button.dragging { cursor: grabbing; }
 .mascot-head { display: block; position: relative; width: 100%; height: 100%; transform: rotate(-7deg); pointer-events: none; }
 .mascot-button img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; padding: 10px; object-fit: contain; pointer-events: none; user-select: none; }
 @media (max-width: 700px) {
-  .mascot { width: 112px; height: 112px; }
-  .mascot::before, .mascot-button { border-radius: 28px; }
+  .mascot-button { border-radius: 28px; }
   .mascot-button img { padding: 6px; }
 }
 </style>
