@@ -50,8 +50,11 @@ Console because its usage response does not supply a workspace identity.
 Quota windows are named 5h, weekly or monthly. Remaining display uses 额度 in Chinese;
 used display uses 限额. Countdown text uses units such as `4d 2h`; 5h windows also show minutes.
 
-Hover anywhere on the reset-count row to see individual credit expiry dates. Hover
-anywhere on a period row to see model-level tokens and estimated cost. The rail uses horizontal
+In the home Agent details panel, hover the reset count or a period’s right-hand
+statistics to open details anchored to that text. Labels and blank row space do not
+trigger details. In the rail and menu-bar panel, the entire row remains a hover target.
+Reset-count details show individual credit expiry dates; period details show model-level
+tokens and estimated cost. The rail uses horizontal
 secondary bubbles matching its colors. Missing subscription information is shown as
 “未获取到订阅信息”; a reported plan can still appear without quotas.
 

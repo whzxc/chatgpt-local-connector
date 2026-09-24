@@ -10,7 +10,7 @@ import { usagePeriods, usagePeriodLabels as labels } from './displayPreferences'
 import railMetrics from '../../shared/usage-panel.json';
 import UsageDetail from './UsageDetail.vue';
 import { useSpring } from '../usage-rail/spring';
-const props=defineProps<{rail?:boolean;detailPlacement?:'left'|'right';dismissKey?:number;externalDetail?:string;history?:UsageHistory;resetCount?:number|null;resetCredits?:ProviderSnapshot['resetCredits'];now:number;details?:{id:string;lines:string[]}[]}>();
+const props=defineProps<{rail?:boolean;valueTrigger?:boolean;detailPlacement?:'left'|'right';dismissKey?:number;externalDetail?:string;history?:UsageHistory;resetCount?:number|null;resetCredits?:ProviderSnapshot['resetCredits'];now:number;details?:{id:string;lines:string[]}[]}>();
 const emit=defineEmits<{popover:[points:[number,number][]]}>();
 const expanded=ref(false), displayed=ref('');
 const detailEntry=computed(()=>props.details?.find(item=>item.id===displayed.value));
@@ -19,7 +19,10 @@ const period=computed(()=>props.history?.periods?.find(p=>p.id===displayed.value
 const triggers=ref<Record<string,HTMLElement|undefined>>({});
 const content=ref<HTMLElement>();
 const detail=computed(()=>content.value?.closest<HTMLElement>('.history-popover'));
-const trigger=computed(()=>triggers.value[displayed.value]);
+const trigger=computed(()=>{
+  const element=triggers.value[displayed.value];
+  return props.valueTrigger ? element?.querySelector<HTMLElement>('.history-toggle') ?? element : element;
+});
 const triggerBounds=useElementBounding(trigger), bounds=useElementBounding(detail);
 const {height:viewportHeight}=useWindowSize();
 const motion=useSpring([0,0,80],railMetrics.cardResponse,railMetrics.cardDamping,()=>bounds.update());
@@ -132,16 +135,16 @@ const arrowStyle = computed(() => {
 <template>
   <slot :register="register" :hover="hover" :focus="focus" :expanded="expanded" :displayed="displayed"/>
   <div class="usage-history" v-if="resetCount!=null || history?.periods?.some(p=>usagePeriods.includes(p.id))">
-    <div v-if="resetCount!=null" :ref="el=>register('resets',el)" class="history-period" @mouseenter="hover('resets')" @mouseleave="hover('')">
+    <div v-if="resetCount!=null" :ref="el=>register('resets',el)" class="history-period" @mouseenter="!valueTrigger && hover('resets')" @mouseleave="!valueTrigger && hover('')">
       <span>{{t('usageResetCount')}}</span>
-      <NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @focus="focus('resets')" @blur="focus('')" :aria-expanded="expanded&&displayed==='resets'" @click.stop>
+      <NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="valueTrigger && hover('resets')" @mouseleave="valueTrigger && hover('')" @focus="focus('resets')" @blur="focus('')" :aria-expanded="expanded&&displayed==='resets'" @click.stop>
         <span>{{t('usageResetCountValue',{count:resetCount})}}</span>
       </NButton>
     </div>
     <template v-if="usagePeriods.length">
-      <div v-for="row in history?.periods?.filter(p=>usagePeriods.includes(p.id))" :key="row.id" :ref="el=>register(row.id,el)" class="history-period" @mouseenter="hover(row.id)" @mouseleave="hover('')">
+      <div v-for="row in history?.periods?.filter(p=>usagePeriods.includes(p.id))" :key="row.id" :ref="el=>register(row.id,el)" class="history-period" @mouseenter="!valueTrigger && hover(row.id)" @mouseleave="!valueTrigger && hover('')">
         <span>{{t(labels[row.id])}}</span>
-        <NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @focus="focus(row.id)" @blur="focus('')" :aria-expanded="expanded&&displayed===row.id" @click.stop>
+        <NButton text :theme-overrides="usageValueButtonTheme" class="history-toggle" @mouseenter="valueTrigger && hover(row.id)" @mouseleave="valueTrigger && hover('')" @focus="focus(row.id)" @blur="focus('')" :aria-expanded="expanded&&displayed===row.id" @click.stop>
           <span>{{row.tokens?`${row.estimatedUsd==null?'—':dollars.format(row.estimatedUsd)} · ${tokens.format(row.tokens)} tokens`:'-'}}</span>
         </NButton>
       </div>

@@ -863,9 +863,8 @@ impl Service {
                 }
                 ("PUT", "agents") => {
                     let result = self.agents.set_enabled(&body).await?;
-                    if let Some(inventory) = self.agents.cached_subscription_inventory().await {
-                        self.subscriptions.inventory(&inventory).await;
-                    }
+                    let inventory = self.agents.ui_inventory(false).await;
+                    self.subscriptions.inventory(&inventory).await;
                     Ok(result)
                 }
                 ("GET", "codex/login") => {

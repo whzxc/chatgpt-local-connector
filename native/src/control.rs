@@ -14,7 +14,6 @@ pub struct Control {
     monitor: Mutex<Option<Ipc>>,
     jobs: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     schemas: Mutex<Option<Value>>,
-    archived_tasks: Mutex<Option<(std::time::Instant, HashMap<String, Value>)>>,
 }
 impl Control {
     pub fn new(binary: PathBuf) -> Arc<Self> {
@@ -27,7 +26,6 @@ impl Control {
             monitor: Mutex::new(None),
             jobs: Default::default(),
             schemas: Mutex::new(None),
-            archived_tasks: Mutex::new(None),
         })
     }
     pub async fn utility(&self) -> Result<Arc<Rpc>> {
@@ -545,39 +543,9 @@ impl Control {
         records.sort_by(|a, b| string(b, "createdAt").cmp(string(a, "createdAt")));
         Ok(records)
     }
-    async fn archived_task(&self, id: &str) -> Result<Option<Value>> {
-        let mut cache = self.archived_tasks.lock().await;
-        if cache
-            .as_ref()
-            .is_none_or(|(at, _)| at.elapsed() >= Duration::from_secs(30))
-        {
-            let rpc = self.utility().await?;
-            let mut tasks = HashMap::new();
-            let mut params = json!({"archived":true,"limit":100,"sourceKinds":[]});
-            loop {
-                let page = rpc.call("thread/list", params.clone(), 5000).await?;
-                for thread in page["data"].as_array().into_iter().flatten() {
-                    let mut task = summary(thread);
-                    task["archived"] = json!(true);
-                    tasks.insert(string(thread, "id").to_owned(), task);
-                }
-                match page["nextCursor"].as_str() {
-                    Some(cursor) => params["cursor"] = json!(cursor),
-                    None => break,
-                }
-            }
-            *cache = Some((std::time::Instant::now(), tasks));
-        }
-        Ok(cache.as_ref().and_then(|(_, tasks)| tasks.get(id).cloned()))
-    }
     pub async fn task_runtime(&self, id: &str) -> Result<Value> {
         uuid::Uuid::parse_str(id).map_err(|_| "INVALID_THREAD_ID")?;
         let path = root().join("tasks").join(format!("{id}.json"));
-        let archived = self.archived_task(id).await;
-        if let Ok(Some(task)) = &archived {
-            save(&path, task)?;
-            return Ok(task.clone());
-        }
         let live = tokio::time::timeout(
             Duration::from_secs(5),
             self.request(
@@ -611,10 +579,10 @@ impl Control {
                 snapshot
             }
         };
-        if archived.is_ok() {
-            snapshot["archived"] = json!(false);
-        } else if let Ok(previous) = load(&path) {
-            snapshot["archived"] = previous["archived"].clone();
+        if snapshot["archived"].is_null() {
+            if let Ok(previous) = load(&path) {
+                snapshot["archived"] = previous["archived"].clone();
+            }
         }
         save(&path, &snapshot)?;
         Ok(snapshot)
@@ -1068,7 +1036,17 @@ fn summary(t: &Value) -> Value {
         Some("notLoaded") | None => "unknown",
         Some(v) => v,
     };
-    json!({"threadId":t["id"],"project":t["cwd"],"title":t["name"],"preview":t["preview"],"cwd":t["cwd"],"runtimeStatus":state,"runtimeSource":if state=="unknown"{json!("persisted-history-only")}else{t["runtimeSource"].clone()},"configuration":{"scope":"thread-defaults","source":"thread/read-or-list","model":t.get("model").unwrap_or(&json!("unknown")),"effort":t.get("reasoningEffort").unwrap_or(&json!("unknown")),"modelProvider":t.get("modelProvider").unwrap_or(&json!("unknown")),"turnEffective":"unknown"},"actions":{"read":true,"send":if state=="idle"{"new-turn"}else if state=="active"{"steer"}else{"requires-native-ownership-check"},"interrupt":"native-ownership-check","configurationChange":if state=="idle"{"new-turn-and-subsequent"}else{"requires-idle"}},"activeFlags":t["status"].get("activeFlags").unwrap_or(&json!([])),"updatedAt":t["updatedAt"],"observedAt":now(),"businessDelivery":"not-assessed","desktopUrl":format!("codex://threads/{}",string(t,"id"))})
+    // thread/read returns the authoritative rollout path even for archived threads.
+    // Inspect path components lexically: querying thread/list can touch unrelated WSL
+    // workspaces on Windows, and filesystem normalization can activate UNC providers.
+    let archived = t["path"].as_str().and_then(|path| {
+        path.rsplit(['/', '\\']).find_map(|part| match part {
+            "archived_sessions" => Some(true),
+            "sessions" => Some(false),
+            _ => None,
+        })
+    });
+    json!({"archived":archived,"threadId":t["id"],"project":t["cwd"],"title":t["name"],"preview":t["preview"],"cwd":t["cwd"],"runtimeStatus":state,"runtimeSource":if state=="unknown"{json!("persisted-history-only")}else{t["runtimeSource"].clone()},"configuration":{"scope":"thread-defaults","source":"thread/read-or-list","model":t.get("model").unwrap_or(&json!("unknown")),"effort":t.get("reasoningEffort").unwrap_or(&json!("unknown")),"modelProvider":t.get("modelProvider").unwrap_or(&json!("unknown")),"turnEffective":"unknown"},"actions":{"read":true,"send":if state=="idle"{"new-turn"}else if state=="active"{"steer"}else{"requires-native-ownership-check"},"interrupt":"native-ownership-check","configurationChange":if state=="idle"{"new-turn-and-subsequent"}else{"requires-idle"}},"activeFlags":t["status"].get("activeFlags").unwrap_or(&json!([])),"updatedAt":t["updatedAt"],"observedAt":now(),"businessDelivery":"not-assessed","desktopUrl":format!("codex://threads/{}",string(t,"id"))})
 }
 pub(crate) fn item(v: &Value, offset: usize, len: usize) -> Value {
     let text = match string(v, "type") {

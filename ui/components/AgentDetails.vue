@@ -15,7 +15,7 @@ const provider = computed(() => snapshot?.value?.settings.enabled ? snapshot.val
 <template>
   <ElasticPanel headerless :show="open" :title="name(agent)" :origin="origin" :width="440" @close="open=false" @closed="emit('close')">
     <div class="agent-summary" :class="{'has-quota':provider?.windows.length}"><AgentQuotaIcon :agent="agent.agent"/><div><strong>{{name(agent)}}</strong><p v-if="agent.version || !agent.installed">{{agent.installed ? agent.version : t('agentNotInstalled')}}</p></div></div>
-    <QuotaBubble v-if="provider" :provider="provider" embedded/>
+    <QuotaBubble v-if="provider" :provider="provider" embedded value-trigger/>
   </ElasticPanel>
 </template>
 <style scoped>

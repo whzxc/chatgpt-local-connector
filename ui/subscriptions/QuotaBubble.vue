@@ -14,7 +14,7 @@ import {quotaLabel,quotaPercent,quotaValue,resetDisplay} from './displayPreferen
 import {windowLabel,subscriptionLabel,isFiveHour} from './labels';
 import {brandIcon,quotaColor,resetText,preciseTime,errorLabels} from './presentation';
 const emit=defineEmits<{popover:[points:[number,number][]]}>();
-const props=defineProps<{provider:ProviderSnapshot;warningAt?:number;embedded?:boolean;detailPlacement?:'left'|'right';dismissKey?:number;externalDetail?:string}>();
+const props=defineProps<{provider:ProviderSnapshot;warningAt?:number;embedded?:boolean;valueTrigger?:boolean;detailPlacement?:'left'|'right';dismissKey?:number;externalDetail?:string}>();
 const refreshSubscription=inject(subscriptionRefreshKey);
 const usageUrl=computed(()=>usageLink(props.provider));
 async function openUsage(){if(!usageUrl.value)return;try{await openUrl(usageUrl.value);}catch(error){refreshError.value=String(error);}}
@@ -57,7 +57,7 @@ const refreshAge=computed(()=>{
 </script>
 <template>
   <div class="quota-bubble" :class="{embedded}">
-    <UsageHistory :rail="!embedded" :detail-placement="detailPlacement" :external-detail="externalDetail" @popover="emit('popover',$event)" :history="provider.history" :reset-count="provider.availableResetCount" :reset-credits="provider.resetCredits" :now="now" :dismiss-key="dismissKey" :details="details" v-slot="{register,hover,focus,expanded,displayed}">
+    <UsageHistory :rail="!embedded" :value-trigger="valueTrigger" :detail-placement="detailPlacement" :external-detail="externalDetail" @popover="emit('popover',$event)" :history="provider.history" :reset-count="provider.availableResetCount" :reset-credits="provider.resetCredits" :now="now" :dismiss-key="dismissKey" :details="details" v-slot="{register,hover,focus,expanded,displayed}">
       <header>
         <span class="provider-logo" :style="{maskImage: `url(${JSON.stringify(brandIcon(provider.agentId))})`}" aria-hidden="true"/>
         <span class="subscription-heading">

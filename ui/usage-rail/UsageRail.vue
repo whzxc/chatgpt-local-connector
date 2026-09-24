@@ -26,7 +26,9 @@ const selected=computed(()=>snapshot.value?.settings.enabled?snapshot.value.prov
 const working=computed(()=>selected.value.some(p=>activeAgents.value.includes(p.agentId)));
 const heldRows=ref<ProviderSnapshot[]>();
 watch(()=>pointer.value?.pressed,v=>{heldRows.value=v?[...selected.value]:undefined;});
-const allRows=computed(()=>heldRows.value??selected.value);
+const allRows=computed(()=>heldRows.value
+  ? heldRows.value.flatMap(held=>{const current=selected.value.find(p=>p.providerId===held.providerId);return current?[current]:[];})
+  : selected.value);
 const {width,height}=useWindowSize();
 const l=computed(()=>pointer.value?.layout),prefs=computed(()=>pointer.value?.preferences);
 const page=ref(0),capacity=computed(()=>l.value?.metrics.visibleCount??allRows.value.length),pages=computed(()=>Math.max(1,Math.ceil(allRows.value.length/Math.max(1,capacity.value))));
