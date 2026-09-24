@@ -11,7 +11,7 @@
 | 平台 | 文件 | 支持范围 |
 | --- | --- | --- |
 | macOS | `Local.Connector_<版本>_aarch64.dmg` | 仅支持 Apple Silicon |
-| Windows x64 | `…-setup.exe` / `….msi` | 需要 Microsoft Store 版 Codex Desktop |
+| Windows x64 | `…-setup.exe` | 需要 Microsoft Store 版 Codex Desktop |
 
 应用不需要用户安装 Node、npm、Rust 或 Cargo。使用前需安装并登录 Codex Desktop；官方模式填写 Tunnel ID/runtime API Key，连接组件在首次开启连接时自动准备；HTTPS MCP 可选择免账号的 Cloudflare 临时体验、固定域名、ngrok 或自备反向代理，所需组件由应用管理，具体配置见 [接入指南](tunnel.md)。两种方式都需在 ChatGPT 添加连接后才可远程使用，详见 [Codex 配置引导](codex-setup.md)。
 
@@ -55,7 +55,7 @@ brew upgrade --cask --greedy local-connector
 
 ## Windows 安装
 
-选择 x64 的 NSIS `.exe` 或 MSI，运行安装器。安装并登录 Microsoft Store 版 Codex Desktop；Connector 通过命名管道连接同一用户的 Desktop，任务会在 Desktop 中打开并执行。未使用 Authenticode 签名，系统可能显示未知发布者；企业策略禁止运行时需要管理员处理，应用不能绕过策略。
+选择 x64 的 NSIS `.exe`，运行安装器。安装并登录 Microsoft Store 版 Codex Desktop；Connector 通过命名管道连接同一用户的 Desktop，任务会在 Desktop 中打开并执行。未使用 Authenticode 签名，系统可能显示未知发布者；企业策略禁止运行时需要管理员处理，应用不能绕过策略。
 
 PowerShell 校验示例：
 

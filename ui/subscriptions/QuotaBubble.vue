@@ -38,11 +38,7 @@ const notices=computed(()=>{
   return items;
 });
 const hasError=computed(()=>notices.value.some(n=>n.error));
-const details=computed(()=>[
-  ...(notices.value.length?[{id:'notices',lines:notices.value.map(n=>n.message)}]:[]),
-  ...readings.value.map(({w,pace,estimate})=>({id:'quota:'+w.id,lines:
-    pace || estimate ? [pace?.tooltip,...(estimate?.lines??[])].filter((line):line is string=>!!line)
-      : [windowLabel(w.label),`${quotaLabel()} ${quotaPercent(w)}`,preciseTime(w.resetsAt)].filter(Boolean)}))]);
+const details=computed(()=>notices.value.length?[{id:'notices',lines:notices.value.map(n=>n.message)}]:[]);
 const readings=computed(()=>props.provider.windows.map(w=>({w,pace:quotaPace(w,props.provider,now.value),estimate:cycleEstimate(w,props.provider,now.value)})));
 const now=ref(Date.now());const timer=setInterval(()=>now.value=Date.now(),60000);onUnmounted(()=>clearInterval(timer));
 const refreshAge=computed(()=>{
@@ -69,7 +65,7 @@ const refreshAge=computed(()=>{
         <span v-if="refreshAge" class="refresh-age">{{refreshAge}}</span>
         <NButton v-if="refreshSubscription" class="quota-refresh" text size="small" style="color:var(--quota-muted,var(--rail-muted))" :loading="requesting || provider.refreshing" :disabled="requesting || provider.refreshing || !provider.eligible || !provider.selected" :aria-label="t('usageRefresh')" @click.stop="refresh"><template #icon><RefreshCw :size="14"/></template></NButton>
       </header>
-      <div v-for="{w,pace,estimate} in readings" :key="w.id" class="bubble-reading" :ref="el=>register('quota:'+w.id,el)" @mouseenter="hover('quota:'+w.id)" @mouseleave="hover('')" :aria-expanded="expanded&&displayed==='quota:'+w.id" tabindex="0" @focus="focus('quota:'+w.id)" @blur="focus('')" :aria-label="[windowLabel(w.label),pace?.tooltip,...(estimate?.lines??[])].filter(Boolean).join(' · ')">
+      <div v-for="{w,pace,estimate} in readings" :key="w.id" class="bubble-reading" :aria-label="[windowLabel(w.label),pace?.tooltip,...(estimate?.lines??[])].filter(Boolean).join(' · ')">
         <div class="reading-title">
           <span>{{provider.providerId==='antigravity' && w.scope ? w.scope+' · ' : ''}}{{windowLabel(w.label)}}</span>
           <span v-if="estimate" class="quota-estimate">≈ {{estimate.amount}}</span>

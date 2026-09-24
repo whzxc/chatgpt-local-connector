@@ -1,8 +1,7 @@
 {
   "bundle": {
     "targets": [
-      "nsis",
-      "msi"
+      "nsis"
     ]
   },
   "app": {

@@ -193,7 +193,7 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Local Connector $GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md
           fi
-          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.msi release-artifacts/*.exe release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json --clobber
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.exe release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json --clobber
           gh release edit "$GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md --draft=false --latest
       - name: Verification | Public downloads
         if: github.event_name == 'push' || inputs.publish

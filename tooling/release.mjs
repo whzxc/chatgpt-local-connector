@@ -23,12 +23,12 @@ function verifySignatures(artifacts) {
   execFileSync('cargo', ['run', '--quiet', '--locked', '--manifest-path', 'tooling/verifier/Cargo.toml', '--', 'desktop/tauri.conf.json', ...artifacts], { stdio: 'inherit' });
 }
 async function validateManifest(manifest, dir) {
-  const keys = ['darwin-aarch64','windows-x86_64','windows-x86_64-msi','windows-x86_64-nsis'];
+  const keys = ['darwin-aarch64','windows-x86_64','windows-x86_64-nsis'];
   if (manifest.version !== version || Object.keys(manifest.platforms).sort().join() !== keys.sort().join()) throw new Error('Incomplete release platform manifest');
   for (const value of Object.values(manifest.platforms)) {
     if (!value.url.startsWith(base + '/')) throw new Error('Unexpected updater download origin/version');
     const name = value.url.slice(base.length + 1);
-    if (name !== path.basename(name) || !/\.(gz|exe|msi)$/.test(name)) throw new Error('Invalid updater asset name');
+    if (name !== path.basename(name) || !/\.(gz|exe)$/.test(name)) throw new Error('Invalid updater asset name');
     if ((await readFile(path.join(dir,name+'.sig'),'utf8')).trim() !== value.signature) throw new Error('Manifest signature mismatch');
     await readFile(path.join(dir,name));
   }
@@ -90,21 +90,21 @@ else if (mode === 'sync') {
   if (!['darwin-aarch64','windows-x86_64'].includes(target) || !input || !output) throw new Error('stage <darwin-aarch64|windows-x86_64> <bundle-dir> <output-dir>');
   await mkdir(output,{recursive:true});
   if ((await readdir(output)).length) throw new Error('Stage directory must be empty; use a fresh directory');
-  const candidates = (await files(input)).filter(f => target === 'darwin-aarch64' ? /(?:_aarch64\.dmg|\.app\.tar\.gz(?:\.sig)?)$/.test(f) : /(?:\.msi|\.exe)(?:\.sig)?$/.test(f));
+  const candidates = (await files(input)).filter(f => target === 'darwin-aarch64' ? /(?:_aarch64\.dmg|\.app\.tar\.gz(?:\.sig)?)$/.test(f) : /\.exe(?:\.sig)?$/.test(f));
   for (const file of candidates) {
     let name = path.basename(file).replaceAll(' ','.');
     if (target === 'darwin-aarch64' && name.includes('.app.tar.gz')) name = name.replace('.app.tar.gz', `_${version}_aarch64.app.tar.gz`);
     await copyFile(file,path.join(output,name));
   }
   const staged = await files(output);
-  const payloads = staged.filter(f => target === 'darwin-aarch64' ? f.endsWith('.app.tar.gz') : /\.(msi|exe)$/.test(f));
-  if (payloads.length !== (target === 'darwin-aarch64' ? 1 : 2)) throw new Error('Missing/duplicate updater bundles');
+  const payloads = staged.filter(f => target === 'darwin-aarch64' ? f.endsWith('.app.tar.gz') : /\.exe$/.test(f));
+  if (payloads.length !== 1) throw new Error('Missing/duplicate updater bundles');
   if (target === 'darwin-aarch64' && staged.filter(f=>f.endsWith('_aarch64.dmg')).length !== 1) throw new Error('Missing Apple Silicon DMG');
   verifySignatures(payloads);
   const platforms = {};
   for (const file of payloads) {
     const value = { signature:(await readFile(file+'.sig','utf8')).trim(), url:`${base}/${path.basename(file)}` };
-    const keys = target === 'darwin-aarch64' ? ['darwin-aarch64'] : file.endsWith('.msi') ? ['windows-x86_64-msi'] : ['windows-x86_64','windows-x86_64-nsis'];
+    const keys = target === 'darwin-aarch64' ? ['darwin-aarch64'] : ['windows-x86_64','windows-x86_64-nsis'];
     for (const key of keys) platforms[key] = value;
   }
   await writeJson(path.join(output,`${target}.json`), { version, platforms });
@@ -118,8 +118,8 @@ else if (mode === 'sync') {
   await writeJson(path.join(dir,'latest.json'),{version,notes,pub_date:new Date().toISOString(),platforms:Object.assign({},...fragments.map(f=>f.platforms))});
   await validateManifest(await json(path.join(dir,'latest.json')), dir);
   await writeFile(path.join(dir,'release-notes.md'),notes+'\n');
-  const assets = (await files(dir)).filter(f=>/\.(dmg|exe|msi|gz|sig)$/.test(f)).sort();
-  verifySignatures(assets.filter(f=>/\.(exe|msi|gz)$/.test(f)));
+  const assets = (await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)).sort();
+  verifySignatures(assets.filter(f=>/\.(exe|gz)$/.test(f)));
   await writeFile(path.join(dir,'SHA256SUMS.txt'),(await Promise.all(assets.map(async f=>`${hash(await readFile(f))}  ${path.basename(f)}`))).join('\n')+'\n');
   await cask(dir);
   console.log('Complete release metadata and Homebrew cask generated. Nothing uploaded.');
@@ -130,7 +130,7 @@ else if (mode === 'verify-published') {
   const fetchBytes = async url => { const response=await fetch(url,{signal:AbortSignal.timeout(120000)}); if(!response.ok) throw new Error(`${response.status}: ${url}`); return Buffer.from(await response.arrayBuffer()); };
   const remote = JSON.parse(await fetchBytes(`https://github.com/${repo}/releases/latest/download/latest.json`));
   if (JSON.stringify(remote)!==JSON.stringify(local)) throw new Error('Published latest.json mismatch');
-  const assets=(await files(dir)).filter(f=>/\.(dmg|exe|msi|gz|sig)$/.test(f)||f.endsWith('SHA256SUMS.txt'));
+  const assets=(await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||f.endsWith('SHA256SUMS.txt'));
   for(const file of assets) if(hash(await fetchBytes(`${base}/${path.basename(file)}`))!==hash(await readFile(file))) throw new Error(`Published asset mismatch: ${path.basename(file)}`);
   console.log('Published manifest and all artifact bytes match the verified local release.');
 } else throw new Error('Expected check, sync, stage, finalize, cask, or verify-published');

@@ -6,9 +6,9 @@ use tauri::{Emitter, Manager};
 #[derive(Default)]
 struct DetailState(Mutex<Option<serde_json::Value>>);
 
-pub fn install(app: &tauri::App) -> tauri::Result<()> {
+pub fn install(app: &tauri::App, _primary: &tauri::WebviewWindow) -> tauri::Result<()> {
     app.manage(DetailState::default());
-    let window = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         app,
         "tray-detail",
         tauri::WebviewUrl::App("tray-detail.html".into()),
@@ -24,8 +24,11 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     .resizable(false)
     .skip_taskbar(true)
     .always_on_top(true)
-    .visible_on_all_workspaces(true)
-    .build()?;
+    .visible_on_all_workspaces(true);
+    // An owned Windows popup stays above its panel without taking keyboard focus.
+    #[cfg(target_os = "windows")]
+    let builder = builder.owner(_primary)?;
+    let window = builder.build()?;
     #[cfg(target_os = "macos")]
     macos::install(&window)?;
     #[cfg(not(target_os = "macos"))]

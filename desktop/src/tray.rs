@@ -13,7 +13,6 @@ struct PanelHeight(AtomicU32);
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     app.manage(PanelInteraction::default());
     app.manage(PanelHeight(AtomicU32::new(100)));
-    crate::tray_detail::install(app)?;
     let window = tauri::WebviewWindowBuilder::new(
         app,
         "tray-panel",
@@ -31,6 +30,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     .visible_on_all_workspaces(true)
     .build()?;
     window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
+    crate::tray_detail::install(app, &window)?;
     let skip_click = Arc::new(AtomicBool::new(false));
     let focus_skip = skip_click.clone();
     let handle = window.clone();

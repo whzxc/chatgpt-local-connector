@@ -9,7 +9,7 @@ Download the installer and `SHA256SUMS.txt` from [GitHub Releases](https://githu
 | Platform | File | Support |
 | --- | --- | --- |
 | macOS | `Local.Connector_<version>_aarch64.dmg` | Apple Silicon only |
-| Windows x64 | `…-setup.exe` / `….msi` | Requires Microsoft Store Codex Desktop |
+| Windows x64 | `…-setup.exe` | Requires Microsoft Store Codex Desktop |
 
 You do not need Node, npm, Rust, or Cargo to run the app. Install Codex Desktop and sign in before use. Official Tunnel mode requires a Tunnel ID and runtime API Key; the app prepares connection components on first connect. HTTPS MCP supports a temporary Cloudflare trial without an account, a fixed domain, ngrok, or your reverse proxy, with required client components managed by the app. See the [connection guide](tunnel.md). Both modes require adding a connection in ChatGPT before remote use; see [Codex-assisted setup](codex-setup.md).
 
@@ -53,7 +53,7 @@ brew upgrade --cask --greedy local-connector
 
 ## Windows installation
 
-Run the x64 NSIS `.exe` or MSI installer. Install and sign in to Microsoft Store Codex Desktop. Connector connects to Desktop for the same user over named pipes; tasks open and run in Desktop. Installers are not Authenticode-signed, so Windows may show an unknown publisher. An administrator must handle enterprise policies that block execution; the app cannot bypass them.
+Run the x64 NSIS `.exe` installer. Install and sign in to Microsoft Store Codex Desktop. Connector connects to Desktop for the same user over named pipes; tasks open and run in Desktop. Installers are not Authenticode-signed, so Windows may show an unknown publisher. An administrator must handle enterprise policies that block execution; the app cannot bypass them.
 
 PowerShell verification example:
 
