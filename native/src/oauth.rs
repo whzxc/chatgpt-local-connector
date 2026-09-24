@@ -43,7 +43,6 @@ struct Pending {
     decision: Option<bool>,
     code: Option<String>,
     code_hash: String,
-    comparison: String,
 }
 #[derive(Default, Serialize, Deserialize)]
 struct Stored {
@@ -79,7 +78,7 @@ impl OAuth {
         )
     }
     pub fn reset(&mut self) -> Result<()> {
-        self.stored = Stored::default();
+        self.stored.grants.clear();
         self.pending.clear();
         self.persist()
     }
@@ -197,11 +196,7 @@ impl OAuth {
         }
         Ok(result)
     }
-    pub fn authorize(
-        &mut self,
-        q: &BTreeMap<String, String>,
-        resource: &str,
-    ) -> Result<(String, String)> {
+    pub fn authorize(&mut self, q: &BTreeMap<String, String>, resource: &str) -> Result<String> {
         self.prepare(resource)?;
         let get = |k: &str| q.get(k).map(String::as_str).unwrap_or("");
         let client = self
@@ -233,7 +228,7 @@ impl OAuth {
         }
         // A retried authorization URL is the same transaction, not a new consent.
         // Keep independent state/PKCE challenges isolated even for the same client.
-        if let Some((key, pending)) = self.pending.iter().find(|(_, pending)| {
+        if let Some((key, _)) = self.pending.iter().find(|(_, pending)| {
             pending.decision.is_none()
                 && pending.expires > clock()
                 && pending.client == get("client_id")
@@ -242,13 +237,12 @@ impl OAuth {
                 && pending.challenge == challenge
                 && pending.resource == resource
         }) {
-            return Ok((key.clone(), pending.comparison.clone()));
+            return Ok(key.clone());
         }
         if self.pending.len() >= 32 {
             return Err("temporarily_unavailable".into());
         }
         let key = secret();
-        let comparison = id()[..8].to_uppercase();
         self.pending.insert(
             key.clone(),
             Pending {
@@ -261,30 +255,29 @@ impl OAuth {
                 decision: None,
                 code: None,
                 code_hash: String::new(),
-                comparison: comparison.clone(),
             },
         );
-        Ok((key, comparison))
+        Ok(key)
     }
     pub fn management(&mut self, resource: &str) -> Result<Value> {
         self.prepare(resource)?;
-        let pending:Vec<_>=self.pending.iter().filter(|(_,p)|p.decision != Some(false)).map(|(id,p)|json!({"id":id,"clientName":self.stored.clients.get(&p.client).map(|c|c.name.as_str()),"clientId":p.client,"redirectUri":p.redirect,"resource":p.resource,"comparison":p.comparison,"status":if p.expires <= clock() { "expired" } else if p.decision == Some(true) { "waiting" } else { "pending" },"expiresAt":p.expires})).collect();
+        let pending:Vec<_>=self.pending.iter().filter(|(_,p)|p.decision != Some(false)).map(|(id,p)|json!({"id":id,"clientName":self.stored.clients.get(&p.client).map(|c|c.name.as_str()),"clientId":p.client,"redirectUri":p.redirect,"resource":p.resource,"status":if p.expires <= clock() { "expired" } else if p.decision == Some(true) { "waiting" } else { "pending" },"expiresAt":p.expires})).collect();
         let grants:Vec<_>=self.stored.grants.iter().map(|g|json!({"id":g.id,"clientName":self.stored.clients.get(&g.client).map(|c|c.name.as_str()),"clientId":g.client})).collect();
         Ok(json!({"pending":pending,"grants":grants}))
     }
-    pub fn decide(&mut self, key: &str, allow: bool, comparison: &str) -> Result<()> {
+    pub fn decide(&mut self, key: &str, allow: bool) -> Result<()> {
         let p = self
             .pending
             .get_mut(key)
             .ok_or("Authorization request expired")?;
-        if !allow && p.comparison == comparison {
+        if !allow {
             p.decision = Some(false);
             p.code = None;
             p.code_hash.clear();
             return Ok(());
         }
-        if p.expires <= clock() || p.decision.is_some() || p.comparison != comparison {
-            return Err("Authorization request expired or mismatched".into());
+        if p.expires <= clock() || p.decision.is_some() {
+            return Err("Authorization request expired or already decided".into());
         }
         p.decision = Some(allow);
         if allow {
@@ -295,7 +288,7 @@ impl OAuth {
         }
         Ok(())
     }
-    pub fn resume(&mut self, key: &str, resource: &str) -> Result<(Option<String>, String)> {
+    pub fn resume(&mut self, key: &str, resource: &str) -> Result<Option<String>> {
         self.prepare(resource)?;
         let p = self
             .pending
@@ -305,7 +298,7 @@ impl OAuth {
             return Err("Authorization request expired".into());
         }
         let Some(allowed) = p.decision else {
-            return Ok((None, p.comparison.clone()));
+            return Ok(None);
         };
         let mut url = reqwest::Url::parse(&p.redirect).map_err(|_| "invalid_redirect_uri")?;
         {
@@ -328,7 +321,7 @@ impl OAuth {
         if !allowed {
             self.pending.remove(key);
         }
-        Ok((Some(url.to_string()), String::new()))
+        Ok(Some(url.to_string()))
     }
     fn client(
         &self,
@@ -500,16 +493,16 @@ fn response(status: u16, body: Value) -> Response<Full<Bytes>> {
         .body(Full::new(Bytes::from(body.to_string())))
         .unwrap()
 }
-fn html(status: u16, code: Option<&str>) -> Response<Full<Bytes>> {
-    let (reload, title, description, detail, content) = match code {
-        Some(code) => (
+fn html(status: u16, waiting: bool) -> Response<Full<Bytes>> {
+    let (reload, title, description, detail, content) = match waiting {
+        true => (
             "<meta http-equiv=\"refresh\" content=\"3\">",
             "连接你的客户端",
-            "在 Local Connector 的连接信息中输入下方授权码。",
-            "Enter this code in Local Connector to authorize your client.",
-            format!("<button type=\"button\" class=\"code\" aria-label=\"复制授权码\" title=\"点击复制\">{code}</button><p class=\"copy-feedback\" aria-live=\"polite\">点击授权码复制</p><div class=\"status\"><span class=\"dot\"></span>等待授权 · Waiting for approval</div><p class=\"footnote\">请保持此页面打开，授权后将自动返回客户端。</p>"),
+            "回到 Local Connector，点击“允许连接”即可。",
+            "Return to Local Connector and click Allow connection.",
+            String::from("<div class=\"status\"><span class=\"dot\"></span>等待确认 · Waiting for approval</div><p class=\"footnote\">确认后将自动返回客户端，请保持此页面打开。</p>"),
         ),
-        None => (
+        false => (
             "",
             "请求已结束",
             "授权请求已过期或已处理，请从客户端重新连接。",
@@ -517,9 +510,7 @@ fn html(status: u16, code: Option<&str>) -> Response<Full<Bytes>> {
             String::new(),
         ),
     };
-    let nonce = secret();
     let page = include_str!("oauth-page.html")
-        .replace("{{nonce}}", &nonce)
         .replace("{{reload}}", reload)
         .replace("{{title}}", title)
         .replace("{{description}}", description)
@@ -531,7 +522,7 @@ fn html(status: u16, code: Option<&str>) -> Response<Full<Bytes>> {
         .header("Cache-Control", "no-store")
         .header("Referrer-Policy", "no-referrer")
         .header("X-Frame-Options", "DENY")
-        .header("Content-Security-Policy", format!("default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"))
+        .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
         .body(Full::new(Bytes::from(page)))
         .unwrap()
 }
@@ -662,7 +653,7 @@ async fn route(
                 ))
             }
             "/oauth/authorize" => {
-                let (key, _) = ingress.oauth.lock().await.authorize(&q, resource)?;
+                let key = ingress.oauth.lock().await.authorize(&q, resource)?;
                 return Ok(Response::builder()
                     .status(303)
                     .header("Location", format!("{issuer}/oauth/resume?request={key}"))
@@ -678,15 +669,15 @@ async fn route(
                     .await
                     .resume(q.get("request").ok_or("invalid_request")?, resource);
                 return Ok(match result {
-                    Ok((Some(url), _)) => Response::builder()
+                    Ok(Some(url)) => Response::builder()
                         .status(303)
                         .header("Location", url)
                         .header("Cache-Control", "no-store")
                         .header("Referrer-Policy", "no-referrer")
                         .body(Full::new(Bytes::new()))
                         .unwrap(),
-                    Ok((None, code)) => html(200, Some(&code)),
-                    Err(_) => html(400, None),
+                    Ok(None) => html(200, true),
+                    Err(_) => html(400, false),
                 });
             }
             _ => return Ok(response(404, json!({"error":"not_found"}))),

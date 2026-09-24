@@ -719,7 +719,6 @@ impl Service {
                     oauth.decide(
                         string(&body, "id"),
                         body["allow"].as_bool().ok_or("allow must be boolean")?,
-                        string(&body, "comparison"),
                     )?;
                     return Ok(json!({"ok":true}));
                 }

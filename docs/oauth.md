@@ -6,10 +6,10 @@ An HTTPS ingress can use `auth: "oauth"`. Local Connector includes an authorizat
 
 1. Select OAuth when creating or editing an HTTPS connection, then start it.
 2. Add the MCP URL to an OAuth-capable client. Clients supporting dynamic registration discover the registration endpoint automatically.
-3. Keep the authorization browser page open. In Local Connector, open that connection’s details, inspect the pending card’s client name and callback domain, then enter or paste the browser’s code into its eight fields. A complete matching code automatically approves the request; the card’s Deny button rejects it.
+3. Keep the authorization browser page open. In Local Connector, open that connection’s details, inspect the pending card’s client name and callback domain, then click **Allow connection**. No code entry is required; the card’s Deny button rejects the request.
 4. The browser returns to the client. Connection details show authorized clients and let the owner revoke each grant.
 
-Only approve requests initiated by you. Client names are self-reported. Local consent is protected by the existing authenticated management channel; the public server has no approval endpoint. Grants authorize the ingress's allowed tools and shared tasks, not a separate user workspace. Changing the ingress identity or tool policy invalidates its OAuth registrations and grants. Changing its public URL also invalidates them; a stable HTTPS hostname avoids having to reconnect clients.
+Only approve requests initiated by you. Client names are self-reported. Local consent is protected by the existing authenticated management channel; the public server has no approval endpoint. Grants authorize the ingress's allowed tools and shared tasks, not a separate user workspace. Changing the ingress identity, tool policy or public URL revokes grants but preserves registered clients, so they can authorize again with their existing client credentials. A stable HTTPS hostname avoids having to update client connection URLs.
 
 ## Protocol and routing
 
