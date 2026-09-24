@@ -4,7 +4,7 @@ CLC supports concurrent ingress for multiple MCP control sources. OpenAI Tunnel 
 
 **English** | [简体中文](README.zh-CN.md)
 
-**Discuss an idea in ChatGPT. Let a coding agent on your computer do the work.**
+**Discuss an idea in the AI app you already use. Let a coding agent on your computer do the work.**
 
 CLC did not start as an attempt to give ChatGPT a bigger tool list. It grew out of a workflow problem I kept running into, and each stage solved the next problem that became obvious.
 
@@ -28,15 +28,24 @@ CLC then connected MCP to the Codex App Server. ChatGPT can inspect local Codex 
 
 Once ChatGPT could coordinate Codex, limiting the design to one agent no longer made much sense. After learning about ACP, I extended the same control model to other local agents and tried to cover the mainstream ACP ecosystem in one step. CLC now supports Pi and OpenCode alongside a broad set of built-in ACP agents, including Gemini, the Claude adapter, Cursor, Grok, Copilot, Kimi, Qwen, Kiro, Devin, Cline, Junie, and Hermes.
 
-That is the direction of CLC: from “let ChatGPT read my local project” to “let ChatGPT coordinate the work happening on my machine.” Chat is where I discuss, reason, and turn project facts into decisions; local agents do the execution; CLC connects the two and keeps the whole loop observable.
+At this point, CLC had grown from “let ChatGPT read my local project” into “let ChatGPT coordinate the work happening on my machine.” Chat was where I discussed, reasoned, and turned project facts into decisions; local agents did the execution; CLC connected the two and kept the whole loop observable.
+
+### Stage 4 — From one-to-many to many-to-many
+
+Once the execution side could choose between different Agents, another question became obvious: why should the place that starts the work still have to be ChatGPT? Whether I am thinking through a problem in Claude, working from Notion or Slack, or starting something from Cursor or Raycast, changing applications should not mean building another control layer just for that client.
+
+So I opened up the other side of CLC as well. ChatGPT, Claude, Microsoft Copilot, Notion, Slack, Cursor, GitHub Copilot, Raycast, and other MCP clients can connect as independent control sources to the same Core. Each ingress keeps its own connection, authentication, and tool policy, while sharing the same local project facts, Agent capabilities, and task namespace. A task created through one ingress can be read, continued, or waited on through another ingress that exposes the required tools, while the task itself remains owned and executed by its original Agent and runtime.
+
+CLC therefore moved from “one Chat controls many Agents” to “many control sources connect to many Agents.” Where a discussion happens and which Agent executes the result can be chosen independently. CLC does not try to invent another workflow engine between them; it keeps facts, control, and execution behind one local control layer. The original workflow is still the same—understand the problem from current facts first, then let the right Agent carry it forward—without tying that loop to a single product.
 
 ## What this means in practice
 
-- **Less copying and pasting:** let ChatGPT read local projects, files, and Git status to ground the discussion in current facts.
-- **Turn decisions into work:** create, continue, or interrupt Codex and other Agent tasks directly from the conversation.
-- **Follow the work without losing context:** use `agent_wait` (`codex_wait` for native Codex) to wait for completion, failure, or required interaction, for up to five minutes per call. A timeout does not stop the task.
+- **Less copying and pasting:** let a connected control source read local projects, files, and Git status so discussion stays grounded in current facts.
+- **Start work from multiple clients:** supported control sources such as ChatGPT, Claude, Notion, Slack, Cursor, Copilot, and Raycast can connect concurrently, including multiple entries of the same type.
+- **Turn decisions into work:** create, continue, or interrupt Codex and other Agent tasks from any ingress that exposes the required tools.
+- **Follow the same task across ingresses:** all ingresses share the task namespace, so another permitted ingress can read, wait on, or continue existing work.
 - **Use one control layer for multiple Agents:** Codex stays native and remains the default, while Pi, OpenCode, built-in ACP Agents, and Custom ACP share the `agent_*` workflow.
-- **Keep the connection managed:** the app downloads, verifies, configures, starts, and stops the Tunnel Client and shows the current connection state.
+- **Manage each ingress independently:** connection, authentication, tool policy, and lifecycle stay per ingress while the app manages Tunnel Clients, state, and the shared local Core.
 
 CLC itself requires no Node, npm, Rust, or Cargo installation. External Agents still need their own runtimes. Desktop task integration supports **Apple Silicon Mac** and **Windows x64**.
 

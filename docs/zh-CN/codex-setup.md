@@ -25,7 +25,7 @@ macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-conne
 
 新增必填 controlSource、transport、auth、config。name 默认预设名称或未知标签，重名自动追加数字，enabled 默认 true，toolPolicy 默认 all；id 可省略自动生成，不能修改。id 只允许 ASCII 字母、数字、连字符、下划线。controlSource 是标签，不是已认证用户。
 
-transport 为 `openai-tunnel` 时 auth 为 `openai`；HTTPS 支持 `none` 或 `bearer`。bearerToken 至少 32 个可打印 ASCII 字符，每入口独立，通过 stdin 输入。toolPolicy 为 `"all"` 或 `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait","control_output"]}`；tools/list 和 tools/call 同时执行限制。允许任务工具即允许访问共享任务，不按来源隔离；也不细分单个工具中的原生方法权限。
+transport 为 `openai-tunnel` 时 auth 为 `openai`；HTTPS 支持 `none`、`bearer` 或 `oauth`。bearerToken 至少 32 个可打印 ASCII 字符，每入口独立，通过 stdin 输入。OAuth 使用本机授权服务、PKCE，并支持动态注册或本机预注册，详见[OAuth 认证](../oauth.md)。toolPolicy 为 `"all"` 或 `{"allowlist":["connector_verify","agents","agent_create","agent_request","agent_read","agent_send","agent_wait","control_output"]}`；tools/list 和 tools/call 同时执行限制。允许任务工具即允许访问共享任务，不按来源隔离；也不细分单个工具中的原生方法权限。
 
 完整字段与 provider 选项见 `cli help` 和[英文配置示例](../codex-setup.md#configuration-examples)。凭据只能来自授权的安全本机来源并经 stdin 传递，不放在命令参数、shell 字面量、聊天、日志或截图中。轮换前先准备受保护的本机输出文件，例如设置 `umask 077` 并重定向 stdout，不让模型读取密钥输出。使用客户端支持的安全凭据输入完成交付。不要拿管理 API token、OpenAI key 或 provider token 代替 ingress bearer。
 

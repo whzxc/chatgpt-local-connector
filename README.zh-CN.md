@@ -4,7 +4,7 @@
 
 支持多个 MCP 控制来源并发接入，共享同一个 Core。HTTPS 服务商包括 Cloudflare、ngrok、Pinggy、LocalXpose 和自定义域名；连接组件首次使用时按需下载。
 
-**在 ChatGPT 里聊想法，让本机的 coding agent 接着干。**
+**在你习惯的 AI 应用里聊想法，让本机的 coding agent 接着干。**
 
 CLC 并不是从“给 ChatGPT 再加一堆工具”开始的。它来自一个困扰我很久的实际工作问题，而且每一阶段，都是上一个问题解决之后自然长出来的。
 
@@ -28,15 +28,24 @@ CLC 并不是从“给 ChatGPT 再加一堆工具”开始的。它来自一个�
 
 当 ChatGPT 已经可以协调 Codex 后，只支持一个 Agent 就显得没有必要了。了解到 ACP 之后，我把这套控制模型继续扩展到其他本地 Agent，希望一步覆盖主流 ACP 生态。现在 Pi、OpenCode，以及 Gemini、Claude adapter、Cursor、Grok、Copilot、Kimi、Qwen、Kiro、Devin、Cline、Junie、Hermes 等 Agent，都可以接入同一套工作流。
 
-这也是 CLC 的演进方向：从“让 ChatGPT 能读我的本机项目”，变成“让 ChatGPT 能协调发生在这台机器上的工作”。Chat 负责讨论、推理和基于事实做决策，本地 Agent 负责执行，CLC 负责把两边连接起来，并让整个过程始终可见、可跟进。
+到这里，CLC 已经从“让 ChatGPT 能读我的本机项目”，变成了“让 ChatGPT 能协调发生在这台机器上的工作”。Chat 负责讨论、推理和基于事实做决策，本地 Agent 负责执行，CLC 负责把两边连接起来，并让整个过程始终可见、可跟进。
+
+### 第四阶段：从一对多，走向多对多
+
+当执行端已经可以选择不同的 Agent，我又开始想：发起工作的入口，为什么还必须是 ChatGPT？无论是在 Claude 里推敲方案，在 Notion、Slack 中处理工作，还是从 Cursor、Raycast 顺手发起任务，都不应该因为换了一个应用，就得另搭一套只服务于它的控制层。
+
+于是我把 CLC 的另一边也打开了。ChatGPT、Claude、Microsoft Copilot、Notion、Slack、Cursor、GitHub Copilot、Raycast，以及其他支持 MCP 的客户端，都可以作为独立控制源同时接入同一个 Core。每个入口保留自己的连接、认证和工具策略，但共享同一套本机项目事实、Agent 能力和任务命名空间。在一个入口创建的任务，也可以从另一个开放了相应工具的入口继续读取、续接和等待，而任务本身仍由原来的 Agent 和执行方负责。
+
+到这一步，CLC 从“一个 Chat 控制多个 Agent”，变成了“多个控制源连接多个 Agent”。在哪里讨论、交给谁执行，可以分别选择；CLC 不替它们再造一套新的工作流编排，只负责把事实、控制和执行统一到同一个本机控制层里。最初那套“先基于真实情况把问题聊清楚，再让合适的 Agent 接着干”的工作方式没有变，只是不再绑定于某一个产品。
 
 ## 现在它解决什么
 
-- **少一点复制粘贴**：让 ChatGPT 直接读取本机项目、文件和 Git 状态，始终基于当前事实讨论。
-- **把讨论直接变成任务**：在同一个对话里创建、续接或中断 Codex 和其他 Agent 的任务。
-- **不中断上下文地跟进执行**：通过 `agent_wait`（Codex 原生入口为 `codex_wait`）等待完成、失败或需要交互，单次最长五分钟；超时不会终止任务。
+- **少一点复制粘贴**：让控制端直接读取本机项目、文件和 Git 状态，始终基于当前事实讨论。
+- **从多个入口发起工作**：ChatGPT、Claude、Notion、Slack、Cursor、Copilot、Raycast 等支持的控制源可以并发接入，同类入口也可以重复添加。
+- **把讨论直接变成任务**：从任一开放了相应工具的入口创建、续接或中断 Codex 和其他 Agent 的任务。
+- **跨入口继续跟进同一任务**：多个入口共享任务命名空间；只要工具策略允许，就可以从另一个入口继续读取、等待或推进已有任务。
 - **用一套控制层协调多个 Agent**：Codex 保持原生能力并作为默认 Agent，Pi、OpenCode、内置 ACP Agent 和 Custom ACP 共用 `agent_*` 工作流。
-- **连接本身有人照看**：应用负责 Tunnel Client 的下载、校验、配置和启停，并显示当前连接状态。
+- **每个入口独立管理**：连接、认证、工具策略和生命周期按入口配置；应用统一管理 Tunnel Client、状态和本机 Core。
 
 CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使用各自所需的运行环境。支持 **Apple Silicon Mac** 和 **Windows x64** 的 Desktop 任务接入。
 
