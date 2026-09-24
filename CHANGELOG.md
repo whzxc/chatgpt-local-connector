@@ -1,5 +1,15 @@
 # 版本说明
 
+## 0.8.4
+
+- refactor(release): 发布仅在需要升级版本时新增一次提交
+- refactor(core): 统一执行内核与连接配置管理
+- feat(subscriptions): 支持配额缓存和独立用量历史刷新
+- fix(oauth): 简化授权确认并保留客户端注册
+- feat(logs): 独立保存诊断与管理操作日志
+- docs: 更新多控制源接入与文档说明
+- fix(release): 等待公开下载地址就绪
+
 ## 0.8.3
 
 Windows 安装与桌面交互优化。

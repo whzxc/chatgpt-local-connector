@@ -1,6 +1,6 @@
 {
   "name": "@whzxc/chatgpt-local-connector",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Personal local MCP connector for ChatGPT and Codex",
   "license": "MIT",
   "type": "module",
