@@ -203,7 +203,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer); cancelAnimationFrame(f
 </template>
 
 <style scoped>
-.mascot { position: relative; z-index: 1; isolation: isolate; width: calc(var(--graph-ring-radius, 130px) * 1.8); height: calc(var(--graph-ring-radius, 130px) * 1.8); }
+.mascot { position: relative; z-index: 1; isolation: isolate; width: calc(var(--graph-ring-radius, 130px) * 1.6); height: calc(var(--graph-ring-radius, 130px) * 1.6); }
 .mascot-button { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 42px; background: transparent; cursor: grab; transition: none; touch-action: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .mascot-button:hover, .mascot-button:active { background: transparent; }
 .mascot-button.dragging { cursor: grabbing; }

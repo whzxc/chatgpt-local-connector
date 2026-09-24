@@ -14,7 +14,7 @@ import AppUpdateDialog from './components/AppUpdateDialog.vue';
 import AgentDisplaySettings from './components/AgentDisplaySettings.vue';
 import { panelPreferences } from './usage-rail/preferences';
 import type { PanelPreferences } from './usage-rail/layout';
-import { panelLayers } from './composables/panels';
+import { panelLayers, panelHandoff, panelAnchorAt } from './composables/panels';
 provide(subscriptionSnapshotKey, useSubscriptions().snapshot);
 provideAgentActivity();
 const appUpdate = useAppUpdate();
@@ -29,11 +29,37 @@ const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPag
 import ChatGuide from './components/ChatGuide.vue';
 import ConnectionOverview from './components/ConnectionOverview.vue';
 const UsageRailPreview = import.meta.env.DEV ? defineAsyncComponent(() => import('./usage-rail/BrowserRailPreview.vue')) : null;
+import TrayPanelPopover from './tray-panel/TrayPanelPopover.vue';
+const trayPanel = ref<InstanceType<typeof TrayPanelPopover>>();
 const { status, feedback, notify } = provideConnector();
 type Page = 'guide' | 'overview' | 'logs' | 'settings' | 'tasks';
 const page = ref<Page>('overview');
 const panelOpen = computed(() => panelLayers.value.length > 0);
 const sheetWide = ref(false);
+let sheetBackdropPressed = false;
+function sheetBackdropDown(event: PointerEvent) {
+  sheetBackdropPressed = event.button === 0 && event.target === event.currentTarget;
+}
+let replacingSheet = false;
+async function closeSheetOutside(event: MouseEvent) {
+  const dismiss = sheetBackdropPressed && event.target === event.currentTarget;
+  sheetBackdropPressed = false;
+  if (!dismiss || panelOpen.value) return;
+  const target = panelAnchorAt(event.clientX, event.clientY);
+  if (target) {
+    panelHandoff.from = document.querySelector('.page-sheet')?.getBoundingClientRect();
+    panelHandoff.trigger = target;
+    replacingSheet = true;
+  }
+  await navigate('overview');
+  if (target?.isConnected) {
+    target.focus({preventScroll:true});
+    target.click();
+    await nextTick();
+    panelHandoff.from = undefined; panelHandoff.trigger = undefined;
+  }
+  replacingSheet = false;
+}
 const workspace = ref<HTMLElement>();
 watch(page, () => workspace.value?.scrollTo({ top: 0 }));
 const mac = isDesktop && navigator.platform.toLowerCase().includes('mac');
@@ -47,24 +73,36 @@ async function navigate(next: Page) {
   else document.querySelector<HTMLElement>('.capsule-title')?.focus();
 }
 const sheetMotions = new WeakMap<Element, Animation>();
+const sheetContentMotions = new WeakMap<Element, Animation[]>();
 function cancelSheetMotion(element: Element) {
   sheetMotions.get(element)?.cancel();
   sheetMotions.delete(element);
+  sheetContentMotions.get(element)?.forEach(animation => animation.cancel());
+  sheetContentMotions.delete(element);
   (element as HTMLElement).style.willChange = '';
 }
 function animateSheet(element: Element, done: () => void, opening: boolean) {
   cancelSheetMotion(element);
+  if (!opening && replacingSheet) { done(); return; }
+  const handoff = opening ? panelHandoff.from : undefined;
+  if (opening) { panelHandoff.from = undefined; panelHandoff.trigger = undefined; }
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
   const node = element as HTMLElement;
-  const dock = document.querySelector<HTMLElement>('.navigation-surface')!.getBoundingClientRect();
+  const dock = handoff ?? document.querySelector<HTMLElement>('.navigation-surface')!.getBoundingClientRect();
   const rect = node.getBoundingClientRect();
-  const collapsed = { transform: `translate(${dock.x-rect.x}px,${dock.y-rect.y}px) scale(${dock.width/rect.width},${dock.height/rect.height})`, opacity: 0 };
+  const collapsed = { transform: `translate(${dock.x-rect.x}px,${dock.y-rect.y}px) scale(${dock.width/rect.width},${dock.height/rect.height})`, opacity: handoff ? 1 : 0 };
   const expanded = { transform: 'translate(0px,0px) scale(1,1)', opacity: 1 };
   node.style.willChange = 'transform, opacity';
   const motion = node.animate(opening ? [collapsed, expanded] : [expanded, collapsed], {
-    duration: opening ? 480 : 220, easing: opening ? 'cubic-bezier(.22,1,.36,1)' : 'cubic-bezier(.4,0,.6,1)', fill: 'both',
+    duration: opening ? (handoff ? 320 : 480) : 220, easing: opening ? 'cubic-bezier(.22,1,.36,1)' : 'cubic-bezier(.4,0,.6,1)', fill: 'both',
   });
   sheetMotions.set(element, motion);
+  if (opening && handoff) {
+    sheetContentMotions.set(element, Array.from(node.children, child => child.animate(
+      [{opacity:0}, {opacity:1}],
+      {duration:320,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'},
+    )));
+  }
   void motion.finished.then(() => {
     if (sheetMotions.get(element) !== motion) return;
     cancelSheetMotion(element);
@@ -99,8 +137,11 @@ onUnmounted(()=>clearTimeout(toastTimer));
   <div class="app-scene" :class="{desktop:isDesktop,mac,'sheet-wide':sheetWide}" @keydown="closePage">
     <div v-if="isDesktop" class="window-drag-strip" data-tauri-drag-region/>
     <main class="home-workspace" :inert="page!=='overview' || panelOpen">
-      <ConnectionOverview/>
+      <ConnectionOverview @usage="trayPanel?.show($event)"/>
     </main>
+    <div v-if="page!=='overview'" class="sheet-backdrop" :inert="panelOpen" aria-hidden="true"
+      @pointerdown="sheetBackdropDown"
+      @pointercancel="sheetBackdropPressed=false" @click="closeSheetOutside"/>
     <div class="navigation-surface" :class="{expanded:page!=='overview','has-update':appUpdate.visible.value}" aria-hidden="true"/>
     <Transition :css="false" @enter="enterSheet" @leave="leaveSheet" @enter-cancelled="cancelSheetMotion" @leave-cancelled="cancelSheetMotion">
       <section v-if="page!=='overview'" class="page-sheet" :inert="panelOpen" :aria-label="page==='settings'?t('settings'):page==='tasks'?t('tasks'):t('records')">
@@ -117,15 +158,16 @@ onUnmounted(()=>clearTimeout(toastTimer));
       <template v-if="page!=='overview'"><button class="capsule-close" :aria-label="t('backToHome')" :title="t('backToHome')" @click="navigate('overview')"><X aria-hidden="true"/></button><h1 class="capsule-title" tabindex="-1">{{page==='settings'?t('settings'):page==='tasks'?t('tasks'):page==='logs'?t('records'):t('home')}}</h1></template>
       <div class="capsule-icons" :inert="page!=='overview'" :aria-hidden="page!=='overview'">
         <NButton v-if="appUpdate.visible.value" class="update-shortcut" quaternary circle type="success" :loading="appUpdate.active.value" :disabled="appUpdate.active.value || appUpdate.checking.value" :aria-label="t('updateToValue', { version: appUpdate.update.value?.version })" :title="t('updateToValue', { version: appUpdate.update.value?.version })" @click="appUpdate.installDirect()"><template #icon><Download aria-hidden="true"/></template></NButton>
-        <button data-page="tasks" class="tasks-nav" :aria-label="t('tasks')" :title="t('tasks')" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
-        <button data-page="logs" :aria-label="t('records')" :title="t('records')" @click="navigate('logs')"><Logs aria-hidden="true"/></button>
-        <button data-page="settings" :aria-label="t('settings')" :title="t('settings')" @click="navigate('settings')"><Settings aria-hidden="true"/></button>
+        <button data-panel-anchor data-page="tasks" class="tasks-nav" :aria-label="t('tasks')" :title="t('tasks')" @click="navigate('tasks')"><LayoutDashboard aria-hidden="true"/><span v-if="tasks.pending.value.length" class="task-count">{{tasks.pending.value.length}}</span></button>
+        <button data-panel-anchor data-page="logs" :aria-label="t('records')" :title="t('records')" @click="navigate('logs')"><Logs aria-hidden="true"/></button>
+        <button data-panel-anchor data-page="settings" :aria-label="t('settings')" :title="t('settings')" @click="navigate('settings')"><Settings aria-hidden="true"/></button>
       </div>
     </nav>
     <div v-if="feedback.text && feedback.error" class="status-banner warning app-feedback" role="alert"><span>{{displayMessage(feedback.text)}}</span><button class="ghost banner-dismiss" :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
     <AppUpdateDialog/>
-    <AgentDisplaySettings v-if="requestedAgentSettings" :origin="{x:0,y:0,size:28}" @close="requestedAgentSettings=false"/>
+    <AgentDisplaySettings v-if="requestedAgentSettings" @close="requestedAgentSettings=false"/>
     <UsageRailPreview v-if="browserRailPreview"/>
+    <TrayPanelPopover ref="trayPanel" @navigate="navigate"/>
     <div v-if="feedback.text && !feedback.error" class="message" role="status">{{displayMessage(feedback.text)}}<button :aria-label="t('dismissMessage')" @click="feedback.text=''"><X aria-hidden="true"/></button></div>
   </div>
 </template>

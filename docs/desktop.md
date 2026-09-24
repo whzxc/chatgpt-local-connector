@@ -18,11 +18,12 @@ header itself has no hover details. Scrolling dismisses open detail bubbles.
 
 The panel follows the application theme and locale. It anchors to the tray icon,
 keeps within the monitor work area and chooses the side with space for details.
-On macOS secondary details use an AppKit NSPopover anchored to the hovered value,
-with system positioning, chrome and animation; hovering never resizes or
+Secondary details reuse the same web popover as the browser preview, including
+rounded corners, curved pointer, theme and animated transitions. The native window
+reserves a transparent side area for these bubbles; hovering never resizes or
 moves the primary panel. A short reveal delay and leave grace allow moving between
-a row and its details. Closing the panel also closes its details. Window screenshots
-match the panel bounds without an outer transparent margin.
+a row and its details. Closing the panel also hides its details. Window captures
+include the transparent area reserved for details.
 The panel uses 14px content padding and spacing.
 Escape, an outside click or loss of focus closes it. The native Options menu contains connection status, Settings, Share Screenshot,
 Check for Updates, About and Quit. Share Screenshot copies a 4x image of one

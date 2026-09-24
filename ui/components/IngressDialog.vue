@@ -120,10 +120,10 @@ async function save() {
 async function remove() { await action(async () => { await api(`ingress/${entry.value!.id}`, 'DELETE'); formOpen.value=false; }); }
 </script>
 <template>
-  <ElasticPanel v-if="hasPicker" :show="panelOpen" :origin="origin" :width="600" :title="t('addControlSource')" @close="panelOpen=false" @closed="panelClosed">
+  <ElasticPanel :continuation="!!savedIngress" v-if="hasPicker" :show="panelOpen" :origin="origin" :width="600" :title="t('addControlSource')" @close="panelOpen=false" @closed="panelClosed">
     <div class="source-choices"><NButton v-for="option in [...curatedSources.map(p=>p.id),'custom']" :key="option" text :aria-label="presetNames[option] || t('customControlSource')" :title="presetNames[option] || t('customControlSource')" @click="choose(option,$event)"><span class="source-choice"><SourceIcon :platform="option" :add="option==='custom'"/><span>{{presetNames[option] || t('customControlSource')}}</span></span></NButton></div>
   </ElasticPanel>
-  <ElasticPanel :show="formOpen" :origin="formOrigin" :width="600" :title="(entry ? t('editControlSource') : t('addControlSource')) + (selected ? ' · ' + (presetNames[selected] || t('customControlSource')) : '')" :busy="working" @close="formOpen=false" @closed="formClosed">
+  <ElasticPanel :continuation="!!savedIngress" :show="formOpen" :origin="formOrigin" :width="600" :title="(entry ? t('editControlSource') : t('addControlSource')) + (selected ? ' · ' + (presetNames[selected] || t('customControlSource')) : '')" :busy="working" @close="formOpen=false" @closed="formClosed">
 
     <NForm v-if="selected" ref="formRef" :model="model" :disabled="working" label-placement="top" @submit.prevent="save()">
       <NAlert :show-icon="false" v-if="form.connectionMode==='https' && auth==='bearer' && preset && !preset.supportedAuth.includes('bearer')" type="warning">{{t('presetAuthMismatch')}}</NAlert>

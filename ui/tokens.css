@@ -13,23 +13,24 @@
 :root {
   --ink: light-dark(#1d1d1f, #f5f5f7);
   --muted: light-dark(#737373, #a1a1a6);
-  --line: light-dark(#e5e5e5, #333333);
+  --line: light-dark(#e5e5e5, var(--rail-border));
   --soft: light-dark(#f5f5f5, #1c1c1e);
   --surface: light-dark(#ffffff, #000000);
   --canvas: var(--surface);
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
   --knob: light-dark(var(--white), var(--rail-ink));
   --hover-surface: light-dark(#ffffff70, #ffffff08);
-  --inset-shadow: light-dark(#0000004d, #00000080);
-  --inset-highlight: light-dark(#ffffffb3, #ffffff26);
+  --inset-shadow: light-dark(#0000004d, color-mix(in srgb,var(--accent-dark) 12%,transparent));
+  --inset-highlight: light-dark(#ffffffb3, color-mix(in srgb,var(--accent-dark) 20%,transparent));
 }
 
-/* Dark canvases need a light edge and a soft halo as well as a cast shadow. */
+/* Dark edges and layered shadows follow the active accent, like the usage rail. */
 :root {
-  --shadow-halo: light-dark(var(--black), var(--white));
-  --shadow-edge: light-dark(transparent, color-mix(in srgb,var(--white) 14%,transparent));
+  --shadow-halo: light-dark(var(--black), var(--accent-dark));
+  --shadow-cast: light-dark(var(--black), color-mix(in srgb,var(--accent-dark) 25%,var(--black)));
+  --shadow-edge: light-dark(transparent, var(--rail-border));
   --shadow-surface: 0 0 0 1px var(--shadow-edge), 0 12px 48px color-mix(in srgb,var(--shadow-halo) 9%,transparent);
-  --shadow-panel: 0 0 0 1px var(--shadow-edge), 0 2px 6px color-mix(in srgb,var(--shadow-halo) 8%,transparent), 0 12px 28px color-mix(in srgb,var(--shadow-halo) 10%,transparent), 0 32px 72px -12px color-mix(in srgb,var(--black) 40%,transparent);
+  --shadow-panel: 0 0 0 1px var(--shadow-edge), 0 2px 6px color-mix(in srgb,var(--shadow-halo) 8%,transparent), 0 12px 28px color-mix(in srgb,var(--shadow-halo) 10%,transparent), 0 32px 72px -12px color-mix(in srgb,var(--shadow-cast) 40%,transparent);
   --shadow-recessed: 0 0 0 1px color-mix(in srgb,var(--shadow-edge) 50%,transparent), 0 4px 12px color-mix(in srgb,var(--shadow-halo) 4%,transparent);
   --shadow-popover: 0 0 0 1px var(--shadow-edge), 0 8px 24px color-mix(in srgb,var(--shadow-halo) 10%,transparent);
   --rail-border: color-mix(in srgb,var(--accent-dark) 35%,transparent);

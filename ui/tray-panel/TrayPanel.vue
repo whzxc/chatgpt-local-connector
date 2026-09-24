@@ -9,6 +9,8 @@ import {isDesktop} from '../platform';
 import {t} from '../i18n';
 import {brandIcon} from '../subscriptions/presentation';
 import {copyShareCard} from './shareCard';
+const props=defineProps<{embedded?:boolean}>();
+const emit=defineEmits<{dismiss:[];navigate:[page:'overview'|'settings'|'tasks'|'logs']}>();
 const subscriptions=useSubscriptions();
 const side=ref<'left'|'right'>('left'), dismissKey=ref(0),busy=ref(false),error=ref('');
 const connection=ref(false),version=ref(''),copied=ref(false);
@@ -19,7 +21,7 @@ function resizePanel(){
   resizeFrame=requestAnimationFrame(async()=>{
     if(!content.value||!footer.value)return;
     const height=Math.ceil(content.value.getBoundingClientRect().height+footer.value.getBoundingClientRect().height+2);
-    if(!isDesktop||height===lastHeight)return;
+    if(!isDesktop||props.embedded||height===lastHeight)return;
     lastHeight=height;
     try{const {invoke}=await import('@tauri-apps/api/core');await invoke('tray_panel_resize',{height});}
     catch(e){lastHeight=0;error.value=String(e);}
@@ -30,8 +32,10 @@ let copyTimer:ReturnType<typeof setTimeout>|undefined;
 function registerCard(id:string,el:unknown){if(el instanceof HTMLElement)providerCards.set(id,el);else providerCards.delete(id);}
 const providers=computed(()=>subscriptions.snapshot.value?.settings.enabled?subscriptions.snapshot.value.providers.filter(p=>p.selected&&p.eligible):[]);
 async function nativeAction(action:string){
-  if(isDesktop){const {invoke}=await import('@tauri-apps/api/core');await invoke('tray_action',{action});}
-  else if(['overview','settings','tasks','logs'].includes(action))window.location.href='/';
+  if(isDesktop&&!props.embedded){const {invoke}=await import('@tauri-apps/api/core');await invoke('tray_action',{action});}
+  else if(action==='overview'||action==='settings'||action==='tasks'||action==='logs'){
+    if(props.embedded)emit('navigate',action);else window.location.href='/';
+  }
 }
 async function readStatus(){
   const status=await api<{connection:{running:boolean};version:string}>('status');
@@ -51,7 +55,7 @@ async function share(id:string){
   }catch(e){error.value=String(e);}finally{busy.value=false;}
 }
 async function openOptions(event:MouseEvent){
-  if(!isDesktop||busy.value)return;
+  if(!isDesktop||props.embedded||busy.value)return;
   error.value='';dismissKey.value++;
   const rect=(event.currentTarget as HTMLElement).getBoundingClientRect();
   let menu:import('@tauri-apps/api/menu').Menu|undefined;
@@ -77,30 +81,32 @@ async function openOptions(event:MouseEvent){
   }
 }
 async function opened(){dismissKey.value++;await Promise.all([subscriptions.read(),readStatus().catch(e=>error.value=String(e))]);}
-function dismiss(){void nativeAction('hide');}
+function dismiss(){if(props.embedded)emit('dismiss');else void nativeAction('hide');}
 function keydown(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();dismiss();}}
 let off:(()=>void)|undefined,disposed=false;
-onMounted(async()=>{resizeObserver=new ResizeObserver(resizePanel);if(content.value)resizeObserver.observe(content.value);if(footer.value)resizeObserver.observe(footer.value);resizePanel();document.addEventListener('keydown',keydown);if(isDesktop){const {listen}=await import('@tauri-apps/api/event');const stop=await listen<{side:'left'|'right'}>('tray-panel:open',e=>{side.value=e.payload.side;void opened();});if(disposed)stop();else off=stop;}await readStatus().catch(e=>error.value=String(e));});
+onMounted(async()=>{resizeObserver=new ResizeObserver(resizePanel);if(content.value)resizeObserver.observe(content.value);if(footer.value)resizeObserver.observe(footer.value);resizePanel();document.addEventListener('keydown',keydown);if(isDesktop&&!props.embedded){const {listen}=await import('@tauri-apps/api/event');const stop=await listen<{side:'left'|'right'}>('tray-panel:open',e=>{side.value=e.payload.side;void opened();});if(disposed)stop();else off=stop;}await readStatus().catch(e=>error.value=String(e));});
 onUnmounted(()=>{resizeObserver?.disconnect();cancelAnimationFrame(resizeFrame);clearTimeout(copyTimer);disposed=true;off?.();document.removeEventListener('keydown',keydown);});
 </script>
 <template>
-  <div class="tray-surface" @mousedown.self="dismiss">
+  <div class="tray-surface" :class="{embedded}" @mousedown.self="dismiss">
     <section class="tray-card" :class="side" :aria-label="t('trayUsage')">
       <div class="tray-scroll" @scroll="dismissKey++">
         <div ref="content" class="tray-content">
         <NAlert v-if="error || subscriptions.error.value" type="error" :show-icon="false">{{error || subscriptions.error.value}}</NAlert>
         <NAlert v-if="copied" type="success" :show-icon="false" role="status">{{t('trayScreenshotCopied')}}</NAlert>
         <NSpin v-if="!subscriptions.snapshot.value && !subscriptions.error.value" size="small"/>
-        <div v-for="provider in providers" :key="provider.providerId" :ref="el=>registerCard(provider.providerId,el)" class="provider-card"><QuotaBubble :provider="provider" embedded :external-detail="provider.providerId" :detail-placement="side" :dismiss-key="dismissKey"/></div>
+        <div v-for="provider in providers" :key="provider.providerId" :ref="el=>registerCard(provider.providerId,el)" class="provider-card"><QuotaBubble :provider="provider" embedded :detail-placement="side" :dismiss-key="dismissKey"/></div>
         <NEmpty v-if="subscriptions.snapshot.value&&!providers.length" :description="t('trayEmpty')"><template #extra><NButton size="small" @click="select('settings')">{{t('traySettings')}}</NButton></template></NEmpty>
         </div>
       </div>
-      <footer ref="footer"><span class="app-version">Local Connector {{version}}</span><NButton text size="small" class="connection-menu" :loading="busy" :disabled="!isDesktop" :aria-label="`${t(connection?'trayConnected':'trayDisconnected')} · ${t('trayOptions')}`" aria-haspopup="menu" @click="openOptions"><span>{{t(connection?'trayConnected':'trayDisconnected')}}</span><ChevronRight :size="12" aria-hidden="true"/></NButton></footer>
+      <footer ref="footer"><span class="app-version">Local Connector {{version}}</span><NButton text size="small" class="connection-menu" :loading="busy" :disabled="!isDesktop || embedded" :aria-label="`${t(connection?'trayConnected':'trayDisconnected')} · ${t('trayOptions')}`" aria-haspopup="menu" @click="openOptions"><span>{{t(connection?'trayConnected':'trayDisconnected')}}</span><ChevronRight :size="12" aria-hidden="true"/></NButton></footer>
     </section>
   </div>
 </template>
 <style scoped>
 .tray-surface{position:fixed;inset:0;color:var(--ink)}
-.tray-card{position:absolute;top:0;max-height:100%;width:380px;max-width:100%;box-sizing:border-box;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden}.tray-card.left{right:0}.tray-card.right{left:0}
+.tray-surface.embedded{position:relative;inset:auto;width:100%;min-height:0;display:flex}
+.embedded .tray-card{position:relative;inset:auto;width:100%;max-height:min(704px,calc(100dvh - 40px))}
+.tray-card{position:absolute;top:0;max-height:100%;width:330px;max-width:100%;box-sizing:border-box;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden}.tray-card.left{right:0}.tray-card.right{left:0}
 .tray-scroll{min-height:0;overflow:auto;scrollbar-width:thin}.tray-content{padding:14px;display:flex;flex-direction:column;gap:14px}.provider-card{background:var(--soft);border-radius:18px;padding:14px;flex:none}footer{padding:8px 14px;min-height:22px;gap:12px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);flex:none;font-size:11px;color:var(--muted)}.app-version{white-space:nowrap}.connection-menu{flex:none;font-size:11px;color:var(--muted);gap:4px}
 </style>

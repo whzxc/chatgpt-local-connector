@@ -8,7 +8,6 @@ mod appearance;
 mod desktop_access;
 mod i18n;
 mod tray;
-mod tray_detail;
 mod updates;
 mod usage_panel;
 #[cfg(target_os = "windows")]
@@ -108,7 +107,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_denylist(&["usage-rail", "tray-panel", "tray-detail"])
+                .with_denylist(&["usage-rail", "tray-panel"])
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         & !(tauri_plugin_window_state::StateFlags::VISIBLE
@@ -120,7 +119,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             tray::tray_action,
             tray::tray_panel_resize,
-            tray_detail::tray_detail,
             service_request,
             i18n::set_ui_locale,
             updates::check_update,

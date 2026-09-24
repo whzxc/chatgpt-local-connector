@@ -10,7 +10,7 @@ import { quotaDisplay, resetDisplay, usagePeriods, usagePeriodLabels, maxVisible
 import { t } from '../i18n';
 import { panelPreferences, readPanelPreferences, savePanelPreferences } from '../usage-rail/preferences';
 import type { PanelPreferences } from '../usage-rail/layout';
-defineProps<{ origin: { x: number; y: number; size: number } }>();
+defineProps<{ origin?: { x: number; y: number; size: number } }>();
 const emit = defineEmits<{ close: [] }>();
 const open = ref(true);
 const snapshot = inject(subscriptionSnapshotKey);

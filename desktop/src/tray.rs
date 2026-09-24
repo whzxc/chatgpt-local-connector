@@ -1,7 +1,4 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
-    Arc,
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tauri::{
     tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
@@ -19,7 +16,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
         tauri::WebviewUrl::App("tray-panel.html".into()),
     )
     .title("Local Connector — Usage")
-    .inner_size(380., 100.)
+    .inner_size(330., 100.)
     .visible(false)
     .decorations(false)
     .transparent(true)
@@ -30,20 +27,17 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     .visible_on_all_workspaces(true)
     .build()?;
     window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
-    crate::tray_detail::install(app, &window)?;
-    let skip_click = Arc::new(AtomicBool::new(false));
-    let focus_skip = skip_click.clone();
     let handle = window.clone();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Focused(false))
-            && !crate::tray_detail::detail_visible()
             && !handle
                 .app_handle()
                 .state::<PanelInteraction>()
                 .0
                 .load(Ordering::Relaxed)
         {
-            // Clicking the tray icon can blur the panel before its mouse-up event.
+            // Let the tray click own toggling while the pointer is over its icon.
+            // Blur may arrive before or after that click; neither should consume a later click.
             if let (Ok(point), Some(tray)) = (
                 handle.cursor_position(),
                 handle.app_handle().tray_by_id("main-tray"),
@@ -52,21 +46,19 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                     let scale = handle.scale_factor().unwrap_or(1.);
                     let pos = rect.position.to_physical::<f64>(scale);
                     let size = rect.size.to_physical::<f64>(scale);
-                    focus_skip.store(
-                        point.x >= pos.x
-                            && point.x <= pos.x + size.width
-                            && point.y >= pos.y
-                            && point.y <= pos.y + size.height,
-                        Ordering::Relaxed,
-                    );
+                    if point.x >= pos.x
+                        && point.x <= pos.x + size.width
+                        && point.y >= pos.y
+                        && point.y <= pos.y + size.height
+                    {
+                        return;
+                    }
                 }
             }
-            crate::tray_detail::dismiss(handle.app_handle());
             let _ = handle.hide();
         }
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            crate::tray_detail::dismiss(handle.app_handle());
             let _ = handle.hide();
         }
     });
@@ -83,9 +75,6 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                if skip_click.swap(false, Ordering::Relaxed) {
-                    return;
-                }
                 if let Err(error) = toggle(tray.app_handle(), position, rect) {
                     eprintln!("Tray panel: {error}");
                 }
@@ -103,7 +92,6 @@ fn toggle(
         return Ok(());
     };
     if window.is_visible()? {
-        crate::tray_detail::dismiss(app);
         return window.hide();
     }
     let side = position_panel(&window, point, rect)?;
@@ -128,7 +116,12 @@ fn position_panel(
     if let Some(monitor) = monitor {
         let scale = monitor.scale_factor();
         let area = monitor.work_area();
-        let width = (380. * scale).min(area.size.width as f64);
+        // Share the web popover with the browser; reserve a transparent side canvas.
+        let margin = 14. * scale;
+        let available_width = (area.size.width as f64 - 2. * margin).max(1.);
+        let available_height = (area.size.height as f64 - 2. * margin).max(1.);
+        let panel_width = (330. * scale).min(available_width);
+        let width = (640. * scale).min(available_width);
         let height = (f64::from(
             window
                 .app_handle()
@@ -136,20 +129,23 @@ fn position_panel(
                 .0
                 .load(Ordering::Relaxed),
         ) * scale)
+            .max(448. * scale)
             .min(704. * scale)
-            .min(area.size.height as f64);
-        let left = area.position.x as f64;
-        let top = area.position.y as f64;
-        let right = left + area.size.width as f64;
+            .min(available_height);
+        let left = area.position.x as f64 + margin;
+        let top = area.position.y as f64 + margin;
+        let right = left + available_width;
         let side = if point.x > left + area.size.width as f64 / 2. {
             "left"
         } else {
             "right"
         };
-        let x = (point.x - width / 2.).clamp(left, right - width);
+        let panel_x = (point.x - panel_width / 2.).clamp(left, right - panel_width);
+        let x = if side == "left" { panel_x + panel_width - width } else { panel_x }
+            .clamp(left, right - width);
         let icon_pos = rect.position.to_physical::<f64>(scale);
         let icon_size = rect.size.to_physical::<f64>(scale);
-        let y = (icon_pos.y + icon_size.height).clamp(top, top + area.size.height as f64 - height);
+        let y = (icon_pos.y + icon_size.height + margin).clamp(top, top + available_height - height);
         window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
         window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32))?;
         return Ok(side);
@@ -189,7 +185,6 @@ pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), S
         return Err("invalid window".into());
     }
     let app = window.app_handle();
-    crate::tray_detail::dismiss(app);
     match action.as_str() {
         "menu-open" => {
             app.state::<PanelInteraction>()

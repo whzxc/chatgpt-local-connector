@@ -8,7 +8,7 @@ import ElasticPanel from './ElasticPanel.vue';
 import CopyField from './CopyField.vue';
 import OAuthGrants from './OAuthGrants.vue';
 
-const props = defineProps<{ ingress: Ingress; autoConnect?: boolean }>();
+const props = defineProps<{ ingress: Ingress; origin?: {x:number;y:number;size:number;height?:number}; autoConnect?: boolean }>();
 const open = ref(true);
 const editing = ref(false);
 const emit = defineEmits<{ close: []; edit: [ingress: Ingress] }>();
@@ -85,7 +85,7 @@ onUnmounted(() => { disposed = true; bearerToken.value = ''; apiKey.value = ''; 
 </script>
 
 <template>
-  <ElasticPanel :show="open" :width="600" :title="t('connectionDetails') + ' · ' + entry.name" :busy="working || oauthBusy" @close="open=false" @closed="editing ? emit('edit',entry) : emit('close')">
+  <ElasticPanel :continuation="editing" :show="open" :origin="origin" :width="600" :title="t('connectionDetails') + ' · ' + entry.name" :busy="working || oauthBusy" @close="open=false" @closed="editing ? emit('edit',entry) : emit('close')">
     <NForm label-placement="top">
       <NFormItem :label="https ? 'MCP URL' : 'Tunnel ID'" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
         <template #label><span class="detail-heading"><span>{{https ? 'MCP URL' : 'Tunnel ID'}}</span><NButton v-if="https" :aria-label="t('reobtainMcpUrl')" text type="primary" size="tiny" :disabled="connecting || reading || !entry.enabled" @click="updateConnection('url')">{{t('reobtainMcpUrl')}}</NButton></span></template>

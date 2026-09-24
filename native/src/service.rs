@@ -863,6 +863,7 @@ impl Service {
                 }
                 ("PUT", "agents") => {
                     let result = self.agents.set_enabled(&body).await?;
+                    self.subscriptions.agent_enabled(string(&body, "agent"), body["enabled"] == true).await?;
                     let inventory = self.agents.ui_inventory(false).await;
                     self.subscriptions.inventory(&inventory).await;
                     Ok(result)

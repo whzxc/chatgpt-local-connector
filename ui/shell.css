@@ -26,27 +26,31 @@
 @media(max-width:600px){.app-scene{--sheet-width:min(960px,calc(100% - 2 * var(--sheet-inset)));--sheet-inset:12px;--sheet-top:12px;--dock-left:16px;--dock-bottom:16px}.workspace{padding:24px 26.5px 80px}.home-workspace .connection-core{padding:0 20px}}
 @media(prefers-reduced-motion:reduce){.page-sheet{transition:none}}
 
-.navigation-surface{position:absolute;z-index:29;pointer-events:none;left:var(--dock-left);bottom:var(--dock-bottom);width:58px;height:154px;border:1px solid color-mix(in srgb,var(--accent) 15%,transparent);border-radius:32px;background:var(--surface);box-shadow:var(--shadow-popover);transition:opacity 180ms ease}
-.navigation-surface.expanded{opacity:0}
+.navigation-surface{position:absolute;z-index:49;pointer-events:none;left:var(--dock-left);bottom:var(--dock-bottom);width:58px;height:154px;border:1px solid color-mix(in srgb,var(--accent) 15%,transparent);border-radius:32px;background:var(--surface);box-shadow:var(--shadow-popover);transition:height 420ms cubic-bezier(.22,1,.36,1)}
+.navigation-surface.expanded{height:58px}
 @media(prefers-reduced-motion:reduce){.navigation-surface{transition:none}.capsule-title{animation:none}}
 
-.navigation-capsule{width:58px;height:154px;display:block}
-.navigation-capsule.expanded{height:58px;width:max-content;min-width:160px}
-.capsule-icons{position:absolute;inset:0}
-.capsule-icons button{position:absolute;left:6px;transition:transform 380ms cubic-bezier(.22,1,.36,1),opacity 220ms ease}
+.navigation-capsule{width:58px;height:154px;display:block;transition:height 420ms cubic-bezier(.22,1,.36,1)}
+.navigation-capsule.expanded{height:58px;width:58px;min-width:0}
+.capsule-icons{position:absolute;inset:0;overflow:hidden;border-radius:inherit}
+.capsule-icons button{position:absolute;left:6px;transition:opacity 160ms ease}
 .capsule-icons [data-page=tasks]{bottom:102px}
 .capsule-icons [data-page=logs]{bottom:54px}
 .capsule-icons [data-page=settings]{bottom:6px}
-.expanded .capsule-icons [data-page=tasks]{transform:translateY(96px) scale(.4);opacity:0}
-.expanded .capsule-icons [data-page=logs]{transform:translateY(48px) scale(.4);opacity:0}
-.expanded .capsule-icons [data-page=settings]{transform:scale(.4);opacity:0}
-.navigation-capsule .capsule-close{position:absolute;left:6px;bottom:6px;animation:capsule-title-in 220ms ease both}
+.expanded .capsule-icons [data-page=tasks]{opacity:0}
+.expanded .capsule-icons [data-page=logs]{opacity:0}
+.expanded .capsule-icons [data-page=settings]{opacity:0}
+.navigation-capsule .capsule-close{position:absolute;left:6px;bottom:6px;background:transparent;animation:capsule-close-in 260ms 100ms ease both}
 .navigation-capsule .capsule-title{position:absolute;left:68px;bottom:6px;margin:0;line-height:44px;white-space:nowrap;animation:capsule-title-in 360ms cubic-bezier(.22,1,.36,1) both}
 @media(prefers-reduced-motion:reduce){.navigation-capsule,.capsule-icons button{transition:none}.navigation-capsule .capsule-close{animation:none}}
 
 .page-sheet>.panel-width-toggle{position:absolute;right:16px;bottom:14px;z-index:6;display:none}
 @media(min-width:1000px){.page-sheet>.panel-width-toggle{display:inline-flex}}
 
-.navigation-surface.has-update,.navigation-capsule.has-update:not(.expanded){height:202px}
+.navigation-surface.has-update:not(.expanded),.navigation-capsule.has-update:not(.expanded){height:202px}
 .capsule-icons .update-shortcut{bottom:150px;width:44px;height:44px}
-.expanded .capsule-icons .update-shortcut{transform:translateY(144px) scale(.4);opacity:0}
+.expanded .capsule-icons .update-shortcut{opacity:0}
+
+.sheet-backdrop{position:absolute;inset:0;z-index:28}
+
+@keyframes capsule-close-in{from{opacity:0}to{opacity:1}}

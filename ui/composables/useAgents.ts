@@ -66,17 +66,22 @@ try {
 const orderedAgents = computed(() => [...agents.value].sort((a, b) => {
   const enabledOrder = Number(b.installed && b.enabled === true) - Number(a.installed && a.enabled === true);
   if (enabledOrder) return enabledOrder;
+  const installedOrder = Number(!!b.installed) - Number(!!a.installed);
+  if (installedOrder) return installedOrder;
   const ai = order.value.indexOf(a.agent), bi = order.value.indexOf(b.agent);
   if (ai >= 0 || bi >= 0) return (ai < 0 ? Infinity : ai) - (bi < 0 ? Infinity : bi);
-  return Number(b.agent === 'codex') - Number(a.agent === 'codex') || Number(!!b.installed) - Number(!!a.installed) || name(a).localeCompare(name(b));
+  return Number(b.agent === 'codex') - Number(a.agent === 'codex') || name(a).localeCompare(name(b));
 }));
+function saveOrder(ids: string[]) {
+  order.value = ids;
+  try { localStorage.setItem(orderKey, JSON.stringify(ids)); } catch { /* Keep the current session order. */ }
+}
 function moveAgent(from: string, to: string) {
-  const ids = orderedAgents.value.map(a => a.agent);
+  const ids = orderedAgents.value.filter(a => a.installed === true && a.enabled === true).map(a => a.agent);
   const start = ids.indexOf(from), end = ids.indexOf(to);
   if (start < 0 || end < 0 || start === end) return;
   ids.splice(start, 1); ids.splice(end, 0, from);
-  order.value = ids;
-  try { localStorage.setItem(orderKey, JSON.stringify(ids)); } catch { /* Keep the current session order. */ }
+  saveOrder(ids);
 }
 let pendingRefresh: Promise<void> | undefined;
 let revision = 0;
@@ -90,7 +95,10 @@ function refresh(manual = false): Promise<void> {
     try {
       const result = await api<{ agents: Agent[] }>('agents', manual ? 'POST' : 'GET');
       if (currentRevision !== revision) return;
-      agents.value = result.agents; loaded.value = true; error.value = '';
+      const retained = orderedAgents.value.filter(a => a.enabled === true && result.agents.some(next => next.agent === a.agent && next.enabled === true)).map(a => a.agent);
+      agents.value = result.agents;
+      saveOrder([...retained, ...orderedAgents.value.filter(a => a.enabled === true && !retained.includes(a.agent)).map(a => a.agent)]);
+      loaded.value = true; error.value = '';
       persist();
       if (preparationPoll) clearTimeout(preparationPoll);
       if (agents.value.some(a => a.adapter?.state === 'preparing')) preparationPoll = setTimeout(() => void refresh(), 1500);
@@ -104,7 +112,9 @@ async function toggle(agent: Agent, enabled: boolean) {
   saving.value = agent.agent;
   try {
     const result = await api<{ enabled: boolean; preparing?: boolean }>('agents', 'PUT', { agent: agent.agent, enabled });
+    const retained = orderedAgents.value.filter(a => a.enabled === true && a.agent !== agent.agent).map(a => a.agent);
     agent.enabled = result.enabled;
+    saveOrder(result.enabled ? [...retained, agent.agent] : retained);
     if (result.preparing) agent.adapter = { state: 'preparing' };
     persist();
     error.value = '';

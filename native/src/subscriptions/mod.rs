@@ -184,6 +184,32 @@ impl SubscriptionService {
             }
         });
     }
+    pub async fn agent_enabled(&self, agent: &str, enabled: bool) -> Result<()> {
+        let mut state = self.state.lock().await;
+        let ids: Vec<String> = state.slots.iter()
+            .filter(|(_, slot)| slot.view.agent_id == agent)
+            .map(|(id, _)| id.clone()).collect();
+        let mut settings = state.settings.clone();
+        settings.providers.retain(|id| !ids.contains(id));
+        for id in &ids {
+            settings.pinned_windows.remove(id);
+        }
+        if enabled {
+            settings.providers.extend(ids.iter().cloned());
+        }
+        save(&root().join("subscriptions/settings.json"), &serde_json::to_value(&settings).unwrap())?;
+        state.settings = settings;
+        for id in &ids {
+            if let Some(slot) = state.slots.get_mut(id) {
+                slot.view.selected = enabled;
+                invalidate(slot);
+            }
+        }
+        self.publish(&mut state);
+        drop(state);
+        self.wake.notify_one();
+        Ok(())
+    }
     pub async fn inventory(&self, inventory: &Value) {
         let mut state = self.state.lock().await;
         for slot in state.slots.values_mut() {

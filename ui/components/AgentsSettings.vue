@@ -33,15 +33,28 @@ const initialAgent: Agent = { agent: 'codex', displayName: 'Codex' };
 const visible = computed(() => !loaded.value ? [initialAgent] : orderedAgents.value);
 const dragging = ref('');
 const dropTarget = ref('');
-function dragStart(event: DragEvent, id: string) {
+const canReorder = (agent: Agent) => loaded.value && agent.installed === true && agent.enabled === true;
+function dragStart(event: DragEvent, agent: Agent) {
+  if (!canReorder(agent)) { event.preventDefault(); return; }
+  const id = agent.agent;
   dragging.value = id;
   if (event.dataTransfer) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); }
 }
 function finishDrag() { dragging.value = ''; dropTarget.value = ''; }
-function drop(id: string) { if (dragging.value) moveAgent(dragging.value, id); finishDrag(); }
+function dragOver(event: DragEvent, agent: Agent) {
+  if (!dragging.value || !canReorder(agent)) { dropTarget.value = ''; return; }
+  event.preventDefault();
+  dropTarget.value = agent.agent;
+}
+function drop(event: DragEvent, agent: Agent) {
+  if (dragging.value && canReorder(agent)) { event.preventDefault(); moveAgent(dragging.value, agent.agent); }
+  finishDrag();
+}
 function moveWithKey(id: string, direction: number) {
-  const index = visible.value.findIndex(agent => agent.agent === id);
-  const target = visible.value[index + direction];
+  const sortable = visible.value.filter(canReorder);
+  const index = sortable.findIndex(agent => agent.agent === id);
+  if (index < 0) return;
+  const target = sortable[index + direction];
   if (target) moveAgent(id, target.agent);
 }
 onMounted(() => { void refresh(); });
@@ -52,10 +65,10 @@ onMounted(() => { void refresh(); });
     <template #actions><NButton quaternary circle :disabled="loading || !!saving" :aria-label="t('refreshAgents')" :title="t('refreshAgents')" :aria-busy="loading" @click="refresh(true)"><template #icon><RefreshCw :size="20" :class="{spinning:loading}"/></template></NButton></template>
     <div class="agent-grid">
       <article v-for="agent in visible" :key="agent.agent" class="agent-card" :class="{ dragging: dragging===agent.agent, 'drop-target': dropTarget===agent.agent && dragging!==agent.agent }"
-        :tabindex="loaded ? 0 : -1" :aria-label="t('reorderAgent', { agent: name(agent) })"
+        :tabindex="canReorder(agent) ? 0 : -1" :aria-label="canReorder(agent) ? t('reorderAgent', { agent: name(agent) }) : name(agent)"
         @keydown.up.self.prevent="moveWithKey(agent.agent,-1)" @keydown.left.self.prevent="moveWithKey(agent.agent,-1)"
         @keydown.down.self.prevent="moveWithKey(agent.agent,1)" @keydown.right.self.prevent="moveWithKey(agent.agent,1)"
-        :draggable="loaded" @dragstart="dragStart($event,agent.agent)" @dragend="finishDrag" @dragover.prevent="dropTarget=agent.agent" @drop.prevent="drop(agent.agent)">
+        :draggable="canReorder(agent)" @dragstart="dragStart($event,agent)" @dragend="finishDrag" @dragover="dragOver($event,agent)" @dragleave.self="dropTarget=''" @drop="drop($event,agent)">
           <NSwitch v-if="agent.installed" size="small" class="agent-switch" :id="`agent-${agent.agent}`" :aria-label="t('allowConnectorToUseValue', { agent: name(agent) })" :value="agent.enabled === true"
             :loading="agent.adapter?.state === 'preparing'" :disabled="agent.adapter?.state === 'preparing' || !!saving || loading || typeof agent.enabled !== 'boolean'"
             :title="t('allowConnectorToAcceptRequestsForThisAgent')" @update:value="toggle(agent, $event)" />

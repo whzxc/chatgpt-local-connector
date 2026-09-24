@@ -44,7 +44,7 @@ const emit = defineEmits<{ 'update:value':[value:T] }>();
 .choice-track.choice-track{display:inline-flex;height:auto;min-height:38px;align-items:center;max-width:100%;padding:4px;gap:2px;border-radius:12px;background:var(--accent-soft);vertical-align:middle;isolation:isolate}
 .choice-option.choice-option{border:0;border-radius:9px;min-width:64px;text-align:center;flex:1 1 auto;white-space:nowrap;transition:background-color 160ms ease,box-shadow 160ms ease,color 160ms ease}
 .choice-track.compact .choice-option{padding-inline:10px}
-.choice-option.selected{box-shadow:0 1px 3px color-mix(in srgb,var(--black) 7.84%,transparent),0 0 0 1px light-dark(color-mix(in srgb,var(--black) 5.1%,transparent),color-mix(in srgb,var(--white) 4.71%,transparent))}
+.choice-option.selected{box-shadow:0 1px 3px color-mix(in srgb,var(--shadow-halo) 7.84%,transparent),0 0 0 1px light-dark(color-mix(in srgb,var(--black) 5.1%,transparent),color-mix(in srgb,var(--accent-dark) 20%,transparent))}
 .choice-option:not(.selected):not(.is-disabled):hover{background:var(--hover-surface)}
 .choice-option:focus-within{outline:2px solid var(--accent);outline-offset:1px;z-index:1}
 .choice-option.is-disabled{cursor:default}

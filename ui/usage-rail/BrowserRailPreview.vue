@@ -204,5 +204,5 @@ onUnmounted(() => { stopped = true; cancelLeave(); });
 
 <style scoped>
 .rail-menu-error{position:fixed;bottom:16px;left:16px;color:var(--ink);background:var(--surface);padding:12px;pointer-events:auto}
-.browser-rail-preview{position:fixed;inset:0;z-index:80;pointer-events:none}
+.browser-rail-preview{position:fixed;inset:0;z-index:20;pointer-events:none}
 </style>

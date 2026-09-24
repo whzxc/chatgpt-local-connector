@@ -6,7 +6,7 @@ import QuotaBubble from '../subscriptions/QuotaBubble.vue';
 import { subscriptionSnapshotKey } from '../subscriptions/useSubscriptions';
 import { name, type Agent } from '../composables/useAgents';
 import { t } from '../i18n';
-const props = defineProps<{agent:Agent;origin:{x:number;y:number;size:number}}>();
+const props = defineProps<{agent:Agent;origin?:{x:number;y:number;size:number}}>();
 const emit = defineEmits<{close:[]}>();
 const open = ref(true);
 const snapshot = inject(subscriptionSnapshotKey);

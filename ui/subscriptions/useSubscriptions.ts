@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, provide, ref, type InjectionKey, type Ref } from 'vue';
+import { inject, onMounted, onUnmounted, provide, ref, type InjectionKey, type Ref } from 'vue';
 import { presentSubscription } from './response';
 import { api } from '../api';
 import { isDesktop } from '../platform';
@@ -6,7 +6,16 @@ import type { Snapshot, Settings } from './types';
 export const subscriptionSnapshotKey: InjectionKey<Ref<Snapshot | undefined>> = Symbol('subscriptions');
 export const subscriptionRefreshKey: InjectionKey<(providerId: string) => Promise<void>> = Symbol('subscription-refresh');
 export const subscriptionSettingsKey: InjectionKey<(patch: Partial<Settings>) => Promise<void>> = Symbol('subscription-settings');
+const subscriptionsKey: InjectionKey<{
+  snapshot: Ref<Snapshot | undefined>;
+  error: Ref<string>;
+  accept: (next: Snapshot) => void;
+  read: () => Promise<void>;
+  refresh: (providerId: string) => Promise<void>;
+}> = Symbol('subscription-state');
 export function useSubscriptions() {
+  const inherited = inject(subscriptionsKey, undefined);
+  if (inherited) return inherited;
   const snapshot = ref<Snapshot>(); const error = ref('');
   let unlisten: (() => void) | undefined; let timer: ReturnType<typeof setInterval> | undefined; let stopped = false;
   let stream: EventSource | undefined;
@@ -41,5 +50,7 @@ export function useSubscriptions() {
     timer = setInterval(() => { if (document.visibilityState === 'visible' && (!stream || stream.readyState !== EventSource.OPEN)) void read(); }, 30000);
   });
   onUnmounted(() => { stopped = true; stream?.close(); unlisten?.(); clearInterval(timer); });
-  return { snapshot, error, accept, read, refresh };
+  const subscriptions = { snapshot, error, accept, read, refresh };
+  provide(subscriptionsKey, subscriptions);
+  return subscriptions;
 }

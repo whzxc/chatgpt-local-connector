@@ -68,6 +68,6 @@ export default defineConfig({
       });
     },
   }],
-  build: { outDir: '../dist/ui', emptyOutDir: true, rollupOptions: { input: { trayDetail: fileURLToPath(new URL('./ui/tray-detail.html', import.meta.url)), trayPanel: fileURLToPath(new URL('./ui/tray-panel.html', import.meta.url)), main: fileURLToPath(new URL('./ui/index.html', import.meta.url)), usageRail: fileURLToPath(new URL('./ui/usage-rail.html', import.meta.url)) } } },
+  build: { outDir: '../dist/ui', emptyOutDir: true, rollupOptions: { input: { trayPanel: fileURLToPath(new URL('./ui/tray-panel.html', import.meta.url)), main: fileURLToPath(new URL('./ui/index.html', import.meta.url)), usageRail: fileURLToPath(new URL('./ui/usage-rail.html', import.meta.url)) } } },
   server: { host: '127.0.0.1', port: 5187, strictPort: true },
 });
