@@ -1,6 +1,7 @@
 import { readFile, writeFile, readdir, mkdir, copyFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import path from 'node:path';
 const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const version = pkg.version;
@@ -127,9 +128,21 @@ else if (mode === 'sync') {
 else if (mode === 'verify-published') {
   const dir = args[0]; const local = await json(path.join(dir,'latest.json'));
   await validateManifest(local, dir);
-  const fetchBytes = async url => { const response=await fetch(url,{signal:AbortSignal.timeout(120000)}); if(!response.ok) throw new Error(`${response.status}: ${url}`); return Buffer.from(await response.arrayBuffer()); };
-  const remote = JSON.parse(await fetchBytes(`https://github.com/${repo}/releases/latest/download/latest.json`));
-  if (JSON.stringify(remote)!==JSON.stringify(local)) throw new Error('Published latest.json mismatch');
+  const fetchBytes = async url => {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      if (![404, 502, 503, 504].includes(response.status) || attempt === 11) throw new Error(`${response.status}: ${url}`);
+      await delay(5000);
+    }
+  };
+  let remote;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    remote = JSON.parse(await fetchBytes(`https://github.com/${repo}/releases/latest/download/latest.json`));
+    if (JSON.stringify(remote) === JSON.stringify(local)) break;
+    if (attempt === 11) throw new Error('Published latest.json mismatch');
+    await delay(5000);
+  }
   const assets=(await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||f.endsWith('SHA256SUMS.txt'));
   for(const file of assets) if(hash(await fetchBytes(`${base}/${path.basename(file)}`))!==hash(await readFile(file))) throw new Error(`Published asset mismatch: ${path.basename(file)}`);
   console.log('Published manifest and all artifact bytes match the verified local release.');
