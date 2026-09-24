@@ -169,6 +169,7 @@ fn normalize(mut entry: Value) -> Result<Value> {
 impl Service {
     pub fn new() -> Result<Arc<Self>> {
         init_crypto();
+        crate::logs::record("INFO", "Service starting", None);
         private_dir(&root())?;
         let index = root().join("ingresses/index.json");
         if !index.exists() {
@@ -273,6 +274,8 @@ impl Service {
     pub async fn log(&self, level: &str, msg: &str) {
         if let Ok(i) = self.primary().await {
             i.log(level, msg).await;
+        } else {
+            crate::logs::record(level, msg, None);
         }
     }
     pub async fn status(&self) -> Result<Value> {
@@ -323,31 +326,7 @@ impl Service {
         status["core"]["transport"] =
             json!({"state":if ready>0{"ready"}else if running>0{"starting"}else{"stopped"}});
         status["connector"] = status["core"]["transport"].clone();
-        let mut logs: Vec<Value> = items
-            .iter()
-            .flat_map(|i| {
-                i["logs"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|line| serde_json::from_str::<Value>(line.as_str()?).ok())
-                    .map(|mut log| {
-                        log["ingressId"] = i["id"].clone();
-                        log
-                    })
-            })
-            .collect();
-        logs.sort_by(|a, b| string(a, "time").cmp(string(b, "time")));
-        let logs: Vec<_> = logs
-            .into_iter()
-            .rev()
-            .take(200)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .map(|v| v.to_string())
-            .collect();
-        status["logs"] = json!(logs);
+        status["logs"] = json!(crate::logs::recent(None));
         status["core"]["logs"] = status["logs"].clone();
         status["core"]["registered"] = json!(running > 0);
         Ok(status)
@@ -355,6 +334,7 @@ impl Service {
     pub async fn stop(&self) -> Result<()> {
         let _configuration = self.configuration.lock().await;
         self.closing.store(true, Ordering::SeqCst);
+        crate::logs::record("INFO", "Service stopping", None);
         self.subscriptions.stop().await;
         let entries = self.entries().await;
         for ingress in &entries {
@@ -416,6 +396,34 @@ impl Service {
         Ok(())
     }
     pub async fn request(
+        self: &Arc<Self>,
+        route: &str,
+        method: &str,
+        body: Value,
+    ) -> Result<Value> {
+        let operation = id();
+        let audit = method != "GET";
+        if audit {
+            crate::logs::append(
+                json!({"time":now(),"level":"INFO","msg":format!("{method} {route}: started"),"operationId":operation,"phase":"started"}),
+            )?;
+        }
+        let result = self.request_inner(route, method, body).await;
+        if audit {
+            let outcome = if result.is_ok() {
+                "succeeded"
+            } else {
+                "failed"
+            };
+            if let Err(error) = crate::logs::append(
+                json!({"time":now(),"level":if result.is_ok(){"INFO"}else{"ERROR"},"msg":format!("{method} {route}: {outcome}"),"operationId":operation,"phase":outcome}),
+            ) {
+                eprintln!("Cannot persist operation outcome: {error}");
+            }
+        }
+        result
+    }
+    async fn request_inner(
         self: &Arc<Self>,
         route: &str,
         method: &str,

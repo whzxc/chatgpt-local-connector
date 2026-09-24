@@ -554,6 +554,12 @@ pub async fn handle(
     ingress: &crate::ingress::Ingress,
     resource: &str,
 ) -> Response<Full<Bytes>> {
+    let audit_path = match request.uri().path() {
+        "/oauth/authorize" | "/oauth/register" | "/oauth/token" | "/oauth/revoke" => {
+            Some(request.uri().path().to_owned())
+        }
+        _ => None,
+    };
     let supplied_auth = request.headers().contains_key("authorization");
     let cors =
         request.uri().path() != "/oauth/authorize" && request.uri().path() != "/oauth/resume";
@@ -603,6 +609,18 @@ pub async fn handle(
             failure
         }
     };
+    if let Some(path) = audit_path {
+        ingress
+            .log(
+                if reply.status().is_success() || reply.status().is_redirection() {
+                    "INFO"
+                } else {
+                    "WARN"
+                },
+                &format!("OAuth {path}: HTTP {}", reply.status().as_u16()),
+            )
+            .await;
+    }
     if cors {
         for (key, value) in [
             ("access-control-allow-origin", "*"),

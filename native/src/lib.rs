@@ -14,6 +14,7 @@ pub mod diagnostics;
 pub mod https;
 pub mod https_tunnel;
 pub mod ingress;
+pub mod logs;
 pub mod oauth;
 pub mod projects;
 pub mod proxy;

@@ -49,6 +49,7 @@ impl Ingress {
         let ingress_id = string(&entry, "id").to_owned();
         let dir = root().join("ingresses").join(&ingress_id);
         private_dir(&dir)?;
+        crate::logs::migrate(&dir, &ingress_id)?;
         let settings = entry["config"].clone();
         validate_config(&settings)?;
         let verification = load(&dir.join("verification.json"))
@@ -66,12 +67,9 @@ impl Ingress {
             port: std::sync::atomic::AtomicU16::new(0),
             settings: Mutex::new(settings),
             verification: Mutex::new(verification),
-            logs: Mutex::new(
-                load(&dir.join("logs.json"))
-                    .ok()
-                    .and_then(|v| serde_json::from_value(v).ok())
-                    .unwrap_or_default(),
-            ),
+            logs: Mutex::new(crate::logs::recent(
+                dir.file_name().and_then(|name| name.to_str()),
+            )),
             stopping: std::sync::atomic::AtomicBool::new(false),
             ready_logged: std::sync::atomic::AtomicBool::new(false),
             tunnel: Mutex::new(None),
@@ -200,7 +198,7 @@ impl Ingress {
         if logs.len() > 200 {
             logs.remove(0);
         }
-        let _ = save(&self.dir.join("logs.json"), &json!(*logs));
+        crate::logs::record(level, &msg, Some(&self.id));
     }
     pub async fn status(&self) -> Result<Value> {
         // Cleanup must not race a start/stop operation; status remains readable during downloads.
