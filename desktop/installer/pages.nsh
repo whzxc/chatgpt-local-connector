@@ -57,7 +57,7 @@ Function ConnectorWelcome
   ${NSD_CreateBrowseButton} 246u 111u 50u 14u "浏览…"
   Pop $ConnectorBrowse
   ${NSD_OnClick} $ConnectorBrowse ConnectorBrowsePath
-  ${NSD_CreateLabel} 4u 130u 292u 13u "仅安装到当前用户，无需管理员权限。"
+  ${NSD_CreateLabel} 4u 128u 292u 12u "仅安装到当前用户，无需管理员权限。"
   Pop $ConnectorPathHint
   SetCtlColors $ConnectorPathHint 66756F FFFFFF
   ${If} $ConnectorInstalledVersion != ""
