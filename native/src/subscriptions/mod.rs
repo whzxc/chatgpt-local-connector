@@ -187,11 +187,14 @@ impl SubscriptionService {
     pub async fn inventory(&self, inventory: &Value) {
         let mut state = self.state.lock().await;
         for slot in state.slots.values_mut() {
-            let eligible = providers::standalone_available(&slot.view.provider_id)
-                || inventory["agents"].as_array().is_some_and(|rows| {
-                    rows.iter()
-                        .any(|r| r["agent"] == slot.view.agent_id && r["installed"] == true)
-                });
+            let eligible = inventory["agents"].as_array().is_some_and(|rows| {
+                rows.iter().any(|r| {
+                    r["agent"] == slot.view.agent_id
+                        && r["enabled"] == true
+                        && (r["installed"] == true
+                            || providers::standalone_available(&slot.view.provider_id))
+                })
+            });
             if slot.view.eligible != eligible {
                 slot.view.eligible = eligible;
                 invalidate(slot);

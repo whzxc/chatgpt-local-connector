@@ -11,7 +11,7 @@ import { windowLabel } from './labels';
 const props = defineProps<{ agent: string }>();
 const snapshot = inject(subscriptionSnapshotKey);
 const running = useAgentActive(() => props.agent);
-const provider = computed(() => snapshot?.value?.providers.find(p => p.agentId === props.agent));
+const provider = computed(() => snapshot?.value?.settings.enabled ? snapshot.value.providers.find(p => p.agentId === props.agent && p.eligible && p.selected) : undefined);
 const weekly = computed(() => {
   const p = provider.value;
   if (!p || p.state !== 'ready' || p.error) return;

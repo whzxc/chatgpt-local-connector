@@ -36,9 +36,14 @@ beside its title. Settings have three groups:
 - **Usage:** independently show Today, Yesterday, Last 7 Days and Last 30 Days. The latter
   two include today and use local calendar days.
 
-Subscription monitoring is enabled by default for supported sources detected on the device.
-Agent execution permissions do not disable quota monitoring. Enabling the rail also
-enables monitoring; with no available sources, settings display an explanation.
+The switch on each Agent controls managed requests, quota monitoring, usage collection
+and related displays. Disabling an Agent cancels its quota refresh and clears its current
+readings; enabling it resumes monitoring. Enabled, installed Agents appear first, with
+manual ordering preserved within each group. Enabling the rail enables global monitoring
+but does not enable disabled Agents; with no available sources, settings display an explanation.
+
+The status-bar panel follows its content height up to 704 logical pixels or the available
+screen height, whichever is smaller. Longer content scrolls above the footer.
 
 Each quota bubble has a manual refresh button. Plan titles open the provider's usage page or service homepage. OpenCode currently opens
 Console because its usage response does not supply a workspace identity.

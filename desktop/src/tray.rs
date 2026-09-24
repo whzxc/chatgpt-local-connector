@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc,
 };
 use tauri::{
@@ -9,8 +9,10 @@ use tauri::{
 
 #[derive(Default)]
 struct PanelInteraction(AtomicBool);
+struct PanelHeight(AtomicU32);
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     app.manage(PanelInteraction::default());
+    app.manage(PanelHeight(AtomicU32::new(100)));
     crate::tray_detail::install(app)?;
     let window = tauri::WebviewWindowBuilder::new(
         app,
@@ -18,7 +20,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
         tauri::WebviewUrl::App("tray-panel.html".into()),
     )
     .title("Local Connector — Usage")
-    .inner_size(380., 704.)
+    .inner_size(380., 100.)
     .visible(false)
     .decorations(false)
     .transparent(true)
@@ -104,6 +106,16 @@ fn toggle(
         crate::tray_detail::dismiss(app);
         return window.hide();
     }
+    let side = position_panel(&window, point, rect)?;
+    window.emit("tray-panel:open", serde_json::json!({"side":side}))?;
+    window.show()?;
+    window.set_focus()
+}
+fn position_panel(
+    window: &tauri::WebviewWindow,
+    point: tauri::PhysicalPosition<f64>,
+    rect: tauri::Rect,
+) -> tauri::Result<&'static str> {
     let monitors = window.available_monitors()?;
     let monitor = monitors.iter().find(|m| {
         let p = m.position();
@@ -117,7 +129,15 @@ fn toggle(
         let scale = monitor.scale_factor();
         let area = monitor.work_area();
         let width = (380. * scale).min(area.size.width as f64);
-        let height = (704. * scale).min(area.size.height as f64);
+        let height = (f64::from(
+            window
+                .app_handle()
+                .state::<PanelHeight>()
+                .0
+                .load(Ordering::Relaxed),
+        ) * scale)
+            .min(704. * scale)
+            .min(area.size.height as f64);
         let left = area.position.x as f64;
         let top = area.position.y as f64;
         let right = left + area.size.width as f64;
@@ -132,10 +152,36 @@ fn toggle(
         let y = (icon_pos.y + icon_size.height).clamp(top, top + area.size.height as f64 - height);
         window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
         window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32))?;
-        window.emit("tray-panel:open", serde_json::json!({"side":side}))?;
+        return Ok(side);
     }
-    window.show()?;
-    window.set_focus()
+    Ok("left")
+}
+#[tauri::command]
+pub async fn tray_panel_resize(window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+    if window.label() != "tray-panel" || !height.is_finite() || height <= 0. {
+        return Err("invalid panel size".into());
+    }
+    window
+        .app_handle()
+        .state::<PanelHeight>()
+        .0
+        .store(height.ceil().clamp(1., 704.) as u32, Ordering::Relaxed);
+    let tray = window
+        .app_handle()
+        .tray_by_id("main-tray")
+        .ok_or("missing tray")?;
+    if let Some(rect) = tray.rect().map_err(|e| e.to_string())? {
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let pos = rect.position.to_physical::<f64>(scale);
+        let size = rect.size.to_physical::<f64>(scale);
+        position_panel(
+            &window,
+            tauri::PhysicalPosition::new(pos.x + size.width / 2., pos.y + size.height / 2.),
+            rect,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 #[tauri::command]
 pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), String> {

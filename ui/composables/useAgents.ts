@@ -64,6 +64,8 @@ try {
   if (Array.isArray(stored) && stored.every(id => typeof id === 'string')) order.value = [...new Set(stored)];
 } catch { /* Discovery supplies the default order. */ }
 const orderedAgents = computed(() => [...agents.value].sort((a, b) => {
+  const enabledOrder = Number(b.installed && b.enabled === true) - Number(a.installed && a.enabled === true);
+  if (enabledOrder) return enabledOrder;
   const ai = order.value.indexOf(a.agent), bi = order.value.indexOf(b.agent);
   if (ai >= 0 || bi >= 0) return (ai < 0 ? Infinity : ai) - (bi < 0 ? Infinity : bi);
   return Number(b.agent === 'codex') - Number(a.agent === 'codex') || Number(!!b.installed) - Number(!!a.installed) || name(a).localeCompare(name(b));

@@ -119,6 +119,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             tray::tray_action,
+            tray::tray_panel_resize,
             tray_detail::tray_detail,
             service_request,
             i18n::set_ui_locale,

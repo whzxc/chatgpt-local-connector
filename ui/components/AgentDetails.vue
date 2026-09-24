@@ -10,7 +10,7 @@ const props = defineProps<{agent:Agent;origin:{x:number;y:number;size:number}}>(
 const emit = defineEmits<{close:[]}>();
 const open = ref(true);
 const snapshot = inject(subscriptionSnapshotKey);
-const provider = computed(() => snapshot?.value?.providers.find(p => p.agentId === props.agent.agent));
+const provider = computed(() => snapshot?.value?.settings.enabled ? snapshot.value.providers.find(p => p.agentId === props.agent.agent && p.eligible && p.selected) : undefined);
 </script>
 <template>
   <ElasticPanel headerless :show="open" :title="name(agent)" :origin="origin" :width="440" @close="open=false" @closed="emit('close')">

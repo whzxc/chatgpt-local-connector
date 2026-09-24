@@ -277,6 +277,7 @@ impl AgentHost {
             .filter(|id| !disabled.contains(id))
             .collect();
         active.extend(self.activity.lock().await.sample(selected).await);
+        active.retain(|id| !disabled.contains(id));
         json!({"activeAgents":active,"observedAt":now(),"scope":"selected-local-transcripts-and-connector-live-sessions"})
     }
     pub async fn inventory(&self) -> Value {
