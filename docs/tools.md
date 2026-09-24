@@ -149,7 +149,7 @@ Git revision 支持分支、标签、SHA 和表达式；diff 可省略 path 查�
 原生工具数据通过 codex_items 或原生 thread/items/list 读取，不固定省略工具输出。
 MCP 单次请求帧预算 16 MiB；结果超过 64 KiB 自动保存并返回 outputId。
 control_output 每页最多 12000 个 UTF-16 code units，拼接所有 text 后解析 JSON。
-本机 outputs 目录保留完整结果，没有自动删除；需要清理时在宿主按文件日期处理。
+本机 outputs 目录中的大结果 JSON 快照保留 7 天，共享 1 GiB 配额；写入新快照时清理过期快照，并按最旧优先腾出空间。过期读取返回 OUTPUT_EXPIRED，已淘汰结果不可再读；单个快照超过配额或无法腾出空间返回 OUTPUT_STORAGE_LIMIT。读取采用有界内存解码，继续使用 UTF-16 偏移。
 分页与帧预算用于传输和资源管理，不是业务权限。长输入也可以先 fs/writeFile 再引用原生输入路径。
 
 ## 交互、回执与生命周期
@@ -185,7 +185,7 @@ Chat 页面不会因任务完成自动被唤醒，交互请求也需要调用方
 
 stdio 仅为传输代理，使用父进程传入的本机端口与随机凭据连接应用内的 Rust 核心。stdio 退出不会销毁应用内核心。工具调用产生本机活动日志，来源缺失时不推测 Chat ID。
 
-`codex_events` 提供当前会话的 `persistedOutput.outputId`，通过 `control_output` 分页读取 JSONL；写入失败会返回持久化错误。事件文件、回执和输出保存在本机状态目录，不自动清理。
+`codex_events` 提供当前会话的 `persistedOutput.outputId`，通过 `control_output` 分页读取 JSONL；写入失败会返回持久化错误。事件 JSONL 文件与回执保存在本机状态目录，不参与大结果 JSON 快照的过期和配额清理。
 
 原生进程、文件监听和订阅句柄属于当前 App Server 连接；断线后不自动重建。旧会话的审批响应会被拒绝，未确认的写操作不自动重放。
 

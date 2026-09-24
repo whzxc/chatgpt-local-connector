@@ -15,6 +15,8 @@ pub struct Control {
     jobs: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     schemas: Mutex<Option<Value>>,
 }
+const RECEIPTS: crate::kernel::receipts::ReceiptStore =
+    crate::kernel::receipts::ReceiptStore::new("");
 impl Control {
     pub fn new(binary: PathBuf) -> Arc<Self> {
         Arc::new(Self {
@@ -320,45 +322,26 @@ impl Control {
         )
     }
     fn checkpoint(&self, r: &mut Value) -> Result<()> {
-        r["updatedAt"] = json!(now());
-        save(&root().join(format!("{}.json", string(r, "requestId"))), r)
+        RECEIPTS.checkpoint(r)
     }
     pub async fn receipt(&self, request: &str) -> Result<Value> {
-        uuid::Uuid::parse_str(request).map_err(|_| "INVALID_REQUEST_ID")?;
-        let path = root().join(format!("{request}.json"));
-        if !path.exists() {
+        if !RECEIPTS.path(request)?.exists() {
             return Ok(
                 json!({"requestId":request,"state":"not-found","executionState":"no-reservation"}),
             );
         }
-        let mut r = load(&path)?;
-        if r["backendSession"] != self.session
-            && !matches!(
-                string(&r, "state"),
-                "completed" | "rejected" | "not-executed" | "unconfirmed" | "awaiting-approval"
-            )
-        {
-            r["previousState"] = r["state"].clone();
-            r["state"] = json!("unconfirmed");
-        }
-        Ok(r)
+        RECEIPTS.read(request, &self.session)
     }
+
     pub async fn mutate(self: &Arc<Self>, operation: &str, args: Value) -> Result<Value> {
         let request = string(&args, "requestId").to_owned();
-        uuid::Uuid::parse_str(&request).map_err(|_| "INVALID_REQUEST_ID")?;
+        RECEIPTS.path(&request)?;
         let digest = hash(json!({"operation":operation,"args":args}).to_string());
         let mut jobs = self.jobs.lock().await;
-        private_dir(&root())?;
-        let path = root().join(format!("{request}.json"));
-        if path.exists() {
-            let mut old = self.receipt(&request).await?;
-            if old["digest"] != digest {
-                return Err("REQUEST_ID_CONFLICT".into());
-            }
-            old["replayed"] = json!(true);
-            return Ok(old);
+        if let Some(receipt) = RECEIPTS.replay(&request, &digest, &self.session)? {
+            return Ok(receipt);
         }
-        let mut receipt = json!({"origin":crate::ingress::current_origin(),"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","createdAt":now(),"updatedAt":now()});
+        let mut receipt = json!({"origin":crate::kernel::origin::current_origin(),"requestId":request,"backendSession":self.session,"digest":digest,"operation":operation,"state":"reserved","createdAt":now(),"updatedAt":now()});
         if operation == "create" || (operation == "native" && args["method"] == "thread/start") {
             receipt["executionOwner"] = json!(if self.auto_open_codex()? {
                 "desktop"
@@ -382,17 +365,7 @@ impl Control {
                 receipt["nextAction"] = json!("codex_request: approve, bypass or reject; user intent overrides the default approval mode");
             }
         }
-        use std::io::Write;
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        let mut file = opts.open(&path).map_err(|e| e.to_string())?;
-        file.write_all(receipt.to_string().as_bytes())
-            .map_err(|e| e.to_string())?;
+        RECEIPTS.reserve(&receipt)?;
         if receipt["state"] == "awaiting-approval" {
             return Ok(receipt);
         }
@@ -416,7 +389,7 @@ impl Control {
         let key = request.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let origin = receipt["origin"].clone();
-        let job = tokio::spawn(crate::ingress::ORIGIN.scope(origin, async move {
+        let job = tokio::spawn(crate::kernel::origin::ORIGIN.scope(origin, async move {
             let outcome = c.perform(&op, &args, &mut receipt).await;
             match outcome {
                 Ok(result) => {
@@ -432,7 +405,7 @@ impl Control {
                     } else {
                         "unconfirmed"
                     });
-                    receipt["result"] = json!({"error":failure(&err)});
+                    receipt["result"] = json!({"error":crate::egress::failure(&err)});
                 }
             }
             let result = c.checkpoint(&mut receipt).map(|_| receipt);
@@ -835,7 +808,7 @@ impl Control {
                     json!({"backendSession":self.session,"reset":args.get("backendSession").is_some()&&args["backendSession"]!=self.session,"gap":after+1<e.rows.first().and_then(|r|r["cursor"].as_u64()).unwrap_or(1),"events":e.rows.iter().filter(|r|r["cursor"].as_u64().unwrap_or(0)>after).take(num(&args,"limit",100).min(2000)).collect::<Vec<_>>(),"latestCursor":e.sequence,"persistedOutput":{"outputId":self.session,"format":"JSONL","error":e.storage_error}}),
                 )
             }
-            "control_output" => read_output(&args),
+            "control_output" => crate::kernel::results::read_output(&args),
             "codex_tasks" => {
                 let mut params = args.clone();
                 params.as_object_mut().unwrap().remove("project");
@@ -1064,46 +1037,6 @@ pub(crate) fn item(v: &Value, offset: usize, len: usize) -> Value {
     let units: Vec<u16> = text.encode_utf16().collect();
     let end = offset.saturating_add(len);
     json!({"itemId":v["id"],"type":v["type"],"text":String::from_utf16_lossy(&units[offset.min(units.len())..end.min(units.len())]),"textHash":hash(&text),"offset":offset,"textLength":units.len(),"nextOffset":if end<units.len(){Some(end)}else{None},"textTruncated":end<units.len()})
-}
-pub fn failure(e: &str) -> Value {
-    let rpc = e
-        .strip_prefix("RPC_REJECTED:")
-        .and_then(|s| serde_json::from_str::<Value>(s).ok());
-    json!({"code":if rpc.is_some(){"NATIVE_RPC_ERROR"}else{if e == "REQUEST_ID_CONFLICT" { "REQUEST_ID_CONFLICT" } else { "CONTROL_ERROR" }},"message":e,"executionState":if rpc.is_some(){"rejected"}else{"unknown"},"rpcError":rpc,"nextAction":"read-request-before-retry"})
-}
-pub fn page_output(result: Value) -> Result<Value> {
-    let text = result.to_string();
-    if text.len() <= 64 * 1024 {
-        return Ok(result);
-    }
-    let output = id();
-    save(
-        &root().join("outputs").join(format!("{output}.json")),
-        &result,
-    )?;
-    Ok(
-        json!({"outputId":output,"bytes":text.len(),"characters":text.encode_utf16().count(),"sha256":hash(&text),"nextAction":"control_output","format":"JSON; offsets count UTF-16 code units"}),
-    )
-}
-fn read_output(args: &Value) -> Result<Value> {
-    let output = string(args, "outputId");
-    uuid::Uuid::parse_str(output).map_err(|_| "INVALID_OUTPUT_ID")?;
-    let dir = root().join("outputs");
-    let path = dir.join(format!("{output}.json"));
-    let text = std::fs::read_to_string(if path.exists() {
-        path
-    } else {
-        dir.join(format!("{output}.jsonl"))
-    })
-    .map_err(|e| e.to_string())?;
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let offset = num(args, "offset", 0);
-    let end = offset
-        .saturating_add(num(args, "length", 10000).min(12000))
-        .min(units.len());
-    Ok(
-        json!({"outputId":output,"offset":offset,"text":String::from_utf16_lossy(&units[offset.min(end)..end]),"characters":units.len(),"nextOffset":if end<units.len(){Some(end)}else{None}}),
-    )
 }
 
 fn turn_configurations(thread: &Value) -> HashMap<String, Value> {

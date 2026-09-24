@@ -8,6 +8,7 @@ pub struct Service {
     pub subscriptions: Arc<crate::subscriptions::SubscriptionService>,
     pub control: Arc<Control>,
     pub agents: Arc<crate::agents::AgentHost>,
+    execution: Arc<crate::execution::Execution>,
     pub token: String,
     pub port: AtomicU16,
     ingresses: Mutex<BTreeMap<String, Arc<Ingress>>>,
@@ -15,16 +16,7 @@ pub struct Service {
     configuration: Mutex<()>,
     closing: std::sync::atomic::AtomicBool,
 }
-const SECRETS: &[&str] = &[
-    "apiKey",
-    "cloudflareToken",
-    "ngrokAuthtoken",
-    "pinggyToken",
-    "localxposeAccessToken",
-];
-pub(crate) fn defaults() -> Value {
-    json!({"tunnelId":"","apiKey":"","tunnelBinary":"tunnel-client","codexBinary":"codex","autoStart":false,"cloudflareMode":"quick","cloudflareToken":"","httpsProvider":"cloudflare","ngrokAuthtoken":"","ngrokMode":"quick","ngrokEndpoint":"","pinggyMode":"quick","pinggyToken":"","localxposeMode":"named","localxposeAccessToken":"","localxposeRegion":"us","proxyMode":"system","proxyUrl":"","connectionMode":"tunnel","httpsUrl":"","httpsHost":"127.0.0.1","httpsPort":8787})
-}
+use crate::ingress::config::{defaults, secrets};
 // Secrets use the existing private-directory/atomic-file storage, separately from configuration.
 pub(crate) fn store_entry(entry: &Value) -> Result<()> {
     let dir = root().join("ingresses").join(string(entry, "id"));
@@ -35,11 +27,11 @@ pub(crate) fn store_entry(entry: &Value) -> Result<()> {
         .unwrap()
         .remove("connectionMode");
     let mut secret = json!({"bearerToken":public.as_object_mut().unwrap().remove("bearerToken").unwrap_or(Value::Null)});
-    for key in SECRETS {
-        secret[*key] = public["config"]
+    for (key, _) in secrets() {
+        secret[key] = public["config"]
             .as_object_mut()
             .unwrap()
-            .remove(*key)
+            .remove(key)
             .unwrap_or(Value::Null);
     }
     save(&dir.join("secrets.json"), &secret)?;
@@ -54,8 +46,8 @@ fn read_entry(id: &str) -> Result<Value> {
     }
     let secret = load(&dir.join("secrets.json"))?;
     entry["bearerToken"] = secret["bearerToken"].clone();
-    for key in SECRETS {
-        entry["config"][*key] = secret.get(*key).cloned().unwrap_or_else(|| json!(""));
+    for (key, _) in secrets() {
+        entry["config"][key] = secret.get(key).cloned().unwrap_or_else(|| json!(""));
     }
     Ok(entry)
 }
@@ -154,7 +146,7 @@ fn normalize(mut entry: Value) -> Result<Value> {
     } else {
         "tunnel"
     });
-    crate::ingress::validate_config(&config)?;
+    crate::ingress::config::validate_config(&config)?;
     entry["config"] = config;
     if entry["auth"] == "bearer" {
         let token = string(&entry, "bearerToken");
@@ -213,17 +205,19 @@ impl Service {
                 .unwrap_or_else(|| PathBuf::from("codex")),
         );
         let agents = crate::agents::AgentHost::new()?;
+        let execution = crate::execution::Execution::new(control.clone(), agents.clone());
         let token = id() + &id();
         let mut ingresses = BTreeMap::new();
         for id in load(&index)?.as_array().ok_or("invalid ingress index")? {
             let entry = normalize(read_entry(id.as_str().ok_or("invalid ingress id")?)?)?;
-            let ingress = Ingress::new(entry, control.clone(), agents.clone(), token.clone())?;
+            let ingress = Ingress::new(entry, execution.clone(), token.clone())?;
             ingresses.insert(ingress.id.clone(), ingress);
         }
         let subscriptions =
             crate::subscriptions::SubscriptionService::new(control.clone(), agents.clone())?;
         Ok(Arc::new(Self {
             subscriptions,
+            execution,
             control,
             agents,
             token,
@@ -239,9 +233,13 @@ impl Service {
         let mut service = Self::new()?;
         let service_mut = Arc::get_mut(&mut service).unwrap();
         service_mut.control = Control::new(binary);
+        service_mut.execution = crate::execution::Execution::new(
+            service_mut.control.clone(),
+            service_mut.agents.clone(),
+        );
         for ingress in service_mut.ingresses.get_mut().values_mut() {
             let i = Arc::get_mut(ingress).unwrap();
-            i.control = service_mut.control.clone();
+            i.execution = service_mut.execution.clone();
             i.connected.store(true, Ordering::SeqCst);
         }
         Ok(service)
@@ -284,8 +282,8 @@ impl Service {
         } else {
             let mut config = defaults();
             config["configured"] = json!(false);
-            for key in SECRETS {
-                config.as_object_mut().unwrap().remove(*key);
+            for (key, _) in secrets() {
+                config.as_object_mut().unwrap().remove(key);
             }
             json!({"config":config,"core":{"desktop":{"state":"unknown"},"appServer":{"state":"unknown"},"chatgpt":{},"logs":[]},"connection":{"running":false,"mcpUrl":""},"connector":{"state":"stopped"},"tunnel":{"state":"stopped","error":""},"logs":[],"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"taskApprovalEnabled":self.control.approval_mode()?,"autoOpenCodex":self.control.auto_open_codex()?})
         };
@@ -496,12 +494,7 @@ impl Service {
             let entry = normalize(
                 json!({"id":format!("draft-{}",id()),"name":"Pending connection","controlSource":"custom","transport":"https","enabled":true,"auth":"bearer","bearerToken":id()+&id(),"toolPolicy":{"allowlist":[]},"config":config}),
             )?;
-            let draft = Ingress::new(
-                entry,
-                self.control.clone(),
-                self.agents.clone(),
-                self.token.clone(),
-            )?;
+            let draft = Ingress::new(entry, self.execution.clone(), self.token.clone())?;
             let draft_id = draft.id.clone();
             draft
                 .port
@@ -669,12 +662,7 @@ impl Service {
                 return Err("ingress already exists".into());
             }
             store_entry(&entry)?;
-            let i = Ingress::new(
-                entry,
-                self.control.clone(),
-                self.agents.clone(),
-                self.token.clone(),
-            )?;
+            let i = Ingress::new(entry, self.execution.clone(), self.token.clone())?;
             let mut entries = self.ingresses.lock().await;
             let mut ids: Vec<_> = entries.keys().cloned().collect();
             ids.push(i.id.clone());
@@ -781,14 +769,9 @@ impl Service {
                 }
                 let entry = normalize(entry)?;
                 store_entry(&entry)?;
-                let next = Ingress::new(
-                    entry.clone(),
-                    self.control.clone(),
-                    self.agents.clone(),
-                    self.token.clone(),
-                )?;
-                let identity_changed = crate::ingress::binding(&previous["config"])
-                    != crate::ingress::binding(&entry["config"])
+                let next = Ingress::new(entry.clone(), self.execution.clone(), self.token.clone())?;
+                let identity_changed = crate::ingress::config::binding(&previous["config"])
+                    != crate::ingress::config::binding(&entry["config"])
                     || ["transport", "controlSource", "auth", "bearerToken"]
                         .iter()
                         .any(|key| previous[*key] != entry[*key]);
@@ -923,12 +906,7 @@ impl Service {
                 json!({"id":"default","name":"ChatGPT","controlSource":"chatgpt","transport":if https{"https"}else{"openai-tunnel"},"auth":if https{"none"}else{"openai"},"enabled":true,"toolPolicy":"all","config":body}),
             )?;
             store_entry(&entry)?;
-            let ingress = Ingress::new(
-                entry,
-                self.control.clone(),
-                self.agents.clone(),
-                self.token.clone(),
-            )?;
+            let ingress = Ingress::new(entry, self.execution.clone(), self.token.clone())?;
             save(&root().join("ingresses/index.json"), &json!(["default"]))?;
             self.ingresses
                 .lock()

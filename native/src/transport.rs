@@ -224,12 +224,27 @@ fn is_wait(request: &Value) -> bool {
         "codex_wait" | "agent_wait"
     )
 }
+async fn call_tool(s: &Arc<crate::ingress::Ingress>, name: &str, args: Value) -> Result<Value> {
+    // A closed ingress and invalid verification challenge remain protocol errors.
+    if !s.connected.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Connection closed".into());
+    }
+    let result = s.call(name, args).await;
+    if name == "connector_verify" && result.is_err() {
+        return result;
+    }
+    let (value, error) = match result {
+        Ok(value) => (crate::kernel::results::page_output(value)?, false),
+        Err(error) => (json!({"error":crate::egress::failure(&error)}), true),
+    };
+    Ok(crate::egress::tool(value, error))
+}
 pub async fn mcp(s: &Arc<Service>, request: Value) -> Result<Value> {
     mcp_ingress(&s.primary().await?, request).await
 }
 pub async fn mcp_ingress(s: &Arc<crate::ingress::Ingress>, request: Value) -> Result<Value> {
     let origin = s.origin().await;
-    crate::ingress::ORIGIN
+    crate::kernel::origin::ORIGIN
         .scope(origin, dispatch(s, request))
         .await
 }
@@ -272,21 +287,22 @@ async fn dispatch(s: &Arc<crate::ingress::Ingress>, request: Value) -> Result<Va
                 .unwrap_or(json!({}));
             let started = std::time::Instant::now();
             let response = tokio::select! {
-                result = s.call(string(&request["params"], "name"), args.clone()) => result,
+                result = call_tool(s, string(&request["params"], "name"), args.clone()) => result,
                 _ = cancel.changed() => {
                     let mut value = json!({"state":"unconfirmed","reason":"wait-cancelled","threadId":args["threadId"],"turnId":args["turnId"],"runtimeStatus":"unknown","recordedStatus":null,"finalResponse":null,"interaction":[],"changed":false,"conditionMet":false,"observedAt":null,"returnedAt":now(),"elapsedMs":started.elapsed().as_millis() as u64});
                     if request["params"]["name"] == "agent_wait" {
                         value["agent"] = args["agent"].clone();
                         value["taskId"] = args["taskId"].clone();
                     }
-                    Ok(json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":{"result":value},"isError":false}))
+                    Ok(crate::egress::tool(value, false))
                 }
             };
             drop(guard);
             response
         }
         "tools/call" => {
-            s.call(
+            call_tool(
+                s,
                 string(&request["params"], "name"),
                 request["params"]
                     .get("arguments")

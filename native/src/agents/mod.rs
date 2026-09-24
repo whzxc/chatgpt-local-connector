@@ -36,12 +36,8 @@ fn task_path(task: &str) -> Result<PathBuf> {
 fn save_task(task: &Value) -> Result<()> {
     save(&task_path(string(task, "taskId"))?, task)
 }
-fn receipt_path(request: &str) -> Result<PathBuf> {
-    uuid::Uuid::parse_str(request).map_err(|_| "INVALID_REQUEST_ID")?;
-    Ok(root()
-        .join("agents/requests")
-        .join(format!("{request}.json")))
-}
+const RECEIPTS: crate::kernel::receipts::ReceiptStore =
+    crate::kernel::receipts::ReceiptStore::new("agents/requests");
 impl AgentHost {
     pub fn new() -> Result<Arc<Self>> {
         let mut drivers = HashMap::from([
@@ -360,11 +356,11 @@ impl AgentHost {
         for (request, job) in self.operations.lock().await.drain() {
             job.job.abort();
             let _ = job.job.await;
-            if let Ok(path) = receipt_path(&request) {
+            if let Ok(path) = RECEIPTS.path(&request) {
                 if let Ok(mut r) = load(&path) {
                     if r["state"] == "pending" {
                         r["state"] = json!("unconfirmed");
-                        let _ = save(&path, &r);
+                        let _ = RECEIPTS.checkpoint(&mut r);
                     }
                 }
             }
@@ -412,14 +408,10 @@ impl AgentHost {
         }
         if name == "agent_request" {
             let request = string(&args, "requestId");
-            let path = receipt_path(request)?;
             let mut ops = self.operations.lock().await;
-            let mut r = load(&path)?;
+            let mut r = RECEIPTS.read(request, &self.session)?;
             if r["agent"] != agent {
                 return Err("AGENT_REQUEST_MISMATCH".into());
-            }
-            if r["backendSession"] != self.session && r["state"] == "pending" {
-                r["state"] = json!("unconfirmed");
             }
             let action = args["action"].as_str().unwrap_or("read");
             if !matches!(action, "read" | "approve" | "bypass" | "reject") {
@@ -437,9 +429,9 @@ impl AgentHost {
                     r["previousTurnId"] =
                         self.task(agent, string(&r, "taskId")).await?["turnId"].clone();
                 }
-                save(&path, &r)?;
+                RECEIPTS.checkpoint(&mut r)?;
                 if action != "reject" {
-                    let job = self.launch(driver.clone(), r.clone(), path);
+                    let job = self.launch(driver.clone(), r.clone());
                     ops.insert(request.into(), job);
                 }
             }
@@ -501,19 +493,11 @@ impl AgentHost {
             return Err("UNKNOWN_TOOL".into());
         }
         let request = string(&args, "requestId");
-        let path = receipt_path(request)?;
+        RECEIPTS.path(request)?;
         let digest = hash(json!({"name":name,"args":args}).to_string());
         let mut ops = self.operations.lock().await;
-        if path.exists() {
-            let mut r = load(&path)?;
-            if r["digest"] != digest {
-                return Err("REQUEST_ID_CONFLICT".into());
-            }
-            if r["backendSession"] != self.session && r["state"] == "pending" {
-                r["state"] = json!("unconfirmed");
-            }
-            r["replayed"] = json!(true);
-            return Ok(r);
+        if let Some(receipt) = RECEIPTS.replay(request, &digest, &self.session)? {
+            return Ok(receipt);
         }
         let task = if name == "agent_create" {
             id()
@@ -540,34 +524,20 @@ impl AgentHost {
         } else {
             self.task(agent, &task).await?["turnId"].clone()
         };
-        let receipt = json!({"origin":crate::ingress::current_origin(),"requestId":request,"agent":agent,"taskId":task,"previousTurnId":previous_turn,"operation":name,"arguments":args,"digest":digest,"state":if needs_approval{"awaiting-approval"}else{"pending"},"backendSession":self.session,"createdAt":now(),"nextAction":"agent_request"});
-        private_dir(path.parent().ok_or("INVALID_RECEIPT_PATH")?)?;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options
-            .open(&path)
-            .map_err(|e| format!("RECEIPT_RESERVATION_FAILED:{e}"))?;
-        use std::io::Write;
-        file.write_all(receipt.to_string().as_bytes())
-            .map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
+        let receipt = json!({"origin":crate::kernel::origin::current_origin(),"requestId":request,"agent":agent,"taskId":task,"previousTurnId":previous_turn,"operation":name,"arguments":args,"digest":digest,"state":if needs_approval{"awaiting-approval"}else{"pending"},"backendSession":self.session,"createdAt":now(),"nextAction":"agent_request"});
+        RECEIPTS.reserve(&receipt)?;
         if !needs_approval {
-            let job = self.launch(driver.clone(), receipt.clone(), path);
+            let job = self.launch(driver.clone(), receipt.clone());
             ops.insert(request.into(), job);
         }
         Ok(receipt)
     }
-    fn launch(self: &Arc<Self>, driver: AgentDriver, mut r: Value, path: PathBuf) -> Operation {
+    fn launch(self: &Arc<Self>, driver: AgentDriver, mut r: Value) -> Operation {
         let host = self.clone();
         let task = string(&r, "taskId").to_owned();
         let previous_turn = r["previousTurnId"].clone();
         let origin = r["origin"].clone();
-        let job = tokio::spawn(crate::ingress::ORIGIN.scope(origin, async move {
+        let job = tokio::spawn(crate::kernel::origin::ORIGIN.scope(origin, async move {
             let result = host
                 .perform(
                     &driver,
@@ -593,9 +563,8 @@ impl AgentHost {
                     r["error"] = json!(e);
                 }
             }
-            r["updatedAt"] = json!(now());
             // Failure leaves the original pending receipt; replay is always prohibited.
-            let _ = save(&path, &r);
+            let _ = RECEIPTS.checkpoint(&mut r);
             host.operations.lock().await.remove(string(&r, "requestId"));
             host.wake.notify_waiters();
         }));
@@ -616,7 +585,7 @@ impl AgentHost {
         self.ensure_enabled(agent).await?;
         let p = if name == "agent_create" {
             let _guard = self.lifecycle.lock().await;
-            let t = json!({"origin":crate::ingress::current_origin(),"taskId":task,"agent":agent,"runtimeSource":driver.protocol(),"sessionId":null,"threadId":null,"cwd":args["cwd"],"title":args["title"],"status":"starting","createdAt":now(),"updatedAt":now(),"metadata":{},"output":""});
+            let t = json!({"origin":crate::kernel::origin::current_origin(),"taskId":task,"agent":agent,"runtimeSource":driver.protocol(),"sessionId":null,"threadId":null,"cwd":args["cwd"],"title":args["title"],"status":"starting","createdAt":now(),"updatedAt":now(),"metadata":{},"output":""});
             save_task(&t)?;
             let p = match driver.start(t, false, self.wake.clone()).await {
                 Ok(p) => p,

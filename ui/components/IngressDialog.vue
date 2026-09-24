@@ -14,6 +14,7 @@ import { displayMessage } from '../messages';
 import { api, useConnector, type Ingress } from '../composables/useConnector';
 import { connectionForm } from '../composables/connectionForm';
 import ConnectionFields from './ConnectionFields.vue';
+import { providers, needsCredential, credentialSaved, clearCredentials, secretFields, fixedDomain } from '../ingressConfig';
 
 const props = defineProps<{ origin: { x: number; y: number; size: number }; ingress?: Ingress; defaultChatGPT?: boolean }>();
 const emit = defineEmits<{ close: []; saved: [ingress: Ingress] }>();
@@ -34,35 +35,25 @@ const presetNames = Object.fromEntries(curatedSources.map(p => [p.id, p.displayN
 const entry = ref(props.ingress);
 const toolPolicy = ref<ToolPolicy>(props.ingress?.toolPolicy ?? 'all');
 const providerReady = computed(() => {
-  const config=entry.value?.config;
-  switch(form.httpsProvider) {
-    case 'custom': return true;
-    case 'cloudflare': return form.cloudflareMode==='quick' || !!(form.cloudflareToken.trim() || config?.hasCloudflareToken);
-    case 'ngrok': return !!(form.ngrokAuthtoken.trim() || config?.hasNgrokAuthtoken);
-    case 'pinggy': return form.pinggyMode==='quick' || !!(form.pinggyToken.trim() || config?.hasPinggyToken);
-    case 'localxpose': return !!(form.localxposeAccessToken.trim() || config?.hasLocalxposeAccessToken);
-  }
+  const key = providers[form.httpsProvider].credential;
+  return !needsCredential(form) || !!key && !!(form[key].trim() || credentialSaved(entry.value?.config, key));
 });
 const canSave = computed(() => !!name.value.trim() && new TextEncoder().encode(name.value).length<=120
   && (selected.value!=='custom' || /^[a-zA-Z0-9_-]+$/.test(source.value))
   && (form.connectionMode==='tunnel'
     ? /^tunnel_[a-zA-Z0-9_-]+$/.test(form.tunnelId) && !!(form.apiKey.trim() || entry.value?.config.hasApiKey)
     : providerReady.value
-      && (form.httpsProvider!=='custom' || validDomain(form.domain))
-      && (form.httpsProvider!=='cloudflare' || form.cloudflareMode!=='named' || validDomain(form.domain))
-      && (form.httpsProvider!=='pinggy' || form.pinggyMode==='quick' || validDomain(form.domain))
-      && (form.httpsProvider!=='localxpose' || validDomain(form.domain))
-      && (form.httpsProvider!=='ngrok' || form.ngrokMode==='quick' || validDomain(form.domain))));
+      && (!fixedDomain(form) || validDomain(form.domain))));
 function configPayload() {
   const config:Record<string,unknown>={...form};
   delete config.connectionMode;
   delete config.domain;
-  const fixed = form.connectionMode==='https' && (form.httpsProvider==='custom' || form.httpsProvider==='cloudflare' && form.cloudflareMode==='named' || form.httpsProvider==='ngrok' && form.ngrokMode==='named' || form.httpsProvider==='pinggy' && form.pinggyMode==='named' || form.httpsProvider==='localxpose' && form.localxposeMode==='named');
+  const fixed = fixedDomain(form);
   const origin = fixed && form.domain.trim() ? `https://${form.domain.trim()}` : '';
   config.httpsUrl = origin ? `${origin}/mcp` : '';
   config.ngrokEndpoint = form.httpsProvider==='ngrok' ? origin : '';
   if(!entry.value) { delete config.httpsPort; delete config.httpsHost; }
-  for(const key of ['apiKey','cloudflareToken','ngrokAuthtoken','pinggyToken','localxposeAccessToken']) if(!config[key]) delete config[key];
+  for(const { key } of secretFields) if(!config[key]) delete config[key];
   return config;
 }
 const selected = ref(props.ingress ? (controlSource(props.ingress.controlSource)?.curated ? props.ingress.controlSource : 'custom') : props.defaultChatGPT ? 'chatgpt' : '');
@@ -82,7 +73,7 @@ function generateToken() {
 watch([()=>form.connectionMode,()=>form.httpsProvider,()=>form.cloudflareMode,()=>form.ngrokMode,()=>form.pinggyMode,()=>form.localxposeMode],()=>{
   form.domain='';
 });
-onUnmounted(() => { form.apiKey=''; form.cloudflareToken=''; form.ngrokAuthtoken=''; form.pinggyToken=''; form.localxposeAccessToken=''; });
+onUnmounted(() => { clearCredentials(form); });
 const model = computed(() => ({...form, name:name.value, source:source.value}));
 function choose(value: string, event: MouseEvent) {
   const button = event.currentTarget as HTMLElement;
@@ -112,7 +103,7 @@ async function save() {
     if(entry.value) await api(`ingress/${entry.value.id}/stop`,'POST');
     const saved=await api<Ingress>(entry.value ? `ingress/${entry.value.id}` : 'ingress',entry.value ? 'PUT':'POST',{...metadata,transport:form.connectionMode==='tunnel' ? 'openai-tunnel':'https',config:configPayload()});
     entry.value=saved;
-    form.apiKey='';form.cloudflareToken='';form.ngrokAuthtoken=''; form.pinggyToken=''; form.localxposeAccessToken='';
+    clearCredentials(form);
     await refresh().catch(() => {});
     savedIngress=saved; formOpen.value=false;
   });

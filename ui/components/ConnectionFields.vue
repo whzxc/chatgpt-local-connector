@@ -7,22 +7,24 @@ import { providerIcons } from '../assets/brand-reserve/providers';
 import { required, domainRule } from '../formRules';
 import { useConnector, type Config } from '../composables/useConnector';
 import type { ConnectionForm } from '../composables/connectionForm';
+import { providers, needsCredential, credentialSaved, clearCredentials } from '../ingressConfig';
 import { openUrl } from '../platform';
 const props = defineProps<{ form: ConnectionForm; config?: Config; disabled?: boolean; allowTunnel: boolean; recommendTunnel?: boolean }>();
 const { run } = useConnector();
 const https = computed(() => props.form.connectionMode === 'https');
-const named = computed(() => props.form.httpsProvider === 'cloudflare' && props.form.cloudflareMode === 'named');
-const modeField = computed(() => ({cloudflare:'cloudflareMode',ngrok:'ngrokMode',pinggy:'pinggyMode'} as const)[props.form.httpsProvider as 'cloudflare'|'ngrok'|'pinggy']);
+const provider = computed(() => providers[props.form.httpsProvider]);
+const modeField = computed(() => provider.value.modes.length > 1 ? provider.value.mode : null);
 const credential = computed(() => {
-  switch(props.form.httpsProvider) {
-    case 'cloudflare': return {field:'cloudflareToken' as const, saved:props.config?.hasCloudflareToken, label:'Tunnel Token', help:'https://dash.cloudflare.com/'};
-    case 'pinggy': return {field:'pinggyToken' as const, saved:props.config?.hasPinggyToken, label:'Token', help:'https://dashboard.pinggy.io/'};
-    case 'localxpose': return {field:'localxposeAccessToken' as const, saved:props.config?.hasLocalxposeAccessToken, label:'Access Token', help:'https://localxpose.io/dashboard/access'};
-    default: return {field:'ngrokAuthtoken' as const, saved:props.config?.hasNgrokAuthtoken, label:'Authtoken', help:'https://dashboard.ngrok.com/get-started/your-authtoken'};
-  }
+  const field = provider.value.credential;
+  return field ? { field, saved: credentialSaved(props.config, field), label: provider.value.credentialLabel, help: provider.value.help } : null;
 });
-const needsToken = computed(() => named.value || props.form.httpsProvider==='ngrok' || props.form.httpsProvider==='localxpose' || props.form.httpsProvider==='pinggy' && props.form.pinggyMode==='named');
-onUnmounted(() => { props.form.apiKey=''; props.form.cloudflareToken=''; props.form.ngrokAuthtoken=''; props.form.pinggyToken=''; props.form.localxposeAccessToken=''; });
+const providerOptions = computed(() => Object.entries(providers).map(([value, provider]) => ({
+  value, label: value === 'custom' ? t('customDomain') : provider.label,
+  icon: providerIcons[value as keyof typeof providerIcons],
+})));
+const modeOptions = computed(() => provider.value.modes.map(value => ({ value, label: t(value === 'named' ? 'fixedDomain' : 'temporaryDomain') })));
+const needsToken = computed(() => needsCredential(props.form));
+onUnmounted(() => clearCredentials(props.form));
 </script>
 <template>
   <NFormItem v-if="allowTunnel" :label="t('connectionMethod')" path="connectionMode">
@@ -41,9 +43,9 @@ onUnmounted(() => { props.form.apiKey=''; props.form.cloudflareToken=''; props.f
     </NFormItem>
   </template>
   <template v-else>
-    <NFormItem :label="t('provider') + (allowTunnel ? '' : ' - HTTPS MCP')" path="httpsProvider"><SingleChoice v-model:value="form.httpsProvider" :label="t('provider')" :disabled="disabled" :options="[{label:'ngrok',value:'ngrok',icon:providerIcons.ngrok},{label:'Cloudflare',value:'cloudflare',icon:providerIcons.cloudflare},{label:'Pinggy',value:'pinggy',icon:providerIcons.pinggy},{label:'LocalXpose',value:'localxpose',icon:providerIcons.localxpose},{label:t('customDomain'),value:'custom',icon:providerIcons.custom}]"/></NFormItem>
-    <NFormItem v-if="modeField" :label="t('domainMode')" :path="modeField"><SingleChoice v-model:value="form[modeField]" :label="t('domainMode')" :disabled="disabled" :options="[{label:t('fixedDomain'),value:'named'},{label:t('temporaryDomain'),value:'quick'}]"/></NFormItem>
-    <NFormItem v-if="needsToken" :path="credential.field" :rule="credential.saved ? undefined : required()" :show-require-mark="false" :label-props="{for:''}" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}"><template #label><span class="credential-heading"><span>{{credential.label}} <NText type="error">*</NText></span><NButton text type="primary" size="tiny" :aria-label="t('getToken')" @click="run('provider-help',()=>openUrl(credential.help))">{{t('getToken')}}</NButton></span></template><NInput v-model:value="form[credential.field]" type="password" show-password-on="click" :disabled="disabled" :placeholder="credential.saved ? t('savedLeaveBlankToKeep') : t('getToken')" :input-props="{autocomplete:'new-password','aria-label':credential.label}"/></NFormItem>
+    <NFormItem :label="t('provider') + (allowTunnel ? '' : ' - HTTPS MCP')" path="httpsProvider"><SingleChoice v-model:value="form.httpsProvider" :label="t('provider')" :disabled="disabled" :options="providerOptions"/></NFormItem>
+    <NFormItem v-if="modeField" :label="t('domainMode')" :path="modeField"><SingleChoice v-model:value="form[modeField]" :label="t('domainMode')" :disabled="disabled" :options="modeOptions"/></NFormItem>
+    <NFormItem v-if="needsToken && credential" :path="credential.field" :rule="credential.saved ? undefined : required()" :show-require-mark="false" :label-props="{for:''}" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}"><template #label><span class="credential-heading"><span>{{credential.label}} <NText type="error">*</NText></span><NButton text type="primary" size="tiny" :aria-label="t('getToken')" @click="run('provider-help',()=>openUrl(provider.help))">{{t('getToken')}}</NButton></span></template><NInput v-model:value="form[credential.field]" type="password" show-password-on="click" :disabled="disabled" :placeholder="credential.saved ? t('savedLeaveBlankToKeep') : t('getToken')" :input-props="{autocomplete:'new-password','aria-label':credential.label}"/></NFormItem>
     <NFormItem v-if="form.httpsProvider==='ngrok' && form.ngrokMode==='named'" :label="t('domain')" path="domain" :rule="domainRule()" :show-require-mark="false" :label-props="{for:''}" :label-style="{width:'100%',display:'grid',gridTemplateColumns:'minmax(0,1fr)'}">
       <template #label><span class="credential-heading"><span>{{t('domain')}} <NText type="error">*</NText></span><NButton text type="primary" :aria-label="t('getDomain')" size="tiny" @click="run('domain-help',()=>openUrl('https://dashboard.ngrok.com/domains'))">{{t('getDomain')}}</NButton></span></template>
       <NInput v-model:value="form.domain" :disabled="disabled" :input-props="{'aria-label':t('domain')}" placeholder="your-domain.ngrok-free.dev"/>

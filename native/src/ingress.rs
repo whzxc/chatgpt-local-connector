@@ -1,9 +1,6 @@
-tokio::task_local! { pub static ORIGIN: crate::Value; }
-pub fn current_origin() -> crate::Value {
-    ORIGIN.try_with(Clone::clone).unwrap_or(crate::Value::Null)
-}
-use crate::control::Control;
+pub mod config;
 use crate::*;
+use config::{binding, configured, secrets, validate_config};
 use std::{
     process::Stdio,
     time::{Duration, Instant},
@@ -17,8 +14,7 @@ pub struct Ingress {
     pub meta: Mutex<Value>,
     pub(crate) oauth: Mutex<crate::oauth::OAuth>,
     dir: PathBuf,
-    pub control: Arc<Control>,
-    pub agents: Arc<crate::agents::AgentHost>,
+    pub(crate) execution: Arc<crate::execution::Execution>,
     pub(crate) wait_calls: crate::transport::WaitCalls,
     pub token: String,
     pub port: std::sync::atomic::AtomicU16,
@@ -42,8 +38,7 @@ pub struct Ingress {
 impl Ingress {
     pub fn new(
         entry: Value,
-        control: Arc<Control>,
-        agents: Arc<crate::agents::AgentHost>,
+        execution: Arc<crate::execution::Execution>,
         token: String,
     ) -> Result<Arc<Self>> {
         let ingress_id = string(&entry, "id").to_owned();
@@ -60,8 +55,7 @@ impl Ingress {
             meta: Mutex::new(entry),
             oauth: Mutex::new(crate::oauth::OAuth::new(&dir)?),
             dir: dir.clone(),
-            control,
-            agents,
+            execution,
             wait_calls: Default::default(),
             token,
             port: std::sync::atomic::AtomicU16::new(0),
@@ -130,10 +124,7 @@ impl Ingress {
     }
     pub async fn allows(&self, name: &str) -> bool {
         let meta = self.meta.lock().await;
-        meta["toolPolicy"] == "all"
-            || meta["toolPolicy"]["allowlist"]
-                .as_array()
-                .is_some_and(|tools| tools.iter().any(|v| v == name))
+        crate::kernel::policy::allows(&meta["toolPolicy"], name)
     }
     pub async fn authenticate(&self, header: &str) -> bool {
         let meta = self.meta.lock().await;
@@ -173,14 +164,10 @@ impl Ingress {
     pub async fn log(&self, level: &str, msg: &str) {
         let settings = self.settings.lock().await;
         let mut msg = msg.replace(&self.token, "[REDACTED]");
-        for key in [
-            "apiKey",
-            "tunnelId",
-            "ngrokAuthtoken",
-            "cloudflareToken",
-            "pinggyToken",
-            "localxposeAccessToken",
-        ] {
+        for key in secrets()
+            .map(|(key, _)| key)
+            .chain(std::iter::once("tunnelId"))
+        {
             let value = string(&settings, key);
             if !value.is_empty() {
                 msg = msg.replace(value, "[REDACTED]");
@@ -322,19 +309,10 @@ impl Ingress {
         drop(lifecycle);
         let mut config = self.settings.lock().await.clone();
         config["configured"] = json!(configured(&config));
-        config["hasCloudflareToken"] = json!(!string(&config, "cloudflareToken").is_empty());
-        config.as_object_mut().unwrap().remove("cloudflareToken");
-        config["hasNgrokAuthtoken"] = json!(!string(&config, "ngrokAuthtoken").is_empty());
-        config.as_object_mut().unwrap().remove("ngrokAuthtoken");
-        for (key, flag) in [
-            ("pinggyToken", "hasPinggyToken"),
-            ("localxposeAccessToken", "hasLocalxposeAccessToken"),
-        ] {
+        for (key, flag) in secrets() {
             config[flag] = json!(!string(&config, key).is_empty());
             config.as_object_mut().unwrap().remove(key);
         }
-        config["hasApiKey"] = json!(!string(&config, "apiKey").is_empty());
-        config.as_object_mut().unwrap().remove("apiKey");
         let mcp_url = self.mcp_url.lock().await.clone();
         let v = self.verification.lock().await;
         let chat = json!({"ingressId":self.id,"controlSource":self.meta.lock().await["controlSource"],"code":v["code"],"verifiedAt":v["verifiedAt"],"challengeVerifiedAt":v["challengeVerifiedAt"]});
@@ -352,7 +330,7 @@ impl Ingress {
         }
         let core = json!({"chatgpt":chat,"transport":{"state":state,"error":error}});
         Ok(
-            json!({"discoveredUrls":urls,"core":core,"connection":{"running":running,"updateAvailable":false,"mcpUrl":mcp_url},"config":config,"tunnel":{"state":state,"error":error},"connector":{"state":state},"logs":logs,"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"deviceName":std::env::var("HOSTNAME").unwrap_or_else(|_|"本机".into()),"taskApprovalEnabled":self.control.approval_mode()?,"autoOpenCodex":self.control.auto_open_codex()?,"chatgptUrl":"https://chatgpt.com/plugins"}),
+            json!({"discoveredUrls":urls,"core":core,"connection":{"running":running,"updateAvailable":false,"mcpUrl":mcp_url},"config":config,"tunnel":{"state":state,"error":error},"connector":{"state":state},"logs":logs,"version":env!("CARGO_PKG_VERSION"),"platform":if cfg!(target_os="macos"){"darwin"}else{"win32"},"deviceName":std::env::var("HOSTNAME").unwrap_or_else(|_|"本机".into()),"taskApprovalEnabled":self.execution.approval_mode()?,"autoOpenCodex":self.execution.auto_open_codex()?,"chatgptUrl":"https://chatgpt.com/plugins"}),
         )
     }
     pub async fn stop(&self) -> Result<()> {
@@ -641,9 +619,11 @@ impl Ingress {
             ("GET", "config/credentials") => {
                 let bearer = self.meta.lock().await["bearerToken"].clone();
                 let settings = self.settings.lock().await;
-                Ok(
-                    json!({"bearerToken":bearer,"apiKey":settings["apiKey"],"ngrokAuthtoken":settings["ngrokAuthtoken"],"cloudflareToken":settings["cloudflareToken"],"pinggyToken":settings["pinggyToken"],"localxposeAccessToken":settings["localxposeAccessToken"]}),
-                )
+                let mut credentials = json!({"bearerToken":bearer});
+                for (key, _) in secrets() {
+                    credentials[key] = settings[key].clone();
+                }
+                Ok(credentials)
             }
             ("GET", "service") => Ok(
                 json!({"supported":cfg!(target_os="macos")||cfg!(windows),"enabled":autostart_enabled().await}),
@@ -689,31 +669,20 @@ impl Ingress {
                 } else {
                     body
                 };
-                for field in [
-                    "configured",
-                    "hasApiKey",
-                    "hasNgrokAuthtoken",
-                    "hasCloudflareToken",
-                    "hasPinggyToken",
-                    "hasLocalxposeAccessToken",
-                ] {
+                for field in secrets()
+                    .map(|(_, flag)| flag)
+                    .chain(std::iter::once("configured"))
+                {
                     body.as_object_mut().ok_or("配置格式错误")?.remove(field);
                 }
                 validate_config(&body)?;
-                if string(&body, "apiKey").is_empty() {
-                    body["apiKey"] = self.settings.lock().await["apiKey"].clone();
-                }
-                if string(&body, "ngrokAuthtoken").is_empty() {
-                    body["ngrokAuthtoken"] = self.settings.lock().await["ngrokAuthtoken"].clone();
-                }
-                if string(&body, "cloudflareToken").is_empty() {
-                    body["cloudflareToken"] = self.settings.lock().await["cloudflareToken"].clone();
-                }
-                for key in ["pinggyToken", "localxposeAccessToken"] {
+                let settings = self.settings.lock().await;
+                for (key, _) in secrets() {
                     if string(&body, key).is_empty() {
-                        body[key] = self.settings.lock().await[key].clone();
+                        body[key] = settings[key].clone();
                     }
                 }
+                drop(settings);
                 if !configured(&body) {
                     return Err("请补齐所选连接方式的信息".into());
                 }
@@ -791,13 +760,9 @@ impl Ingress {
             save(&self.dir.join("verification.json"), &next)?;
             *v = next;
             Ok(json!({"code":args["code"],"received":true,"origin":self.origin().await}))
-        } else if name == "agent_context" {
-            let policy = self.meta.lock().await["toolPolicy"].clone();
-            crate::context::read(&self.agents, &self.control, args, policy).await
-        } else if name == "agents" || name.starts_with("agent_") {
-            self.agents.tool(&self.control, name, args).await
         } else {
-            self.control.tool(name, args).await
+            let policy = self.meta.lock().await["toolPolicy"].clone();
+            self.execution.call(name, args, policy).await
         };
         if result.is_ok() && name != "connector_verify" {
             let mut v = self.verification.lock().await;
@@ -818,181 +783,8 @@ impl Ingress {
             ),
         )
         .await;
-        let (value, error) = match result {
-            Ok(v) => (crate::control::page_output(v)?, false),
-            Err(e) => (json!({"error":crate::control::failure(&e)}), true),
-        };
-        Ok(
-            json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":{"result":value},"isError":error}),
-        )
+        result
     }
-}
-pub(crate) fn configured(s: &Value) -> bool {
-    if s["connectionMode"] == "https" {
-        match string(s, "httpsProvider") {
-            "cloudflare" => {
-                s["cloudflareMode"] == "quick"
-                    || (!string(s, "cloudflareToken").is_empty()
-                        && !string(s, "httpsUrl").is_empty())
-            }
-            "ngrok" => {
-                !string(s, "ngrokAuthtoken").is_empty()
-                    && (s["ngrokMode"] == "quick" || !string(s, "ngrokEndpoint").is_empty())
-            }
-            "pinggy" => {
-                s["pinggyMode"] == "quick"
-                    || (!string(s, "pinggyToken").is_empty() && !string(s, "httpsUrl").is_empty())
-            }
-            "localxpose" => {
-                !string(s, "localxposeAccessToken").is_empty()
-                    && s["localxposeMode"] == "named"
-                    && !string(s, "httpsUrl").is_empty()
-            }
-            _ => !string(s, "httpsUrl").is_empty(),
-        }
-    } else {
-        !string(s, "tunnelId").is_empty() && !string(s, "apiKey").is_empty()
-    }
-}
-pub(crate) fn binding(s: &Value) -> String {
-    if s["connectionMode"] == "https" {
-        hash(
-            json!([
-                "https",
-                s["httpsProvider"],
-                s["cloudflareMode"],
-                s["cloudflareToken"],
-                s["ngrokAuthtoken"],
-                s["ngrokMode"],
-                s["ngrokEndpoint"],
-                s["pinggyMode"],
-                s["pinggyToken"],
-                s["localxposeMode"],
-                s["localxposeAccessToken"],
-                s["localxposeRegion"],
-                s["httpsUrl"],
-                s["httpsHost"],
-                s["httpsPort"]
-            ])
-            .to_string(),
-        )
-    } else {
-        hash(json!([s["tunnelId"], s["apiKey"]]).to_string())
-    }
-}
-pub(crate) fn validate_config(s: &Value) -> Result<()> {
-    let o = s.as_object().ok_or("配置格式错误")?;
-    crate::proxy::validate(
-        s["proxyMode"].as_str().ok_or("代理模式无效")?,
-        s["proxyUrl"].as_str().ok_or("代理地址无效")?,
-    )?;
-    if o.len() != 22 || !s["autoStart"].is_boolean() {
-        return Err("配置字段错误".into());
-    }
-    for (k, max) in [
-        ("connectionMode", 16),
-        ("httpsProvider", 16),
-        ("cloudflareMode", 16),
-        ("cloudflareToken", 4096),
-        ("ngrokAuthtoken", 4096),
-        ("ngrokMode", 16),
-        ("ngrokEndpoint", 2048),
-        ("pinggyMode", 16),
-        ("pinggyToken", 4096),
-        ("localxposeMode", 16),
-        ("localxposeAccessToken", 4096),
-        ("localxposeRegion", 16),
-        ("httpsUrl", 2048),
-        ("httpsHost", 128),
-        ("tunnelId", 160),
-        ("apiKey", 4096),
-        ("tunnelBinary", 2048),
-        ("codexBinary", 2048),
-    ] {
-        let v = s[k].as_str().ok_or("配置类型错误")?;
-        if v.len() > max || v.contains('\0') {
-            return Err("配置内容无效".into());
-        }
-    }
-    if !["tunnel", "https"].contains(&string(s, "connectionMode")) {
-        return Err("连接方式无效".into());
-    }
-    if !["cloudflare", "ngrok", "pinggy", "localxpose", "custom"]
-        .contains(&string(s, "httpsProvider"))
-    {
-        return Err("HTTPS 服务商无效".into());
-    }
-    if !["quick", "named"].contains(&string(s, "cloudflareMode")) {
-        return Err("Cloudflare 模式无效".into());
-    }
-    if string(s, "cloudflareToken")
-        .chars()
-        .any(char::is_whitespace)
-    {
-        return Err("请粘贴 Tunnel Token，不要粘贴完整安装命令".into());
-    }
-    if string(s, "ngrokAuthtoken").chars().any(char::is_whitespace) {
-        return Err("ngrok Authtoken 不能包含空白字符".into());
-    }
-    if !["quick", "named"].contains(&string(s, "ngrokMode")) {
-        return Err("ngrok 模式无效".into());
-    }
-    if s["httpsProvider"] == "ngrok"
-        && s["ngrokMode"] == "named"
-        && !string(s, "ngrokEndpoint").is_empty()
-    {
-        crate::https_tunnel::ngrok_endpoint(string(s, "ngrokEndpoint"))?;
-    }
-    for (provider, mode, token) in [
-        ("Pinggy", "pinggyMode", "pinggyToken"),
-        ("LocalXpose", "localxposeMode", "localxposeAccessToken"),
-    ] {
-        if !["quick", "named"].contains(&string(s, mode)) {
-            return Err(format!("{provider} 模式无效"));
-        }
-        if string(s, token).chars().any(char::is_whitespace) {
-            return Err(format!("{provider} Token 不能包含空白字符"));
-        }
-    }
-    if s["httpsProvider"] == "localxpose" && s["localxposeMode"] == "quick" {
-        return Err("LocalXpose 临时域名会重定向首次请求，请使用固定域名".into());
-    }
-    if !["us", "eu", "ap"].contains(&string(s, "localxposeRegion")) {
-        return Err("LocalXpose 区域无效".into());
-    }
-    string(s, "httpsHost")
-        .parse::<std::net::IpAddr>()
-        .map_err(|_| "监听地址必须是 IP 地址")?;
-    if !s["httpsPort"]
-        .as_u64()
-        .is_some_and(|p| (1..=65535).contains(&p))
-    {
-        return Err("监听端口无效".into());
-    }
-    let url = string(s, "httpsUrl");
-    if !url.is_empty() {
-        let u = reqwest::Url::parse(url).map_err(|_| "HTTPS URL 无效")?;
-        if u.scheme() != "https"
-            || u.host_str().is_none()
-            || u.path() != "/mcp"
-            || u.query().is_some()
-            || u.fragment().is_some()
-            || !u.username().is_empty()
-            || u.password().is_some()
-        {
-            return Err("请填写以 https:// 开头、以 /mcp 结尾且不含凭据或查询参数的地址".into());
-        }
-    }
-    let id = string(s, "tunnelId");
-    if !id.is_empty()
-        && (!id.starts_with("tunnel_")
-            || !id
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-'))
-    {
-        return Err("Tunnel ID 格式错误".into());
-    }
-    Ok(())
 }
 pub(crate) fn write_secret(path: &Path, text: &str) -> Result<()> {
     use std::io::Write;

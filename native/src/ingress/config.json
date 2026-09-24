@@ -1,0 +1,151 @@
+{
+  "fields": {
+    "tunnelId": {
+      "default": "",
+      "maxBytes": 160
+    },
+    "apiKey": {
+      "default": "",
+      "maxBytes": 4096,
+      "savedFlag": "hasApiKey"
+    },
+    "tunnelBinary": {
+      "default": "tunnel-client",
+      "maxBytes": 2048
+    },
+    "codexBinary": {
+      "default": "codex",
+      "maxBytes": 2048
+    },
+    "autoStart": {
+      "default": false
+    },
+    "cloudflareMode": {
+      "default": "quick",
+      "maxBytes": 16
+    },
+    "cloudflareToken": {
+      "default": "",
+      "maxBytes": 4096,
+      "savedFlag": "hasCloudflareToken"
+    },
+    "httpsProvider": {
+      "default": "cloudflare",
+      "maxBytes": 16
+    },
+    "ngrokAuthtoken": {
+      "default": "",
+      "maxBytes": 4096,
+      "savedFlag": "hasNgrokAuthtoken"
+    },
+    "ngrokMode": {
+      "default": "quick",
+      "maxBytes": 16
+    },
+    "ngrokEndpoint": {
+      "default": "",
+      "maxBytes": 2048
+    },
+    "pinggyMode": {
+      "default": "quick",
+      "maxBytes": 16
+    },
+    "pinggyToken": {
+      "default": "",
+      "maxBytes": 4096,
+      "savedFlag": "hasPinggyToken"
+    },
+    "localxposeMode": {
+      "default": "named",
+      "maxBytes": 16
+    },
+    "localxposeAccessToken": {
+      "default": "",
+      "maxBytes": 4096,
+      "savedFlag": "hasLocalxposeAccessToken"
+    },
+    "localxposeRegion": {
+      "default": "us",
+      "maxBytes": 16
+    },
+    "proxyMode": {
+      "default": "system"
+    },
+    "proxyUrl": {
+      "default": ""
+    },
+    "connectionMode": {
+      "default": "tunnel",
+      "maxBytes": 16
+    },
+    "httpsUrl": {
+      "default": "",
+      "maxBytes": 2048
+    },
+    "httpsHost": {
+      "default": "127.0.0.1",
+      "maxBytes": 128
+    },
+    "httpsPort": {
+      "default": 8787
+    }
+  },
+  "providers": {
+    "ngrok": {
+      "label": "ngrok",
+      "mode": "ngrokMode",
+      "modes": [
+        "named",
+        "quick"
+      ],
+      "credential": "ngrokAuthtoken",
+      "tokenRequired": "always",
+      "credentialLabel": "Authtoken",
+      "help": "https://dashboard.ngrok.com/get-started/your-authtoken"
+    },
+    "cloudflare": {
+      "label": "Cloudflare",
+      "mode": "cloudflareMode",
+      "modes": [
+        "named",
+        "quick"
+      ],
+      "credential": "cloudflareToken",
+      "tokenRequired": "named",
+      "credentialLabel": "Tunnel Token",
+      "help": "https://dash.cloudflare.com/"
+    },
+    "pinggy": {
+      "label": "Pinggy",
+      "mode": "pinggyMode",
+      "modes": [
+        "named",
+        "quick"
+      ],
+      "credential": "pinggyToken",
+      "tokenRequired": "named",
+      "credentialLabel": "Token",
+      "help": "https://dashboard.pinggy.io/"
+    },
+    "localxpose": {
+      "label": "LocalXpose",
+      "mode": "localxposeMode",
+      "modes": [
+        "named"
+      ],
+      "credential": "localxposeAccessToken",
+      "tokenRequired": "always",
+      "credentialLabel": "Access Token",
+      "help": "https://localxpose.io/dashboard/access"
+    },
+    "custom": {
+      "label": "customDomain",
+      "mode": null,
+      "modes": [],
+      "credential": null,
+      "tokenRequired": "never",
+      "credentialLabel": "",
+      "help": ""
+    }
+  }
+}

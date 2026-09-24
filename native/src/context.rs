@@ -30,12 +30,7 @@ pub fn excerpt(raw: &str) -> Value {
     text.truncate(end);
     json!({"state":"available","text":text,"truncated":truncated,"sha256":hash(&text),"hashScope":"redacted-excerpt"})
 }
-fn allowed(policy: &Value, name: &str) -> bool {
-    policy == "all"
-        || policy["allowlist"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|v| v == name))
-}
+use crate::kernel::policy::allows as allowed;
 fn next(out: &mut Value, policy: &Value, tool: &str, arguments: Value) {
     if allowed(policy, tool) {
         out["readNext"]
