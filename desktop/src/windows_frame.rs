@@ -4,53 +4,89 @@ use windows_sys::Win32::{
         Dwm::{
             DwmDefWindowProc, DwmExtendFrameIntoClientArea, DwmGetWindowAttribute,
             DwmSetWindowAttribute, DWMWA_CAPTION_BUTTON_BOUNDS, DWMWA_CAPTION_COLOR,
-            DWMWA_COLOR_NONE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+            DWMWA_TEXT_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE,
         },
         Gdi::*,
     },
     UI::{
         Controls::MARGINS,
         HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
-        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+        Shell::{DefSubclassProc, GetWindowSubclass, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::*,
     },
 };
 
 #[tauri::command]
-pub fn set_windows_appearance(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
-    let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as HWND;
+pub async fn set_windows_appearance(
+    window: tauri::WebviewWindow,
+    dark: bool,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Ok(());
+    }
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as usize;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    // Subclass data belongs to the window thread, including theme updates from IPC.
+    window
+        .run_on_main_thread(move || unsafe {
+            let hwnd = hwnd as HWND;
+            let mut previous = 0;
+            let result = if GetWindowSubclass(hwnd, Some(frame_proc), 1, &mut previous) == 0 {
+                Err("Windows frame is not installed".to_string())
+            } else if SetWindowSubclass(hwnd, Some(frame_proc), 1, usize::from(dark)) == 0 {
+                Err(std::io::Error::last_os_error().to_string())
+            } else {
+                let result = apply_appearance(hwnd, dark);
+                clip_webview(hwnd);
+                RedrawWindow(
+                    hwnd,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    RDW_FRAME | RDW_INVALIDATE,
+                );
+                result
+            };
+            let _ = sender.send(result);
+        })
+        .map_err(|e| e.to_string())?;
+    receiver.await.map_err(|e| e.to_string())?
+}
+
+unsafe fn apply_appearance(hwnd: HWND, dark: bool) -> Result<(), String> {
     // DWM keeps ownership of the glyphs, hover states and Snap Layouts.
     let caption: u32 = if dark { 0x000000 } else { 0xffffff };
-    let dark = i32::from(dark);
-    unsafe {
-        DwmSetWindowAttribute(
+    let text: u32 = if dark { 0xffffff } else { 0x000000 };
+    for (attribute, value) in [
+        (DWMWA_USE_IMMERSIVE_DARK_MODE, u32::from(dark)),
+        (DWMWA_CAPTION_COLOR, caption),
+        (DWMWA_TEXT_COLOR, text),
+    ] {
+        let result = DwmSetWindowAttribute(
             hwnd,
-            DWMWA_CAPTION_COLOR as u32,
-            &caption as *const _ as _,
-            4,
+            attribute as u32,
+            &value as *const _ as _,
+            std::mem::size_of_val(&value) as u32,
         );
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
-            &dark as *const _ as _,
-            4,
-        );
-        clip_webview(hwnd);
+        if result < 0 {
+            return Err(format!(
+                "DwmSetWindowAttribute({attribute}) failed: 0x{:08X}",
+                result as u32
+            ));
+        }
     }
     Ok(())
 }
 
 pub fn install(window: &tauri::WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
     let hwnd = window.hwnd()?.0 as HWND;
+    let dark = window.theme()? == tauri::Theme::Dark;
     unsafe {
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_CAPTION_COLOR as u32,
-            &DWMWA_COLOR_NONE as *const _ as _,
-            4,
-        );
-        if SetWindowSubclass(hwnd, Some(frame_proc), 1, 0) == 0 {
+        if SetWindowSubclass(hwnd, Some(frame_proc), 1, usize::from(dark)) == 0 {
             return Err(std::io::Error::last_os_error().into());
+        }
+        // Older Windows versions may not support caption colors; keep the window usable.
+        if let Err(error) = apply_appearance(hwnd, dark) {
+            eprintln!("{error}");
         }
         extend_frame(hwnd);
         SetWindowPos(
@@ -146,7 +182,7 @@ unsafe extern "system" fn frame_proc(
     wparam: WPARAM,
     lparam: LPARAM,
     id: usize,
-    _: usize,
+    dark: usize,
 ) -> LRESULT {
     if msg == WM_NCCALCSIZE && wparam != 0 {
         let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
@@ -161,7 +197,35 @@ unsafe extern "system" fn frame_proc(
         return 0;
     }
     let mut result = 0;
-    if DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut result) != 0 {
+    let handled = DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut result) != 0;
+    if matches!(
+        msg,
+        WM_ACTIVATE
+            | WM_THEMECHANGED
+            | WM_SETTINGCHANGE
+            | WM_DWMCOLORIZATIONCOLORCHANGED
+            | WM_DWMCOMPOSITIONCHANGED
+            | WM_DPICHANGED
+    ) {
+        if !handled {
+            result = DefSubclassProc(hwnd, msg, wparam, lparam);
+        }
+        // Apply after default processing so activation/system accent changes cannot
+        // leave the exposed native caption buttons using the system accent color.
+        if let Err(error) = apply_appearance(hwnd, dark != 0) {
+            eprintln!("{error}");
+        }
+        extend_frame(hwnd);
+        clip_webview(hwnd);
+        RedrawWindow(
+            hwnd,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            RDW_FRAME | RDW_INVALIDATE,
+        );
+        return result;
+    }
+    if handled {
         return result;
     }
     match msg {
@@ -202,12 +266,6 @@ unsafe extern "system" fn frame_proc(
                     return HTTOP as isize;
                 }
             }
-            return result;
-        }
-        WM_DWMCOMPOSITIONCHANGED | WM_DPICHANGED => {
-            let result = DefSubclassProc(hwnd, msg, wparam, lparam);
-            extend_frame(hwnd);
-            clip_webview(hwnd);
             return result;
         }
         WM_NCDESTROY => {

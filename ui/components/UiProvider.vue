@@ -25,8 +25,12 @@ const systemDark = usePreferredDark();
 const dark = computed(() => props.forceDark || theme.value === 'dark' || (theme.value === 'system' && systemDark.value));
 if (isDesktop && navigator.platform.toLowerCase().includes('win')) {
   watch(dark, async () => {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('set_windows_appearance', { dark: dark.value });
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_windows_appearance', { dark: dark.value });
+    } catch (error) {
+      console.error('Failed to update Windows frame appearance', error);
+    }
   }, { immediate: true });
 }
 function tint(hex: string, target: number, amount: number) {
