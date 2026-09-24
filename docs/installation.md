@@ -35,21 +35,34 @@ Compare the result with the corresponding entry in `SHA256SUMS.txt` for the same
 
 ## Homebrew
 
-Install using the repository's Cask:
+Releases include `local-connector.rb` with the exact DMG checksum. The source repository
+is not a Homebrew tap. Create a local tap once (see the [Homebrew tap guide](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap)):
 
 ```sh
-brew tap whzxc/chatgpt-local-connector https://github.com/whzxc/chatgpt-local-connector
-brew install --cask local-connector
+brew tap-new local/local-connector
 ```
 
-If quarantine blocks launch, after verifying the source you can use `brew install --cask --no-quarantine local-connector`. To replace a manually installed app with the same name, quit it and use `brew install --cask --force local-connector`. The Cask does not automatically run sudo or clear all extended attributes from the app.
-
-In-app updates work directly. To update through Homebrew:
+Download the Cask from the desired published release into that tap, then install it:
 
 ```sh
-brew update
-brew upgrade --cask --greedy local-connector
+curl --fail --location https://github.com/whzxc/chatgpt-local-connector/releases/latest/download/local-connector.rb \
+  --output "$(brew --repository local/local-connector)/Casks/local-connector.rb"
+brew install --cask local/local-connector/local-connector
 ```
+
+The Cask is available on releases that include this asset. For earlier releases, use the DMG directly.
+The Cask does not run sudo or clear extended attributes. To replace a manually installed
+app with the same name, quit it and add `--force` to the install command.
+
+In-app updates work directly. For Homebrew updates, download the latest Cask again using
+the same command, then run:
+
+```sh
+brew upgrade --cask --greedy local/local-connector/local-connector
+```
+
+`brew update` alone does not refresh this local Cask. Existing installations from the old
+repository tap can continue using in-app updates or reinstall from this local tap.
 
 ## Windows installation
 

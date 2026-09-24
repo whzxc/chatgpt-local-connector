@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import path from 'node:path';
 const pkg = JSON.parse(await readFile('package.json', 'utf8'));
-const version = pkg.version;
+let version = pkg.version;
 const repo = 'whzxc/chatgpt-local-connector';
 const base = `https://github.com/${repo}/releases/download/v${version}`;
 const config = JSON.parse(await readFile('desktop/tauri.conf.json', 'utf8'));
@@ -35,7 +35,7 @@ async function validateManifest(manifest, dir) {
   }
 }
 async function check() {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('更新通道只发布稳定 semver 版本');
+  parts(version);
   if (config.version !== version) throw new Error('Tauri version mismatch');
   for (const file of ['native/Cargo.toml', 'desktop/Cargo.toml']) {
     if (!(await readFile(file, 'utf8')).includes(`version = "${version}"`)) throw new Error(`${file}: version mismatch`);
@@ -49,15 +49,13 @@ async function check() {
     if (!(await readFile(file,'utf8')).includes(`name = "${name}"\nversion = "${version}"`)) throw new Error(`${file}: ${name} version mismatch`);
   }
   if (!config.plugins.updater.pubkey || config.plugins.updater.endpoints[0] !== `https://github.com/${repo}/releases/latest/download/latest.json`) throw new Error('Updater configuration is incomplete');
-  if (!(await readFile('CHANGELOG.md','utf8')).includes(`## ${version}`)) throw new Error('Missing release notes');
   if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version}`) throw new Error('Tag/version mismatch');
   console.log(`Release configuration ready: v${version}, ${repo}`);
 }
 async function cask(dir) {
   const dmg = (await files(dir)).filter(f => f.endsWith('_aarch64.dmg'));
   if (dmg.length !== 1) throw new Error('Expected one Apple Silicon DMG');
-  await mkdir('Casks', { recursive: true });
-  await writeFile('Casks/local-connector.rb', `cask "local-connector" do
+  await writeFile(path.join(dir, 'local-connector.rb'), `cask "local-connector" do
   version "${version}"
   sha256 "${hash(await readFile(dmg[0]))}"
 
@@ -78,13 +76,76 @@ async function cask(dir) {
 end
 `);
 }
-if (mode === 'check') await check();
-else if (mode === 'sync') {
+const releaseFiles = ['package.json','package-lock.json','desktop/tauri.conf.json','native/Cargo.toml','desktop/Cargo.toml','native/Cargo.lock','desktop/Cargo.lock','CHANGELOG.md'];
+const git = (...args) => execFileSync('git', args, {encoding:'utf8'}).trim();
+function parts(value) {
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) throw new Error(`Invalid stable version: ${value}`);
+  return value.split('.').map(BigInt);
+}
+function compare(a, b) {
+  const x=parts(a), y=parts(b);
+  for (let i=0;i<3;i++) if(x[i]!==y[i]) return x[i]>y[i]?1:-1;
+  return 0;
+}
+function latestPublished() {
+  const tags=execFileSync('gh',['api',`repos/${repo}/releases`,'--paginate','--jq','.[] | select(.draft == false and .prerelease == false) | .tag_name'],{encoding:'utf8'}).trim();
+  return tags ? tags.split('\n').map(tag=>tag.replace(/^v/,'')).sort(compare).at(-1) : undefined;
+}
+function changesSince(previous) {
+  const range=previous ? `refs/tags/v${previous}..HEAD` : 'HEAD';
+  if(previous) {
+    git('rev-parse','--verify',`refs/tags/v${previous}`);
+    git('merge-base','--is-ancestor',`refs/tags/v${previous}`,'HEAD');
+  }
+  const messages=git('log','--no-merges','--format=%s',range);
+  if(!messages) throw new Error('No changes since the published release');
+  return messages.split('\n').map(subject=>`- ${subject}`).join('\n');
+}
+async function notes() {
+  const changelog=await readFile('CHANGELOG.md','utf8');
+  const entry=changelog.split(`## ${version}\n`)[1]?.split('\n## ')[0]?.trim();
+  if(entry) return entry;
+  const previous=latestPublished();
+  return changesSince(previous);
+}
+async function sync() {
   config.version = version; await writeJson('desktop/tauri.conf.json', config);
   const lock = await json('package-lock.json'); lock.version = version; lock.packages[''].version = version; await writeJson('package-lock.json',lock);
   for (const file of ['native/Cargo.toml','desktop/Cargo.toml']) await writeFile(file,(await readFile(file,'utf8')).replace(/^version = "[^"]+"/m,`version = "${version}"`));
   for (const file of ['native/Cargo.lock','desktop/Cargo.lock']) await writeFile(file,(await readFile(file,'utf8')).replace(/(name = "(?:connector-core|local-connector-desktop)"\nversion = ")[^"]+/g,(_, prefix) => prefix + version));
   await check();
+}
+async function prepare() {
+  if(args.some(arg=>arg!=='--dry-run')) throw new Error('prepare [--dry-run]');
+  parts(version);
+  const previous=latestPublished();
+  const bump=previous && compare(version,previous)<=0;
+  const target=bump ? [...parts(previous).slice(0,2),parts(previous)[2]+1n].join('.') : version;
+  console.log(`Published: ${previous ?? 'none'}; current: ${version}; target: ${target}; release commits: ${bump?1:0}`);
+  if(args.includes('--dry-run')) return;
+  if(git('status','--porcelain')) throw new Error('Commit or set aside existing changes before release preparation');
+  if(!bump) { await check(); return; }
+  await check();
+  git('var','GIT_AUTHOR_IDENT');
+  git('var','GIT_COMMITTER_IDENT');
+  const changes=changesSince(previous);
+  const changelog=await readFile('CHANGELOG.md','utf8');
+  version=target; pkg.version=target;
+  await writeJson('package.json',pkg);
+  const entry=`## ${version}\n\n${changes}\n\n`;
+  if(!changelog.includes(`## ${version}\n`)) await writeFile('CHANGELOG.md',/^## /m.test(changelog)?changelog.replace(/(?=^## )/m,entry):changelog.trimEnd()+'\n\n'+entry);
+  await sync();
+  git('add','--',...releaseFiles);
+  git('commit','-m',`chore(release): 更新版本至 ${version}`,'--',...releaseFiles);
+}
+if (mode === 'prepare') await prepare();
+else if (mode === 'published-check') {
+  await check(); const previous=latestPublished();
+  if(previous && compare(version,previous)<=0) throw new Error(`Version ${version} must exceed published ${previous}; run release:prepare before rehearsal`);
+}
+else if (mode === 'check') await check();
+else if (mode === 'sync') {
+  await sync();
 } else if (mode === 'stage') {
   await check();
   const [target, input, output] = args;
@@ -114,15 +175,14 @@ else if (mode === 'sync') {
   await check(); const [dir] = args;
   const fragments = await Promise.all(['darwin-aarch64','windows-x86_64'].map(t=>json(path.join(dir,t+'.json'))));
   if (fragments.some(f=>f.version!==version)) throw new Error('Mixed release versions');
-  const notes = (await readFile('CHANGELOG.md','utf8')).split(`## ${version}\n`)[1]?.split('\n## ')[0]?.trim();
-  if (!notes) throw new Error('Missing release notes');
-  await writeJson(path.join(dir,'latest.json'),{version,notes,pub_date:new Date().toISOString(),platforms:Object.assign({},...fragments.map(f=>f.platforms))});
+  const releaseNotes = await notes();
+  await writeJson(path.join(dir,'latest.json'),{version,notes:releaseNotes,pub_date:new Date().toISOString(),platforms:Object.assign({},...fragments.map(f=>f.platforms))});
   await validateManifest(await json(path.join(dir,'latest.json')), dir);
-  await writeFile(path.join(dir,'release-notes.md'),notes+'\n');
-  const assets = (await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)).sort();
+  await writeFile(path.join(dir,'release-notes.md'),releaseNotes+'\n');
+  await cask(dir);
+  const assets = (await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||path.basename(f)==='local-connector.rb').sort();
   verifySignatures(assets.filter(f=>/\.(exe|gz)$/.test(f)));
   await writeFile(path.join(dir,'SHA256SUMS.txt'),(await Promise.all(assets.map(async f=>`${hash(await readFile(f))}  ${path.basename(f)}`))).join('\n')+'\n');
-  await cask(dir);
   console.log('Complete release metadata and Homebrew cask generated. Nothing uploaded.');
 } else if (mode === 'cask') await cask(args[0]);
 else if (mode === 'verify-published') {
@@ -143,7 +203,7 @@ else if (mode === 'verify-published') {
     if (attempt === 11) throw new Error('Published latest.json mismatch');
     await delay(5000);
   }
-  const assets=(await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||f.endsWith('SHA256SUMS.txt'));
+  const assets=(await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||f.endsWith('SHA256SUMS.txt')||f.endsWith('local-connector.rb'));
   for(const file of assets) if(hash(await fetchBytes(`${base}/${path.basename(file)}`))!==hash(await readFile(file))) throw new Error(`Published asset mismatch: ${path.basename(file)}`);
   console.log('Published manifest and all artifact bytes match the verified local release.');
-} else throw new Error('Expected check, sync, stage, finalize, cask, or verify-published');
+} else throw new Error('Expected prepare, published-check, check, sync, stage, finalize, cask, or verify-published');

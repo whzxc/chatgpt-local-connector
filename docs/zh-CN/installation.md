@@ -37,21 +37,31 @@ shasum -a 256 Local.Connector_0.6.2_aarch64.dmg
 
 ## Homebrew
 
-使用仓库提供的 Cask 安装：
+Release 附带 `local-connector.rb`，内含实际 DMG 校验值。源码仓库不再充当 Homebrew tap。
+首次使用时创建本地 tap（参见 [Homebrew tap 文档](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap)）：
 
 ```sh
-brew tap whzxc/chatgpt-local-connector https://github.com/whzxc/chatgpt-local-connector
-brew install --cask local-connector
+brew tap-new local/local-connector
 ```
 
-若遇到隔离提示，可在确认来源后使用 `brew install --cask --no-quarantine local-connector`。已手动安装同名 App 时，退出 App 后使用 `brew install --cask --force local-connector` 覆盖。Cask 不自动执行 sudo 或清除整个 App 的扩展属性。
-
-应用内更新可直接使用；通过 Homebrew 更新则执行：
+将已发布版本的 Cask 下载到该 tap，再安装：
 
 ```sh
-brew update
-brew upgrade --cask --greedy local-connector
+curl --fail --location https://github.com/whzxc/chatgpt-local-connector/releases/latest/download/local-connector.rb \
+  --output "$(brew --repository local/local-connector)/Casks/local-connector.rb"
+brew install --cask local/local-connector/local-connector
 ```
+
+仅包含该附件的 Release 支持此方式；更早版本直接使用 DMG 安装。
+Cask 不自动执行 sudo 或清除扩展属性。替换手动安装的同名 App 时，先退出应用，再给安装命令添加 `--force`。
+
+应用内更新可直接使用。通过 Homebrew 更新时，先用上述下载命令刷新 Cask，再执行：
+
+```sh
+brew upgrade --cask --greedy local/local-connector/local-connector
+```
+
+仅执行 `brew update` 不会刷新这份本地配方。旧仓库 tap 的已有安装可继续使用应用内更新，或从本地 tap 重新安装。
 
 ## Windows 安装
 

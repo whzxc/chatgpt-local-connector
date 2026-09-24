@@ -26,6 +26,7 @@
     "precheck:native": "node tooling/prune-build-cache.mjs",
     "check:native": "cargo check --manifest-path desktop/Cargo.toml",
     "postcheck:native": "node tooling/prune-build-cache.mjs --keep=desktop/target/debug",
+    "release:prepare": "node tooling/release.mjs prepare",
     "release:check": "node tooling/release.mjs check",
     "release:sync": "node tooling/release.mjs sync",
     "release:preflight": "npm run check:format && npm run release:check && npm run check && npm test && npm run build && npm run check:native",

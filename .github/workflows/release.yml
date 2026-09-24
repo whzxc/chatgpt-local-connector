@@ -30,6 +30,7 @@ jobs:
           fetch-depth: 0
       - name: Gate | Validate version and release ref
         env:
+          GH_TOKEN: ${{ github.token }}
           PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
         shell: bash
         run: |
@@ -39,8 +40,8 @@ jobs:
           else
             test "$GITHUB_REF" = refs/heads/main || { echo 'Rehearsals must run on main.'; exit 1; }
           fi
-          node tooling/release.mjs check
-      - name: Gate | Find verified build matching source and cask
+          node tooling/release.mjs published-check
+      - name: Gate | Find verified build for the exact release commit
         id: artifacts
         if: github.event_name == 'push' || inputs.publish
         env:
@@ -51,20 +52,16 @@ jobs:
           runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?event=workflow_dispatch&branch=main&status=success&per_page=100" --jq '.workflow_runs[] | [.id, .head_sha] | @tsv')
           while IFS=$'\t' read -r run_id source_sha; do
             [ -n "$run_id" ] || continue
-            git cat-file -e "$source_sha^{commit}" 2>/dev/null || continue
-            git merge-base --is-ancestor "$source_sha" "$GITHUB_SHA" || continue
-            git diff --quiet "$source_sha" "$GITHUB_SHA" -- . ':!Casks/local-connector.rb' || continue
+            [ "$source_sha" = "$(git rev-parse HEAD)" ] || continue
             metadata="$RUNNER_TEMP/release-metadata-$run_id"
             if ! gh run download "$run_id" --name release-metadata --dir "$metadata"; then
               continue
             fi
-            if cmp -s Casks/local-connector.rb "$metadata/Casks/local-connector.rb"; then
-              echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
-              echo "Reusing verified build $run_id ($source_sha)."
-              exit 0
-            fi
+            echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+            echo "Reusing verified build $run_id ($source_sha)."
+            exit 0
           done <<< "$runs"
-          echo 'No successful main rehearsal matches this source and committed Cask. Run a rehearsal with passing checks and commit its exact Cask before tagging.'
+          echo 'No successful main rehearsal matches this exact commit. Run a rehearsal with passing checks before tagging; do not add a metadata commit.'
           exit 1
   checks:
     needs: gate
@@ -166,10 +163,11 @@ jobs:
           path: release-artifacts
           merge-multiple: true
       - name: Metadata | Finalize and verify all signatures
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: npm run release:finalize -- release-artifacts
-      - name: Verification | Committed cask matches the built DMG
-        if: github.event_name == 'push' || inputs.publish
-        run: git diff --exit-code -- Casks/local-connector.rb
+      - name: Verification | Release metadata leaves source unchanged
+        run: git diff --exit-code HEAD
       - name: Artifacts | Upload rehearsal metadata
         if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@v4
@@ -179,7 +177,7 @@ jobs:
             release-artifacts/latest.json
             release-artifacts/SHA256SUMS.txt
             release-artifacts/release-notes.md
-            Casks/local-connector.rb
+            release-artifacts/local-connector.rb
           retention-days: 14
       - name: Publish | Upload draft and publish
         if: github.event_name == 'push' || inputs.publish
@@ -188,12 +186,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node tooling/release.mjs published-check
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true || { echo 'Published releases are immutable; bump the version.'; exit 1; }
           else
             gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Local Connector $GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md
           fi
-          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.exe release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json --clobber
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.exe release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json release-artifacts/local-connector.rb --clobber
           gh release edit "$GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md --draft=false --latest
       - name: Verification | Public downloads
         if: github.event_name == 'push' || inputs.publish
