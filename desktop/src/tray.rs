@@ -141,11 +141,16 @@ fn position_panel(
             "right"
         };
         let panel_x = (point.x - panel_width / 2.).clamp(left, right - panel_width);
-        let x = if side == "left" { panel_x + panel_width - width } else { panel_x }
-            .clamp(left, right - width);
+        let x = if side == "left" {
+            panel_x + panel_width - width
+        } else {
+            panel_x
+        }
+        .clamp(left, right - width);
         let icon_pos = rect.position.to_physical::<f64>(scale);
         let icon_size = rect.size.to_physical::<f64>(scale);
-        let y = (icon_pos.y + icon_size.height + margin).clamp(top, top + available_height - height);
+        let y =
+            (icon_pos.y + icon_size.height + margin).clamp(top, top + available_height - height);
         window.set_size(tauri::PhysicalSize::new(width as u32, height as u32))?;
         window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32))?;
         return Ok(side);
