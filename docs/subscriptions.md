@@ -4,6 +4,24 @@ Quota monitoring uses the shared native core and works independently of ingress
 connections. A working CLI or a free plan does not guarantee that its provider exposes
 quota readings. Missing quota data is not treated as a full allowance.
 
+## Cached readings
+
+All providers persist their last successful reading in the private local state directory.
+On startup, the current credential fingerprint must match before a cached reading is
+shown. Restored readings are marked stale while quota refresh runs in the background;
+they do not trigger live quota alerts or consumption forecasts. Temporary network failures
+retain the last reading instead of blanking the display.
+
+Readings become stale after 15 minutes and are discarded after 24 hours. Expired quota
+windows are hidden immediately; windows without a reset time are discarded after 15 minutes.
+Disabling monitoring or a provider, removing credentials, authentication failures and
+credential changes invalidate the corresponding cache. Corrupt caches are ignored.
+Only successful readings are saved; transient errors never replace the last successful result.
+
+Quota refresh and usage history refresh are independent. Codex and Antigravity log scans,
+and Cursor account exports, update history after quota becomes available. A history failure
+preserves the previous history and does not turn a successful quota refresh into a failure.
+
 ## Sources
 
 | Brand | Data source and scope |

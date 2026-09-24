@@ -26,7 +26,7 @@ export function useSubscriptions() {
     if (snapshot.value && snapshot.value.instanceId !== next.instanceId) retired.add(snapshot.value.instanceId);
     snapshot.value = {...next, providers:next.providers.map(presentSubscription)}; error.value = '';
   }
-  async function read() { const before=snapshot.value; try { accept(await api<Snapshot>('subscriptions')); } catch (e) { if (!stopped && snapshot.value===before) { error.value = String(e); snapshot.value = undefined; } } }
+  async function read() { const before=snapshot.value; try { accept(await api<Snapshot>('subscriptions')); } catch (e) { if (!stopped && snapshot.value===before) { error.value = String(e); if (before) snapshot.value = {...before, providers:before.providers.map(p=>({...p, state:p.state==='ready'?'stale':p.state, refreshing:false}))}; } } }
   async function refresh(providerId: string) {
     await api('subscriptions/refresh', 'POST', { providerId });
     if (stopped) return;

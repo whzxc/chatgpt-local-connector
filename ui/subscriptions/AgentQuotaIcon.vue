@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue';
+import QuotaTimeTick from './QuotaTimeTick.vue';
 import ActivityArc from './ActivityArc.vue';
 import { useAgentActive } from '../composables/useAgentActivity';
 import { Bot } from '@lucide/vue';
@@ -14,7 +15,7 @@ const running = useAgentActive(() => props.agent);
 const provider = computed(() => snapshot?.value?.settings.enabled ? snapshot.value.providers.find(p => p.agentId === props.agent && p.eligible && p.selected) : undefined);
 const weekly = computed(() => {
   const p = provider.value;
-  if (!p || p.state !== 'ready' || p.error) return;
+  if (!p || !['ready', 'stale'].includes(p.state)) return;
   const pool = p.windows.find(w => w.id === p.displayWindowId)?.poolId;
   // Explicit weekly periods only; monthly/session readings never stand in for a week.
   const windows = p.windows.filter(w => ['weekly', 'weekly_all', 'seven_day', '10080 min', '604800 s'].includes(w.label)
@@ -29,6 +30,7 @@ const color = computed(() => provider.value && weekly.value ? readingStatus(week
     <svg v-if="weekly" class="quota-outline" viewBox="0 0 48 48" aria-hidden="true">
       <circle class="quota-track" cx="24" cy="24" r="21"/>
       <circle cx="24" cy="24" r="21" pathLength="100" :stroke="color" :stroke-dasharray="`${quotaValue(weekly)} 100`" transform="rotate(-90 24 24)"/>
+      <QuotaTimeTick v-if="provider" :provider="provider" :window="weekly" :center="24" :radius="21"/>
     </svg>
     <ActivityArc v-if="running"/>
     <span v-if="icons[agent]" class="agent-logo" v-html="icons[agent]" aria-hidden="true"/>

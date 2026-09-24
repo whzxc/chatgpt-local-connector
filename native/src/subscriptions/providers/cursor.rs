@@ -169,6 +169,9 @@ pub async fn read(
             }
         }
     }
+    Reading::new(windows, raw)
+}
+pub async fn history(client: &reqwest::Client, c: &Credential) -> Value {
     let now = chrono::Utc::now();
     let response = client
         .get("https://cursor.com/api/dashboard/export-usage-events-csv")
@@ -187,14 +190,13 @@ pub async fn read(
         ])
         .send()
         .await;
-    raw["history"] = match response {
+    match response {
         Ok(r) if r.status().is_success() => match limited_bytes(r, 32 * 1024 * 1024).await {
             Ok(bytes) => super::history::cursor_csv(&bytes),
             Err(_) => json!({"error":"history-unavailable"}),
         },
         _ => json!({"error":"history-unavailable"}),
-    };
-    Reading::new(windows, raw)
+    }
 }
 fn timestamp(v: &Value) -> Option<String> {
     date(v).or_else(|| {

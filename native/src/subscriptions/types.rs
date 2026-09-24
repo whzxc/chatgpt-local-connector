@@ -25,7 +25,7 @@ impl Default for Settings {
         }
     }
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaWindow {
     pub id: String,

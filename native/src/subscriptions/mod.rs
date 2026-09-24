@@ -1,4 +1,5 @@
 //! One core-owned subscription scheduler. No dependency on ingress or desktop.
+mod cache;
 mod providers;
 pub mod types;
 use crate::{agents::AgentHost, control::Control, *};
@@ -17,6 +18,7 @@ struct Slot {
     auth_paused: bool,
     reset_seen: Vec<String>,
     job: Option<tokio::task::AbortHandle>,
+    history_job: Option<tokio::task::AbortHandle>,
 }
 struct State {
     settings: Settings,
@@ -90,6 +92,7 @@ impl SubscriptionService {
                         auth_paused: false,
                         reset_seen: vec![],
                         job: None,
+                        history_job: None,
                     },
                 )
             })
@@ -144,11 +147,7 @@ impl SubscriptionService {
                     let mut ids = vec![];
                     for (id, slot) in &mut state.slots {
                         expire(slot);
-                        if enabled
-                            && slot.view.selected
-                            && slot.view.eligible
-                            && slot.job.is_none()
-                            && !slot.auth_paused
+                        if enabled && slot.view.selected && slot.view.eligible && slot.job.is_none()
                         {
                             let reset = slot
                                 .view
@@ -209,6 +208,9 @@ impl SubscriptionService {
             if let Some(slot) = state.slots.get_mut(id) {
                 slot.view.selected = enabled;
                 invalidate(slot);
+                if !enabled {
+                    cache::remove(id);
+                }
             }
         }
         self.publish(&mut state);
@@ -230,6 +232,9 @@ impl SubscriptionService {
             if slot.view.eligible != eligible {
                 slot.view.eligible = eligible;
                 invalidate(slot);
+                if !eligible {
+                    cache::remove(&slot.view.provider_id);
+                }
             }
         }
         self.publish(&mut state);
@@ -339,6 +344,9 @@ impl SubscriptionService {
                         invalidate(slot)
                     }
                     slot.view.selected = selected;
+                    if !settings.enabled || !selected {
+                        cache::remove(id);
+                    }
                 }
                 state.settings = settings;
                 self.publish(&mut state);
@@ -398,6 +406,7 @@ impl SubscriptionService {
                 let slot = state.slots.get_mut(id).unwrap();
                 invalidate(slot);
                 slot.fingerprint = None;
+                cache::remove(id);
                 slot.view.has_credential = path.is_file();
                 slot.view.credential_source = if slot.view.has_credential {
                     Some("saved-key".into())
@@ -454,6 +463,7 @@ impl SubscriptionService {
                     let changed = slot.fingerprint.as_ref() != Some(&credential.fingerprint);
                     if changed {
                         clear_reading(slot);
+                        cache::restore(slot, &credential.fingerprint);
                         slot.auth_paused = false;
                         slot.failures = 0;
                         slot.fingerprint = Some(credential.fingerprint.clone());
@@ -492,7 +502,11 @@ impl SubscriptionService {
             match result {
                 Ok(reading) => {
                     slot.view.windows = reading.windows;
+                    let history = slot.view.raw_usage.get("history").cloned();
                     slot.view.raw_usage = reading.raw_usage;
+                    if let Some(history) = history.filter(|_| providers::has_history(&id)) {
+                        slot.view.raw_usage["history"] = history;
+                    }
                     slot.view.account_blocked = reading.account_blocked;
                     slot.view.blocked_pool_ids = reading.blocked_pool_ids;
                     slot.view.observed_at = Some(now());
@@ -500,6 +514,7 @@ impl SubscriptionService {
                     slot.view.error = None;
                     slot.failures = 0;
                     slot.auth_paused = false;
+                    cache::persist(slot);
                 }
                 Err(error) => {
                     slot.failures += 1;
@@ -508,12 +523,10 @@ impl SubscriptionService {
                         "credentials-missing" | "credentials-expired" | "credential-access-denied"
                     );
                     if slot.auth_paused
-                        || matches!(
-                            error.code,
-                            "no-subscription" | "no-limits-reported" | "invalid-response"
-                        )
+                        || matches!(error.code, "no-subscription" | "no-limits-reported")
                     {
                         clear_reading(slot);
+                        cache::remove(&id);
                     }
                     slot.view.state = if slot.auth_paused {
                         "setup-required"
@@ -533,6 +546,43 @@ impl SubscriptionService {
                 }
             }
             expire(slot);
+            let history_needed = slot.view.state == "ready"
+                && slot.history_job.is_none()
+                && providers::has_history(&id);
+            if history_needed {
+                let service = s.clone();
+                let provider_id = id.clone();
+                let fingerprint = slot.fingerprint.clone();
+                slot.history_job = Some(
+                    tokio::spawn(async move {
+                        let history = tokio::time::timeout(
+                            Duration::from_secs(120),
+                            providers::read_history(
+                                &provider_id,
+                                &service.control,
+                                fingerprint.as_deref().unwrap_or(""),
+                            ),
+                        )
+                        .await
+                        .ok()
+                        .and_then(std::result::Result::ok);
+                        let mut state = service.state.lock().await;
+                        let slot = state.slots.get_mut(&provider_id).unwrap();
+                        if slot.generation != generation || slot.fingerprint != fingerprint {
+                            return;
+                        }
+                        slot.history_job = None;
+                        if let Some(history) = history
+                            .filter(|h| slot.view.observed_at.is_some() && h.get("error").is_none())
+                        {
+                            slot.view.raw_usage["history"] = history;
+                            cache::persist(slot);
+                            service.publish(&mut state);
+                        }
+                    })
+                    .abort_handle(),
+                );
+            }
             s.publish(&mut state);
         });
         slot.job = Some(job.abort_handle());
@@ -540,6 +590,9 @@ impl SubscriptionService {
     }
 }
 fn clear_reading(s: &mut Slot) {
+    if let Some(job) = s.history_job.take() {
+        job.abort();
+    }
     s.view.windows.clear();
     s.view.observed_at = None;
     s.view.raw_usage = Value::Null;
@@ -562,17 +615,24 @@ fn invalidate(s: &mut Slot) {
     s.reset_seen.clear();
 }
 fn expire(s: &mut Slot) {
-    let old = s.view.observed_at.as_ref().is_some_and(|v| {
-        chrono::DateTime::parse_from_rfc3339(v)
-            .is_ok_and(|d| chrono::Utc::now().signed_duration_since(d).num_seconds() >= 900)
-    });
-    if old {
-        s.view.windows.clear();
+    let age = s
+        .view
+        .observed_at
+        .as_ref()
+        .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+        .map(|d| chrono::Utc::now().signed_duration_since(d).num_seconds());
+    if age.is_some_and(|age| age >= 86400 || age < 0) {
+        clear_reading(s);
+        cache::remove(&s.view.provider_id);
+        s.view.state = "stale".into();
+    } else if age.is_some_and(|age| age >= 900) {
+        s.view.windows.retain(|w| w.resets_at.is_some());
         if s.view.state == "ready" {
-            s.view.state = "stale".into()
+            s.view.state = "stale".into();
         }
     }
 }
+
 fn validate(s: &Settings) -> Result<()> {
     if ![1, 3, 5, 10].contains(&s.refresh_minutes) {
         return Err("invalid subscription refresh interval".into());

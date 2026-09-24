@@ -252,7 +252,6 @@ pub async fn read(
                     _ => None,
                 };
                 if let Some(q) = quotas {
-                    raw["history"] = history::local("antigravity").await;
                     return Reading::new(q, raw);
                 }
             }
@@ -304,7 +303,7 @@ pub async fn read(
                 } else {
                     "models"
                 };
-                let mut raw = json!({"plan":plan,"history":history::local("antigravity").await});
+                let mut raw = json!({"plan":plan});
                 raw[key] = value;
                 return Reading::new(quotas, raw);
             }

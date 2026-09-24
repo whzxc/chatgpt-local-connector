@@ -7,7 +7,7 @@ pub async fn credential(control: &Control) -> std::result::Result<Credential, Fa
     let account = rpc
         .call("account/read", json!({"refreshToken":false}), 15000)
         .await
-        .map_err(|_| Failure::from("credentials-expired"))?;
+        .map_err(|_| Failure::from("network-error"))?;
     let a = &account["account"];
     if a.is_null() || a["type"] != "chatgpt" {
         return Err("credentials-missing".into());

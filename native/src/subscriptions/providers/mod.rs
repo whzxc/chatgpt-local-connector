@@ -3,7 +3,7 @@ mod claude;
 mod codex;
 mod cursor;
 mod grok;
-mod history;
+pub(super) mod history;
 mod kimi;
 mod opencode_go;
 use super::types::*;
@@ -111,10 +111,42 @@ pub async fn read(
     control: &Control,
 ) -> std::result::Result<Reading, Failure> {
     if id == "codex" {
-        let mut reading = codex::read(control, c).await?;
-        reading.raw_usage["history"] = history::local("codex").await;
-        return Ok(reading);
+        return codex::read(control, c).await;
     }
+    let client = client().await?;
+    match id {
+        "opencode-go" => opencode_go::read(&client, c).await,
+        "claude-code" => claude::read(&client, c).await,
+        "cursor" => cursor::read(&client, c).await,
+        "antigravity" => antigravity::read(&client, c).await,
+        "grok" => grok::read(&client, c).await,
+        "kimi-code" => kimi::read(&client, c).await,
+        _ => Err("invalid-response".into()),
+    }
+}
+pub(super) fn has_history(id: &str) -> bool {
+    matches!(id, "codex" | "antigravity" | "cursor")
+}
+pub(super) async fn read_history(
+    id: &str,
+    control: &Control,
+    fingerprint: &str,
+) -> std::result::Result<Value, Failure> {
+    let before = credential(id, control).await?;
+    if before.fingerprint != fingerprint {
+        return Err("credentials-expired".into());
+    }
+    let history = if id == "cursor" {
+        cursor::history(&client().await?, &before).await
+    } else {
+        history::local(id).await
+    };
+    if credential(id, control).await?.fingerprint != fingerprint {
+        return Err("credentials-expired".into());
+    }
+    Ok(history)
+}
+async fn client() -> std::result::Result<reqwest::Client, Failure> {
     let settings = load(&root().join("web/preferences.json"))
         .unwrap_or(json!({"proxyMode":"system","proxyUrl":""}));
     let proxy = crate::proxy::NetworkProxy::resolve(&settings)
@@ -128,16 +160,9 @@ pub async fn read(
         )
         .build()
         .map_err(|_| Failure::from("network-error"))?;
-    match id {
-        "opencode-go" => opencode_go::read(&client, c).await,
-        "claude-code" => claude::read(&client, c).await,
-        "cursor" => cursor::read(&client, c).await,
-        "antigravity" => antigravity::read(&client, c).await,
-        "grok" => grok::read(&client, c).await,
-        "kimi-code" => kimi::read(&client, c).await,
-        _ => Err("invalid-response".into()),
-    }
+    Ok(client)
 }
+
 async fn get(request: reqwest::RequestBuilder) -> std::result::Result<Value, Failure> {
     let response = request
         .send()
