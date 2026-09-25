@@ -13,6 +13,7 @@ export function presentSubscription(provider: ProviderSnapshot): ProviderSnapsho
   let availableResetCount: number | undefined;
   let resetCredits: ProviderSnapshot['resetCredits'];
   if (provider.agentId === 'codex') {
+    windows = windows.filter(w => w.poolId !== 'base_model_inference' && w.scope !== 'gpt-reserve');
     const groups = Object.values(object(raw.rateLimitsByLimitId));
     plan = groups.map(group => text(object(group).planType)).find(Boolean)
       ?? text(object(raw.rateLimits).planType);
@@ -40,5 +41,6 @@ export function presentSubscription(provider: ProviderSnapshot): ProviderSnapsho
   }
   if (plan?.trim().toLowerCase() === 'free') plan = 'Free';
   const history = raw.history && typeof raw.history === 'object' ? raw.history as UsageHistory : undefined;
-  return {...provider, windows, plan, availableResetCount, resetCredits, history};
+  const displayWindowId = windows.some(w => w.id === provider.displayWindowId) ? provider.displayWindowId : windows[0]?.id;
+  return {...provider, windows, displayWindowId, plan, availableResetCount, resetCredits, history};
 }
