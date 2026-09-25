@@ -270,62 +270,11 @@ fn io_reason(e: std::io::Error) -> String {
     }
     .into()
 }
-fn sensitive(path: &Path) -> bool {
-    path.components().any(|c| {
-        let n = c.as_os_str().to_string_lossy().to_lowercase();
-        n == ".env"
-            || n.starts_with(".env.")
-            || n.starts_with("id_rsa")
-            || n.starts_with("id_ed25519")
-            || n.starts_with("id_ecdsa")
-            || n.starts_with("id_dsa")
-            || n.starts_with("service-account")
-            || [
-                ".ssh",
-                ".aws",
-                ".azure",
-                ".config",
-                ".gnupg",
-                ".cloudflared",
-                ".git",
-                ".codex",
-                ".clc",
-                ".npmrc",
-                ".netrc",
-                "_netrc",
-                ".git-credentials",
-                "credentials.json",
-                "secrets.json",
-                "auth.json",
-                "cookies",
-                "cookies.sqlite",
-            ]
-            .contains(&n.as_str())
-            || [
-                ".pem",
-                ".key",
-                ".p12",
-                ".pfx",
-                ".keystore",
-                ".jks",
-                ".keychain",
-                ".keychain-db",
-            ]
-            .iter()
-            .any(|x| n.ends_with(x))
-    })
-}
 fn review_path(root: &str, file: &str) -> Result<()> {
     let root = Path::new(root);
-    if sensitive(root) {
-        return Err("SENSITIVE_WORKSPACE".into());
-    }
     let private_root = crate::root().canonicalize().ok();
     let path = root.join(file);
     let relative = path.strip_prefix(root).map_err(|_| "OUTSIDE_WORKSPACE")?;
-    if sensitive(relative) {
-        return Err("SENSITIVE_PATH".into());
-    }
     // Resolve existing ancestors too: deleted Git paths may still traverse a symlink.
     let mut ancestor = path.as_path();
     loop {
@@ -334,10 +283,7 @@ fn review_path(root: &str, file: &str) -> Result<()> {
                 if private_root.as_ref().is_some_and(|p| actual.starts_with(p)) {
                     return Err("PRIVATE_RUNTIME_STATE".into());
                 }
-                let rel = actual.strip_prefix(root).map_err(|_| "OUTSIDE_WORKSPACE")?;
-                if sensitive(rel) {
-                    return Err("SENSITIVE_PATH".into());
-                }
+                actual.strip_prefix(root).map_err(|_| "OUTSIDE_WORKSPACE")?;
                 break;
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -597,7 +543,7 @@ pub async fn query(c: &Control, action: &str, args: &Value) -> Result<Value> {
                     review,
                     &mut skipped,
                 );
-                json!({"revision":rev,"text":if review { String::new() } else {git(root, vec!["show".into(),"-s".into(),"--format=%H%n%cs%n%s".into(),rev.clone()]).await?},"truncated":false,"paths":paths.iter().take(200).collect::<Vec<_>>(),"truncatedPaths":paths.len()>200,"hiddenPaths":skipped.values().sum::<usize>()})
+                json!({"revision":rev,"text":git(root, vec!["show".into(),"-s".into(),"--format=%H%n%cs%n%s".into(),rev.clone()]).await?,"truncated":false,"paths":paths.iter().take(200).collect::<Vec<_>>(),"truncatedPaths":paths.len()>200,"hiddenPaths":skipped.values().sum::<usize>()})
             } else {
                 let mut cmd = match op {
                     "log" => vec![
@@ -637,25 +583,17 @@ pub async fn query(c: &Control, action: &str, args: &Value) -> Result<Value> {
                 if !file.is_empty() {
                     cmd.push(file.into())
                 }
-                if review && op == "log" {
-                    for arg in &mut cmd {
-                        if arg.starts_with("--format=") {
-                            *arg = "--format=%H %cs".into();
-                        }
-                    }
-                    json!({"text":git(root,cmd).await?,"metadataOnly":true,"omitted":"commit-messages","truncated":false})
-                } else if review {
+                if review && op == "diff" {
                     let mut names = cmd.clone();
                     names.insert(1, "--name-status".into());
                     names.insert(2, "-z".into());
                     names.retain(|s| s != "--no-renames");
                     names.insert(3, "--find-renames".into());
-                    // Discover globally so a path selector cannot hide a sensitive rename side.
+                    // Keep both sides of renames inside the requested workspace.
                     names.truncate(names.iter().position(|s| s == "--").unwrap() + 1);
                     let raw = git(root, names).await?;
                     let mut parts = raw.split('\0').filter(|s| !s.is_empty());
                     let mut candidates = Vec::new();
-                    let mut restricted_deletion = false;
                     while let Some(status) = parts.next() {
                         let first = parts.next().ok_or("INVALID_GIT_PATH_METADATA")?;
                         let mut pair = vec![first.to_owned()];
@@ -664,22 +602,10 @@ pub async fn query(c: &Control, action: &str, args: &Value) -> Result<Value> {
                         }
                         let allowed = filter_paths(root, pair.clone(), true, &mut skipped);
                         if allowed.len() == pair.len() {
-                            candidates.push((status.to_owned(), pair));
-                        } else if status.starts_with('D') {
-                            restricted_deletion = true;
+                            candidates.extend(pair);
                         }
                     }
-                    let mut safe = Vec::new();
-                    for (status, paths) in candidates {
-                        // Git similarity detection cannot pair a heavily rewritten rename.
-                        if restricted_deletion && status.starts_with('A') {
-                            *skipped
-                                .entry("POSSIBLE_SENSITIVE_RENAME".into())
-                                .or_default() += paths.len();
-                        } else {
-                            safe.extend(paths);
-                        }
-                    }
+                    let mut safe = candidates;
                     safe.retain(|p| {
                         file.is_empty() || p == file || p.starts_with(&format!("{file}/"))
                     });

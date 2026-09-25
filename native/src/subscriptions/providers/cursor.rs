@@ -37,48 +37,32 @@ pub async fn credential() -> std::result::Result<Credential, Failure> {
                 String::from_utf8(raw).ok()
             }
         };
-        Some((
-            value("cursorAuth/accessToken")?,
-            value("cursorAuth/stripeMembershipType").unwrap_or_default(),
-        ))
+        value("cursorAuth/accessToken")
     })
     .await
     .map_err(|_| Failure::from("credential-access-denied"))?;
     #[allow(unused_mut)]
     let mut keychain: Option<String> = None;
     #[cfg(target_os = "macos")]
-    if let Ok(Ok(out)) = tokio::time::timeout(
-        Duration::from_secs(4),
-        tokio::process::Command::new("security")
-            .args(["find-generic-password", "-s", "cursor-access-token", "-w"])
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    {
-        if out.status.success() {
-            keychain = String::from_utf8(out.stdout).ok().map(|s| s.trim().into());
-        }
-    }
-    let token = match (sqlite, keychain) {
-        (Some((sqlite, plan)), Some(keychain))
-            if plan == "free"
-                && claims(&sqlite).map(|v| v["sub"].clone())
-                    != claims(&keychain).map(|v| v["sub"].clone()) =>
+    if sqlite.is_none() {
+        if let Ok(Ok(out)) = tokio::time::timeout(
+            Duration::from_secs(4),
+            tokio::process::Command::new("security")
+                .args(["find-generic-password", "-s", "cursor-access-token", "-w"])
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
         {
-            keychain
+            if out.status.success() {
+                keychain = String::from_utf8(out.stdout).ok().map(|s| s.trim().into());
+            }
         }
-        (Some((sqlite, _)), _) => sqlite,
-        (_, Some(keychain)) => keychain,
-        _ => return Err("credentials-missing".into()),
-    };
-    let claims = claims(&token).ok_or(Failure::from("invalid-response"))?;
-    if claims["exp"]
-        .as_i64()
-        .is_none_or(|n| n <= chrono::Utc::now().timestamp() + 60)
-    {
-        return Err("credentials-expired".into());
     }
+    let token = sqlite
+        .or(keychain)
+        .ok_or(Failure::from("credentials-missing"))?;
+    let claims = claims(&token).ok_or(Failure::from("invalid-response"))?;
     let account = claims["sub"]
         .as_str()
         .and_then(|s| s.rsplit('|').next())

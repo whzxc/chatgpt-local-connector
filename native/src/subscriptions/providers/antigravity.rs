@@ -284,9 +284,7 @@ pub async fn read(
                     value
                 }
                 Err(error) => {
-                    if failure.code != "credentials-expired" {
-                        failure = error;
-                    }
+                    failure = error;
                     continue;
                 }
             };

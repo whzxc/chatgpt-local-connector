@@ -69,24 +69,17 @@ pub const REGISTRY: &[Registration] = &[
 ];
 pub struct Credential {
     pub secret: String,
-    pub fingerprint: String,
     pub source: &'static str,
-    pub identity: Option<String>,
 }
 impl Credential {
     fn new(secret: String, source: &'static str) -> std::result::Result<Self, Failure> {
         if secret.trim().is_empty() {
             return Err("credentials-missing".into());
         }
-        Ok(Self {
-            fingerprint: hash(&secret),
-            secret,
-            source,
-            identity: None,
-        })
+        Ok(Self { secret, source })
     }
 }
-pub async fn credential(id: &str, control: &Control) -> std::result::Result<Credential, Failure> {
+pub async fn credential(id: &str) -> std::result::Result<Credential, Failure> {
     if REGISTRY.iter().any(|r| r.id == id && r.accepts_key) {
         let path = credential_path(id);
         if path.exists() {
@@ -95,7 +88,6 @@ pub async fn credential(id: &str, control: &Control) -> std::result::Result<Cred
         }
     }
     match id {
-        "codex" => codex::credential(control).await,
         "opencode-go" => opencode_go::credential(),
         "claude-code" => claude::credential().await,
         "cursor" => cursor::credential().await,
@@ -107,44 +99,34 @@ pub async fn credential(id: &str, control: &Control) -> std::result::Result<Cred
 }
 pub async fn read(
     id: &str,
-    c: &Credential,
     control: &Control,
-) -> std::result::Result<Reading, Failure> {
+) -> std::result::Result<(Reading, &'static str), Failure> {
     if id == "codex" {
-        return codex::read(control, c).await;
+        return codex::read(control).await.map(|r| (r, "codex-account"));
     }
+    let c = credential(id).await?;
     let client = client().await?;
-    match id {
-        "opencode-go" => opencode_go::read(&client, c).await,
-        "claude-code" => claude::read(&client, c).await,
-        "cursor" => cursor::read(&client, c).await,
-        "antigravity" => antigravity::read(&client, c).await,
-        "grok" => grok::read(&client, c).await,
-        "kimi-code" => kimi::read(&client, c).await,
+    let reading = match id {
+        "opencode-go" => opencode_go::read(&client, &c).await,
+        "claude-code" => claude::read(&client, &c).await,
+        "cursor" => cursor::read(&client, &c).await,
+        "antigravity" => antigravity::read(&client, &c).await,
+        "grok" => grok::read(&client, &c).await,
+        "kimi-code" => kimi::read(&client, &c).await,
         _ => Err("invalid-response".into()),
-    }
+    }?;
+    Ok((reading, c.source))
 }
 pub(super) fn has_history(id: &str) -> bool {
     matches!(id, "codex" | "antigravity" | "cursor")
 }
-pub(super) async fn read_history(
-    id: &str,
-    control: &Control,
-    fingerprint: &str,
-) -> std::result::Result<Value, Failure> {
-    let before = credential(id, control).await?;
-    if before.fingerprint != fingerprint {
-        return Err("credentials-expired".into());
-    }
-    let history = if id == "cursor" {
-        cursor::history(&client().await?, &before).await
+pub(super) async fn read_history(id: &str) -> std::result::Result<Value, Failure> {
+    if id == "cursor" {
+        let c = credential(id).await?;
+        Ok(cursor::history(&client().await?, &c).await)
     } else {
-        history::local(id).await
-    };
-    if credential(id, control).await?.fingerprint != fingerprint {
-        return Err("credentials-expired".into());
+        Ok(history::local(id).await)
     }
-    Ok(history)
 }
 async fn client() -> std::result::Result<reqwest::Client, Failure> {
     let settings = load(&root().join("web/preferences.json"))
@@ -170,7 +152,8 @@ async fn get(request: reqwest::RequestBuilder) -> std::result::Result<Value, Fai
         .map_err(|_| Failure::from("network-error"))?;
     match response.status().as_u16() {
         200 => {}
-        401 | 403 => return Err("credentials-expired".into()),
+        401 => return Err("authentication-failed".into()),
+        403 => return Err("request-forbidden".into()),
         429 => {
             let retry = response
                 .headers()
@@ -188,6 +171,7 @@ async fn get(request: reqwest::RequestBuilder) -> std::result::Result<Value, Fai
                 });
             return Err(Failure {
                 code: "rate-limited",
+                message: None,
                 retry_at: retry.map(|d| d.to_rfc3339()),
             });
         }

@@ -29,7 +29,7 @@ async function refresh() {
 const notices=computed(()=>{
   const p=props.provider, items:{message:string;error:boolean}[]=[];
   if(refreshError.value)items.push({message:refreshError.value,error:true});
-  if(p.error)items.push({message:t(errorLabels[p.error.code]||'usageUnavailable'),error:!['no-subscription','no-limits-reported','unsupported-platform'].includes(p.error.code)});
+  if(p.error)items.push({message:p.error.message || t(errorLabels[p.error.code]||'usageUnavailable'),error:!['no-subscription','no-limits-reported','unsupported-platform'].includes(p.error.code)});
   if(p.history?.error && p.history.error!=='history-unavailable')items.push({message:p.history.error,error:true});
   if(p.pinUnavailable)items.push({message:t('usagePinUnavailable'),error:false});
   if(p.accountBlocked)items.push({message:t('usageAccountBlocked'),error:true});

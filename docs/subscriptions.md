@@ -7,20 +7,23 @@ quota readings. Missing quota data is not treated as a full allowance.
 ## Cached readings
 
 All providers persist their last successful reading in the private local state directory.
-On startup, the current credential fingerprint must match before a cached reading is
-shown. Restored readings are marked stale while quota refresh runs in the background;
-they do not trigger live quota alerts or consumption forecasts. Temporary network failures
-retain the last reading instead of blanking the display.
+Restored readings are marked stale while quota refresh runs in the background;
+they do not trigger live quota alerts or consumption forecasts. Failed requests retain
+the last reading and retry with backoff, including authentication failures. The server's
+401 and 403 responses are reported separately without inferring credential expiry.
+Readings become stale after 15 minutes. Expired quota windows are hidden.
+Disabling monitoring or a provider and explicitly removing credentials clear the cache.
+Corrupt caches are ignored. Only successful readings are saved.
 
-Readings become stale after 15 minutes and are discarded after 24 hours. Expired quota
-windows are hidden immediately; windows without a reset time are discarded after 15 minutes.
-Disabling monitoring or a provider, removing credentials, authentication failures and
-credential changes invalidate the corresponding cache. Corrupt caches are ignored.
-Only successful readings are saved; transient errors never replace the last successful result.
+Providers use the available native login or configured key without account comparisons,
+credential fingerprints or local expiry checks. Codex uses a short-lived native reader
+on each refresh to pick up the current login. Cursor prefers its desktop database token
+and uses Keychain only when that token is unavailable.
 
-Quota refresh and usage history refresh are independent. Codex and Antigravity log scans,
-and Cursor account exports, update history after quota becomes available. A history failure
-preserves the previous history and does not turn a successful quota refresh into a failure.
+Quota and usage history refresh independently. Codex and Antigravity scan local logs
+without requiring credentials or a successful quota request. These logs describe local
+device activity and are not filtered by the current account. Cursor's account export
+uses its current credentials. A history failure preserves the previous history.
 
 ## Sources
 

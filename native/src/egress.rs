@@ -7,5 +7,5 @@ pub fn failure(e: &str) -> Value {
     let rpc = e
         .strip_prefix("RPC_REJECTED:")
         .and_then(|s| serde_json::from_str::<Value>(s).ok());
-    json!({"code":if rpc.is_some(){"NATIVE_RPC_ERROR"}else{if e == "REQUEST_ID_CONFLICT" { "REQUEST_ID_CONFLICT" } else { "CONTROL_ERROR" }},"message":e,"executionState":if rpc.is_some(){"rejected"}else{"unknown"},"rpcError":rpc,"nextAction":"read-request-before-retry"})
+    json!({"code":if rpc.is_some(){"NATIVE_RPC_ERROR"}else{if e == "REQUEST_ID_CONFLICT" { "REQUEST_ID_CONFLICT" } else { "CONTROL_ERROR" }},"message":e,"rpcError":rpc})
 }

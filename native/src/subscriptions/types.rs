@@ -44,12 +44,15 @@ pub struct QuotaWindow {
 pub struct Failure {
     pub code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_at: Option<String>,
 }
 impl From<&'static str> for Failure {
     fn from(code: &'static str) -> Self {
         Self {
             code,
+            message: None,
             retry_at: None,
         }
     }
@@ -93,11 +96,7 @@ pub struct Reading {
     pub blocked_pool_ids: Vec<String>,
 }
 impl Reading {
-    pub fn new(
-        windows: Vec<QuotaWindow>,
-        mut raw_usage: serde_json::Value,
-    ) -> Result<Self, Failure> {
-        redact_credentials(&mut raw_usage);
+    pub fn new(windows: Vec<QuotaWindow>, raw_usage: serde_json::Value) -> Result<Self, Failure> {
         if windows.is_empty() && !raw_usage.is_object() {
             Err("no-limits-reported".into())
         } else {
@@ -141,40 +140,4 @@ pub fn active(w: &QuotaWindow) -> bool {
     w.resets_at.as_ref().is_none_or(|v| {
         chrono::DateTime::parse_from_rfc3339(v).is_ok_and(|d| d > chrono::Utc::now())
     })
-}
-
-// Status APIs can embed credentials alongside quota/account metadata. Never expose them to WebViews.
-fn redact_credentials(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Object(fields) => {
-            fields.retain(|key, _| {
-                ![
-                    "accesstoken",
-                    "refreshtoken",
-                    "idtoken",
-                    "apikey",
-                    "csrftoken",
-                    "authorization",
-                    "password",
-                    "secret",
-                    "token",
-                ]
-                .contains(
-                    &key.to_lowercase()
-                        .replace('_', "")
-                        .replace('-', "")
-                        .as_str(),
-                )
-            });
-            for child in fields.values_mut() {
-                redact_credentials(child);
-            }
-        }
-        serde_json::Value::Array(values) => {
-            for child in values {
-                redact_credentials(child);
-            }
-        }
-        _ => (),
-    }
 }

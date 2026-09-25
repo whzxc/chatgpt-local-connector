@@ -12,10 +12,8 @@ use types::*;
 struct Slot {
     view: ProviderSnapshot,
     generation: u64,
-    fingerprint: Option<String>,
     due: Instant,
     failures: u32,
-    auth_paused: bool,
     reset_seen: Vec<String>,
     job: Option<tokio::task::AbortHandle>,
     history_job: Option<tokio::task::AbortHandle>,
@@ -50,7 +48,7 @@ impl SubscriptionService {
             save(&path, &serde_json::to_value(&settings).unwrap())?;
         }
         validate(&settings)?;
-        let slots = REGISTRY
+        let slots: BTreeMap<String, Slot> = REGISTRY
             .iter()
             .map(|r| {
                 (
@@ -86,10 +84,8 @@ impl SubscriptionService {
                             pin_unavailable: false,
                         },
                         generation: 0,
-                        fingerprint: None,
                         due: Instant::now(),
                         failures: 0,
-                        auth_paused: false,
                         reset_seen: vec![],
                         job: None,
                         history_job: None,
@@ -173,7 +169,7 @@ impl SubscriptionService {
                     (enabled, ids)
                 };
                 for id in ids {
-                    s.refresh(&id, false).await;
+                    s.refresh(&id).await;
                 }
                 if enabled {
                     tokio::select! {_=s.wake.notified()=>{},_=tokio::time::sleep(Duration::from_secs(5))=>{}}
@@ -232,7 +228,9 @@ impl SubscriptionService {
             if slot.view.eligible != eligible {
                 slot.view.eligible = eligible;
                 invalidate(slot);
-                if !eligible {
+                if eligible {
+                    cache::restore(slot);
+                } else {
                     cache::remove(&slot.view.provider_id);
                 }
             }
@@ -373,7 +371,7 @@ impl SubscriptionService {
                     }
                 };
                 for id in ids {
-                    self.refresh(&id, true).await;
+                    self.refresh(&id).await;
                 }
                 Ok(json!({"accepted":true,"revision":self.changed.borrow().revision}))
             }
@@ -405,7 +403,6 @@ impl SubscriptionService {
                 }
                 let slot = state.slots.get_mut(id).unwrap();
                 invalidate(slot);
-                slot.fingerprint = None;
                 cache::remove(id);
                 slot.view.has_credential = path.is_file();
                 slot.view.credential_source = if slot.view.has_credential {
@@ -421,7 +418,7 @@ impl SubscriptionService {
             _ => Err("unknown subscription route".into()),
         }
     }
-    async fn refresh(self: &Arc<Self>, id: &str, manual: bool) {
+    async fn refresh(self: &Arc<Self>, id: &str) {
         let mut state = self.state.lock().await;
         if state.stopped {
             return;
@@ -452,44 +449,10 @@ impl SubscriptionService {
             let Ok(_permit) = s.permits.clone().acquire_owned().await else {
                 return;
             };
-            let result = tokio::time::timeout(Duration::from_secs(120), async {
-                let credential = providers::credential(&id, &s.control).await?;
-                {
-                    let mut state = s.state.lock().await;
-                    let slot = state.slots.get_mut(&id).unwrap();
-                    if slot.generation != generation {
-                        return Err(Failure::from("credentials-expired"));
-                    }
-                    let changed = slot.fingerprint.as_ref() != Some(&credential.fingerprint);
-                    if changed {
-                        clear_reading(slot);
-                        cache::restore(slot, &credential.fingerprint);
-                        slot.auth_paused = false;
-                        slot.failures = 0;
-                        slot.fingerprint = Some(credential.fingerprint.clone());
-                    }
-                    slot.view.has_credential = true;
-                    slot.view.credential_source = Some(credential.source.into());
-                    slot.view.source = Some(credential.source.into());
-                    if slot.auth_paused && !manual {
-                        return Err(slot
-                            .view
-                            .error
-                            .clone()
-                            .unwrap_or_else(|| "credentials-expired".into()));
-                    }
-                    s.publish(&mut state);
-                }
-                let reading = providers::read(&id, &credential, &s.control).await;
-                // An external login may change while a request is in flight.
-                let current = providers::credential(&id, &s.control).await?;
-                if current.fingerprint != credential.fingerprint {
-                    return Err(Failure::from("credentials-expired"));
-                }
-                reading
-            })
-            .await
-            .unwrap_or_else(|_| Err("network-error".into()));
+            let result =
+                tokio::time::timeout(Duration::from_secs(120), providers::read(&id, &s.control))
+                    .await
+                    .unwrap_or_else(|_| Err("network-error".into()));
             let mut state = s.state.lock().await;
             let refresh_minutes = state.settings.refresh_minutes;
             let slot = state.slots.get_mut(&id).unwrap();
@@ -500,7 +463,10 @@ impl SubscriptionService {
             slot.view.refreshing = false;
             slot.due = Instant::now() + Duration::from_secs(refresh_minutes * 60);
             match result {
-                Ok(reading) => {
+                Ok((reading, source)) => {
+                    slot.view.has_credential = true;
+                    slot.view.credential_source = Some(source.into());
+                    slot.view.source = Some(source.into());
                     slot.view.windows = reading.windows;
                     let history = slot.view.raw_usage.get("history").cloned();
                     slot.view.raw_usage = reading.raw_usage;
@@ -513,68 +479,45 @@ impl SubscriptionService {
                     slot.view.state = "ready".into();
                     slot.view.error = None;
                     slot.failures = 0;
-                    slot.auth_paused = false;
                     cache::persist(slot);
                 }
                 Err(error) => {
                     slot.failures += 1;
-                    slot.auth_paused = matches!(
-                        error.code,
-                        "credentials-missing" | "credentials-expired" | "credential-access-denied"
-                    );
-                    if slot.auth_paused
-                        || matches!(error.code, "no-subscription" | "no-limits-reported")
-                    {
-                        clear_reading(slot);
-                        cache::remove(&id);
-                    }
-                    slot.view.state = if slot.auth_paused {
-                        "setup-required"
-                    } else if slot.view.windows.is_empty() {
+                    slot.view.has_credential = error.code != "credentials-missing";
+                    slot.view.state = if slot.view.windows.is_empty() {
                         "unavailable"
                     } else {
                         "stale"
                     }
                     .into();
                     slot.due = Instant::now()
-                        + Duration::from_secs(if slot.auth_paused {
-                            180
-                        } else {
-                            (60u64.saturating_mul(1 << slot.failures.min(5))).min(1800)
-                        });
+                        + Duration::from_secs(
+                            (60u64.saturating_mul(1 << slot.failures.min(5))).min(1800),
+                        );
                     slot.view.error = Some(error);
                 }
             }
             expire(slot);
-            let history_needed = slot.view.state == "ready"
-                && slot.history_job.is_none()
-                && providers::has_history(&id);
+            let history_needed = slot.history_job.is_none() && providers::has_history(&id);
             if history_needed {
                 let service = s.clone();
                 let provider_id = id.clone();
-                let fingerprint = slot.fingerprint.clone();
                 slot.history_job = Some(
                     tokio::spawn(async move {
                         let history = tokio::time::timeout(
                             Duration::from_secs(120),
-                            providers::read_history(
-                                &provider_id,
-                                &service.control,
-                                fingerprint.as_deref().unwrap_or(""),
-                            ),
+                            providers::read_history(&provider_id),
                         )
                         .await
                         .ok()
                         .and_then(std::result::Result::ok);
                         let mut state = service.state.lock().await;
                         let slot = state.slots.get_mut(&provider_id).unwrap();
-                        if slot.generation != generation || slot.fingerprint != fingerprint {
+                        if slot.generation != generation {
                             return;
                         }
                         slot.history_job = None;
-                        if let Some(history) = history
-                            .filter(|h| slot.view.observed_at.is_some() && h.get("error").is_none())
-                        {
+                        if let Some(history) = history.filter(|h| h.get("error").is_none()) {
                             slot.view.raw_usage["history"] = history;
                             cache::persist(slot);
                             service.publish(&mut state);
@@ -609,7 +552,6 @@ fn invalidate(s: &mut Slot) {
     s.view.refreshing = false;
     s.view.state = "idle".into();
     s.view.error = None;
-    s.auth_paused = false;
     s.failures = 0;
     s.due = Instant::now();
     s.reset_seen.clear();
@@ -621,15 +563,8 @@ fn expire(s: &mut Slot) {
         .as_ref()
         .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
         .map(|d| chrono::Utc::now().signed_duration_since(d).num_seconds());
-    if age.is_some_and(|age| age >= 86400 || age < 0) {
-        clear_reading(s);
-        cache::remove(&s.view.provider_id);
+    if age.is_some_and(|age| age >= 900) && s.view.state == "ready" {
         s.view.state = "stale".into();
-    } else if age.is_some_and(|age| age >= 900) {
-        s.view.windows.retain(|w| w.resets_at.is_some());
-        if s.view.state == "ready" {
-            s.view.state = "stale".into();
-        }
     }
 }
 

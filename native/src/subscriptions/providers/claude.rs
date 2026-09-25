@@ -40,11 +40,6 @@ pub async fn credential() -> std::result::Result<Credential, Failure> {
             .join(".credentials.json"),
     )?;
     let oauth = &v["claudeAiOauth"];
-    if number(&oauth["expiresAt"])
-        .is_some_and(|n| n <= chrono::Utc::now().timestamp_millis() as f64)
-    {
-        return Err("credentials-expired".into());
-    }
     Credential::new(
         oauth["accessToken"].as_str().unwrap_or("").into(),
         "claude-login",
