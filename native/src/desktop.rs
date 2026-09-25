@@ -28,8 +28,8 @@ pub fn installation() -> Option<Installation> {
     ] {
         for name in ["ChatGPT", "Codex"] {
             let app = root.join(format!("{name}.app"));
-            let binary = app.join("Contents/Resources/codex");
-            if binary.exists() {
+            let binary = app.join("Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex");
+            if binary.is_file() {
                 return Some(Installation { app, binary });
             }
         }
