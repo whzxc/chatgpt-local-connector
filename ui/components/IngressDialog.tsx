@@ -1,0 +1,481 @@
+import { useState, useRef } from "react";
+import { api } from "../api";
+import { t } from "../i18n";
+import { displayMessage } from "../messages";
+import { openUrl } from "../platform";
+import {
+  controlSource,
+  curatedSources,
+  nextSourceName,
+} from "../controlSources";
+import {
+  providers,
+  fixedDomain,
+  needsCredential,
+  credentialSaved,
+  secretFields,
+} from "../ingressConfig";
+import { validDomain } from "../formRules";
+import { connectionForm, type ConnectionForm } from "../state/connectionForm";
+import { connector, refreshConnector } from "../state/connector";
+import type { Ingress } from "../state/types";
+import type { ToolPolicy } from "../toolPolicy";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  Field,
+  Input,
+  Notice,
+  SingleChoice,
+} from "./ui";
+import SourceIcon from "./SourceIcon";
+import ToolPolicyField from "./ToolPolicyField";
+export default function IngressDialog({
+  ingress,
+  onClose,
+  onSaved,
+}: {
+  ingress?: Ingress;
+  onClose: () => void;
+  onSaved: (ingress: Ingress) => void;
+}) {
+  const { status } = connector.use();
+  const [selected, setSelected] = useState(
+    ingress
+      ? controlSource(ingress.controlSource)?.curated
+        ? ingress.controlSource
+        : "custom"
+      : "",
+  );
+  const [source, setSource] = useState(ingress?.controlSource || ""),
+    [name, setName] = useState(ingress?.name || ""),
+    [form, setForm] = useState(() => {
+      const f = connectionForm(ingress?.config);
+      if (ingress)
+        f.connectionMode =
+          ingress.transport === "openai-tunnel" ? "tunnel" : "https";
+      return f;
+    });
+  const [auth, setAuth] = useState(
+      ingress?.auth === "oauth"
+        ? "oauth"
+        : ingress?.auth === "bearer"
+          ? "bearer"
+          : "none",
+    ),
+    [toolPolicy, setToolPolicy] = useState<ToolPolicy>(
+      ingress?.toolPolicy ?? "all",
+    );
+  const [working, setWorking] = useState(false),
+    [error, setError] = useState(""),
+    [errors, setErrors] = useState<Record<string, string>>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const preset = controlSource(selected),
+    provider = providers[form.httpsProvider],
+    https = form.connectionMode === "https",
+    allowTunnel =
+      preset?.recommendedTransport === "openai-tunnel" || selected === "custom";
+  function change<K extends keyof ConnectionForm>(
+    key: K,
+    value: ConnectionForm[K],
+  ) {
+    setForm((old) => ({
+      ...old,
+      [key]: value,
+      ...([
+        "connectionMode",
+        "httpsProvider",
+        "cloudflareMode",
+        "ngrokMode",
+        "pinggyMode",
+        "localxposeMode",
+      ].includes(key)
+        ? { domain: "" }
+        : {}),
+    }));
+    setErrors((old) => ({ ...old, [key]: "" }));
+  }
+  function choose(value: string) {
+    const preset = controlSource(value),
+      f = connectionForm();
+    f.connectionMode =
+      preset?.recommendedTransport === "openai-tunnel" ? "tunnel" : "https";
+    f.cloudflareMode = f.connectionMode === "tunnel" ? "quick" : "named";
+    setSelected(value);
+    setSource(value === "custom" ? "" : value);
+    setName(
+      value === "custom"
+        ? ""
+        : nextSourceName(value, status?.ingresses.map((i) => i.name) || []),
+    );
+    setForm(f);
+    setAuth(preset?.httpsAuth ?? "bearer");
+    setErrors({});
+  }
+  function validate() {
+    const next: Record<string, string> = {};
+    if (!name.trim()) next.name = t("fieldRequired");
+    else if (new TextEncoder().encode(name).length > 120)
+      next.name = t("sourceNameTooLong");
+    if (selected === "custom" && !/^[a-zA-Z0-9_-]+$/.test(source))
+      next.source = t("validClientId");
+    if (!https) {
+      if (!/^tunnel_[a-zA-Z0-9_-]+$/.test(form.tunnelId))
+        next.tunnelId = t("validTunnelId");
+      if (!form.apiKey.trim() && !ingress?.config.hasApiKey)
+        next.apiKey = t("fieldRequired");
+    } else {
+      if (fixedDomain(form) && !validDomain(form.domain))
+        next.domain = t("validDomain");
+      const key = provider.credential;
+      if (
+        needsCredential(form) &&
+        key &&
+        !form[key].trim() &&
+        !credentialSaved(ingress?.config, key)
+      )
+        next[key] = t("fieldRequired");
+    }
+    setErrors(next);
+    if (Object.keys(next).length) {
+      requestAnimationFrame(() =>
+        formRef.current
+          ?.querySelector<HTMLElement>("[aria-invalid=true]")
+          ?.focus(),
+      );
+      return false;
+    }
+    return true;
+  }
+  async function save() {
+    if (working || !validate()) return;
+    setWorking(true);
+    setError("");
+    try {
+      const config: Record<string, unknown> = { ...form };
+      delete config.connectionMode;
+      delete config.domain;
+      const origin = fixedDomain(form) ? `https://${form.domain.trim()}` : "";
+      config.httpsUrl = origin ? `${origin}/mcp` : "";
+      config.ngrokEndpoint = form.httpsProvider === "ngrok" ? origin : "";
+      if (!ingress) {
+        delete config.httpsPort;
+        delete config.httpsHost;
+      }
+      for (const { key } of secretFields) if (!config[key]) delete config[key];
+      const bearer = https && auth === "bearer";
+      const metadata = {
+        toolPolicy,
+        name: name.trim(),
+        controlSource: selected === "custom" ? source : selected,
+        auth: https ? auth : "openai",
+        ...(bearer && ingress?.auth !== "bearer"
+          ? {
+              bearerToken: Array.from(
+                crypto.getRandomValues(new Uint8Array(32)),
+                (byte) => byte.toString(16).padStart(2, "0"),
+              ).join(""),
+            }
+          : {}),
+      };
+      if (ingress) await api(`ingress/${ingress.id}/stop`, "POST");
+      const saved = await api<Ingress>(
+        ingress ? `ingress/${ingress.id}` : "ingress",
+        ingress ? "PUT" : "POST",
+        { ...metadata, transport: https ? "https" : "openai-tunnel", config },
+      );
+      await refreshConnector().catch(() => {});
+      onSaved(saved);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setWorking(false);
+    }
+  }
+  async function remove() {
+    if (!ingress || working) return;
+    setWorking(true);
+    setError("");
+    try {
+      await api(`ingress/${ingress.id}`, "DELETE");
+      await refreshConnector();
+      onClose();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setWorking(false);
+    }
+  }
+  const textField = (
+    key: keyof ConnectionForm,
+    label: string,
+    password = false,
+    placeholder = "",
+    help?: string,
+  ) => (
+    <Field
+      id={`ingress-${key}`}
+      label={label}
+      error={errors[key]}
+      help={
+        help && (
+          <Button
+            variant="ghost"
+            onClick={() => void openUrl(help).catch((e) => setError(String(e)))}
+          >
+            {t("getCredentials")}
+          </Button>
+        )
+      }
+    >
+      <Input
+        id={`ingress-${key}`}
+        aria-invalid={!!errors[key]}
+        aria-describedby={errors[key] ? `ingress-${key}-error` : undefined}
+        type={password ? "password" : "text"}
+        autoComplete={password ? "new-password" : "off"}
+        value={String(form[key])}
+        onChange={(e) => change(key, e.target.value as never)}
+        placeholder={placeholder}
+        disabled={working}
+      />
+    </Field>
+  );
+  return (
+    <Dialog
+      title={`${t(ingress ? "editControlSource" : "addControlSource")}${selected ? " · " + (preset?.displayName || t("customControlSource")) : ""}`}
+      onClose={onClose}
+      headerless={!ingress}
+      width={!selected ? 480 : undefined}
+      busy={working}
+      footer={
+        selected && (
+          <>
+            {ingress && (
+              <Button
+                variant="danger"
+                disabled={working}
+                onClick={() => void remove()}
+              >
+                {t("remove")}
+              </Button>
+            )}
+            <span className="spacer" />
+            <DialogClose asChild>
+              <Button disabled={working}>{t("cancel")}</Button>
+            </DialogClose>
+            <Button
+              variant="primary"
+              busy={working}
+              onClick={() => void save()}
+            >
+              {t("save")}
+            </Button>
+          </>
+        )
+      }
+    >
+      {!selected ? (
+        <div className="source-choices">
+          {[
+            ...curatedSources.map((p) => ({
+              value: p.id,
+              label: p.displayName,
+            })),
+            { value: "custom", label: t("customControlSource") },
+          ].map((option) => (
+            <Button
+              key={option.value}
+              variant="ghost"
+              onClick={() => choose(option.value)}
+            >
+              <SourceIcon
+                platform={option.value}
+                add={option.value === "custom"}
+              />
+              <span>{option.label}</span>
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <form
+          className="form"
+          ref={formRef}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+          noValidate
+        >
+          {https &&
+            auth === "bearer" &&
+            preset &&
+            !preset.supportedAuth.includes("bearer") && (
+              <Notice tone="warning">{t("presetAuthMismatch")}</Notice>
+            )}
+          <Field
+            id="ingress-name"
+            label={t("sourceName")}
+            error={errors.name}
+            help={
+              preset?.docs[0] && (
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void openUrl(preset.docs[0]!).catch((e) =>
+                      setError(String(e)),
+                    )
+                  }
+                >
+                  {t("officialSetup")}
+                </Button>
+              )
+            }
+          >
+            <Input
+              id="ingress-name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setErrors((old) => ({ ...old, name: "" }));
+              }}
+              aria-invalid={!!errors.name}
+              aria-describedby={errors.name ? "ingress-name-error" : undefined}
+              disabled={working}
+            />
+          </Field>
+          {selected === "custom" && (
+            <Field
+              id="ingress-source"
+              label={t("controlSourceId")}
+              error={errors.source}
+            >
+              <Input
+                id="ingress-source"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                aria-invalid={!!errors.source}
+                aria-describedby={
+                  errors.source ? "ingress-source-error" : undefined
+                }
+                disabled={working}
+              />
+            </Field>
+          )}
+          {allowTunnel && (
+            <Field label={t("connectionMethod")}>
+              <SingleChoice
+                value={form.connectionMode}
+                onChange={(value) =>
+                  change(
+                    "connectionMode",
+                    value as ConnectionForm["connectionMode"],
+                  )
+                }
+                label={t("connectionMethod")}
+                disabled={working}
+                options={[
+                  { value: "tunnel", label: "OpenAI Secure Tunnel" },
+                  { value: "https", label: "HTTPS MCP" },
+                ]}
+              />
+            </Field>
+          )}
+          {!https ? (
+            <>
+              {textField(
+                "tunnelId",
+                "Tunnel ID",
+                false,
+                "tunnel_…",
+                "https://platform.openai.com/settings/organization/tunnels",
+              )}
+              {textField(
+                "apiKey",
+                "Runtime API Key",
+                true,
+                ingress?.config.hasApiKey
+                  ? t("savedLeaveBlankToKeep")
+                  : t("pasteRuntimeKey"),
+                "https://platform.openai.com/settings/organization/api-keys",
+              )}
+            </>
+          ) : (
+            <>
+              <Field
+                label={t("provider") + (allowTunnel ? "" : " · HTTPS MCP")}
+              >
+                <SingleChoice
+                  value={form.httpsProvider}
+                  onChange={(value) =>
+                    change(
+                      "httpsProvider",
+                      value as ConnectionForm["httpsProvider"],
+                    )
+                  }
+                  label={t("provider")}
+                  disabled={working}
+                  options={Object.entries(providers).map(([value, p]) => ({
+                    value,
+                    label: value === "custom" ? t("customDomain") : p.label,
+                  }))}
+                />
+              </Field>
+              {provider.mode && provider.modes.length > 1 && (
+                <Field label={t("domainMode")}>
+                  <SingleChoice
+                    value={form[provider.mode]}
+                    onChange={(value) =>
+                      change(provider.mode!, value as "named" | "quick")
+                    }
+                    label={t("domainMode")}
+                    disabled={working}
+                    options={provider.modes.map((value) => ({
+                      value,
+                      label: t(
+                        value === "named" ? "fixedDomain" : "temporaryDomain",
+                      ),
+                    }))}
+                  />
+                </Field>
+              )}
+              {needsCredential(form) &&
+                provider.credential &&
+                textField(
+                  provider.credential,
+                  provider.credentialLabel,
+                  true,
+                  credentialSaved(ingress?.config, provider.credential)
+                    ? t("savedLeaveBlankToKeep")
+                    : t("getToken"),
+                  provider.help,
+                )}
+              {fixedDomain(form) &&
+                textField("domain", t("domain"), false, "mcp.example.com")}
+              <Field label={t("authentication")}>
+                <SingleChoice
+                  value={auth}
+                  onChange={setAuth}
+                  label={t("authentication")}
+                  disabled={working}
+                  options={[
+                    { value: "none", label: t("authNone") },
+                    { value: "bearer", label: "Bearer" },
+                    { value: "oauth", label: "OAuth" },
+                  ]}
+                />
+              </Field>
+            </>
+          )}
+          <ToolPolicyField
+            value={toolPolicy}
+            onChange={setToolPolicy}
+            disabled={working}
+          />
+          {error && <Notice>{displayMessage(error)}</Notice>}
+        </form>
+      )}
+    </Dialog>
+  );
+}

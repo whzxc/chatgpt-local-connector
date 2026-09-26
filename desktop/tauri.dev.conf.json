@@ -4,12 +4,13 @@
   "identifier": "com.whzxc.local-connector.dev",
   "build": {
     "beforeDevCommand": "npm run dev:ui",
-    "devUrl": "http://127.0.0.1:5187"
+    "devUrl": "http://127.0.0.1:5187",
+    "additionalWatchFolders": ["../native/src", "../native/Cargo.toml"]
   },
   "app": {
     "security": {
       "devCsp": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:5187 ws://127.0.0.1:5187; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     }
   },
-  "bundle": { "active": false, "resources": [], "icon": ["icons/dev/icon.png", "icons/dev/icon.icns"] }
+  "bundle": { "active": false, "resources": [], "icon": ["icons/dev/icon.png"] }
 }

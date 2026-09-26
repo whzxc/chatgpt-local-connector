@@ -38,16 +38,11 @@ pub async fn request(app: &tauri::AppHandle, operation: DesktopRequest) -> Resul
                 .as_str()
                 .filter(|id| !id.is_empty())
                 .ok_or("unknown subscription provider")?;
-            let snapshot = if cfg!(debug_assertions) {
-                connector_core::transport::forward_request("subscriptions", "GET", json!({}))
-                    .await?
-            } else {
-                let service = app
-                    .state::<std::sync::Arc<connector_core::service::Service>>()
-                    .inner()
-                    .clone();
-                service.subscriptions.snapshot().await
-            };
+            let service = app
+                .state::<std::sync::Arc<connector_core::service::Service>>()
+                .inner()
+                .clone();
+            let snapshot = service.subscriptions.snapshot().await;
             if !snapshot["providers"]
                 .as_array()
                 .is_some_and(|rows| rows.iter().any(|p| p["providerId"] == id))

@@ -1,0 +1,675 @@
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type CSSProperties,
+  type Ref,
+} from "react";
+import {
+  Dialog as D,
+  Select as S,
+  RadioGroup,
+  Switch as Sw,
+  Checkbox as C,
+  Tooltip as T,
+  Popover as P,
+  DropdownMenu as M,
+  Progress as R,
+} from "radix-ui";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  LoaderCircle,
+  Copy,
+  Eye,
+  EyeOff,
+  type LucideIcon,
+} from "lucide-react";
+import { t } from "../../i18n";
+import { isDesktop, copyText } from "../../platform";
+export function Icon({
+  icon: Component,
+  size = 16,
+  className = "",
+}: {
+  icon: LucideIcon;
+  size?: 16 | 20;
+  className?: string;
+}) {
+  return (
+    <Component
+      size={size}
+      strokeWidth={1.75}
+      aria-hidden="true"
+      className={`icon ${className}`}
+    />
+  );
+}
+export function Button({
+  variant = "secondary",
+  busy = false,
+  children,
+  className = "",
+  disabled,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  busy?: boolean;
+  ref?: Ref<HTMLButtonElement>;
+}) {
+  return (
+    <button
+      type="button"
+      {...props}
+      disabled={disabled || busy}
+      aria-busy={busy || undefined}
+      className={`button ${variant} ${className}`}
+    >
+      {busy && <Icon icon={LoaderCircle} className="spin" />}
+      {children}
+    </button>
+  );
+}
+export function IconButton({
+  icon,
+  label,
+  className = "",
+  ...props
+}: Omit<Parameters<typeof Button>[0], "children" | "title"> & {
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <Tooltip text={label}>
+      <Button
+        variant="ghost"
+        {...props}
+        aria-label={label}
+        className={`icon-button ${className}`}
+      >
+        <Icon icon={icon} size={20} />
+      </Button>
+    </Tooltip>
+  );
+}
+export function Input({
+  className = "",
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={`input ${className}`} />;
+}
+export function Field({
+  id,
+  label,
+  error,
+  help,
+  children,
+}: {
+  id?: string;
+  label: ReactNode;
+  error?: string;
+  help?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="field">
+      <div className="field-heading">
+        <label htmlFor={id}>{label}</label>
+        {help}
+      </div>
+      {children}
+      {error && (
+        <p
+          id={id ? `${id}-error` : undefined}
+          className="field-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+export function Notice({
+  children,
+  tone = "danger",
+  action,
+}: {
+  children: ReactNode;
+  tone?: "danger" | "warning" | "success";
+  action?: ReactNode;
+}) {
+  return (
+    <div
+      className={`notice ${tone}`}
+      role={tone === "danger" ? "alert" : "status"}
+    >
+      <span>{children}</span>
+      {action}
+    </div>
+  );
+}
+export function Empty({
+  children,
+  action,
+}: {
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="empty" role="status">
+      <p>{children}</p>
+      {action}
+    </div>
+  );
+}
+export function Loading({ label = t("loading") }: { label?: string }) {
+  return (
+    <div className="loading" role="status">
+      <Icon icon={LoaderCircle} className="spin" />
+      {label}
+    </div>
+  );
+}
+export function Status({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: "neutral" | "success" | "warning" | "danger";
+}) {
+  return (
+    <span className={`status ${tone}`}>
+      <span aria-hidden="true" className="status-dot" />
+      {children}
+    </span>
+  );
+}
+export function Group({
+  title,
+  children,
+}: {
+  title: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="settings-group">
+      <h2>{title}</h2>
+      <div>{children}</div>
+    </section>
+  );
+}
+export function Row({
+  title,
+  description,
+  children,
+  controlId,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
+  controlId?: string;
+}) {
+  return (
+    <div className="settings-row">
+      <div className="row-copy">
+        <label htmlFor={controlId}>{title}</label>
+        {description && <p>{description}</p>}
+      </div>
+      <div className="row-control">{children}</div>
+    </div>
+  );
+}
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+  id,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  disabled?: boolean;
+  id?: string;
+}) {
+  return (
+    <Sw.Root
+      id={id}
+      checked={checked}
+      onCheckedChange={onChange}
+      aria-label={label}
+      disabled={disabled}
+      className="switch"
+    >
+      <Sw.Thumb className="switch-thumb" />
+    </Sw.Root>
+  );
+}
+export function Checkbox({
+  checked,
+  onChange,
+  children,
+  disabled,
+}: {
+  checked: boolean | "indeterminate";
+  onChange: (value: boolean) => void;
+  children: ReactNode;
+  disabled?: boolean;
+}) {
+  const id = useId();
+  return (
+    <label className="checkbox-label" htmlFor={id}>
+      <C.Root
+        id={id}
+        checked={checked}
+        onCheckedChange={(value) => onChange(value === true)}
+        disabled={disabled}
+        className="checkbox"
+      >
+        <C.Indicator>
+          {checked === "indeterminate" ? "−" : <Icon icon={Check} />}
+        </C.Indicator>
+      </C.Root>
+      <span>{children}</span>
+    </label>
+  );
+}
+export type Choice = {
+  value: string;
+  label: string;
+  icon?: LucideIcon;
+  color?: string;
+};
+export function SingleChoice({
+  value,
+  onChange,
+  options,
+  label,
+  disabled,
+  swatches = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly Choice[];
+  label: string;
+  disabled?: boolean;
+  swatches?: boolean;
+}) {
+  const container = useRef<HTMLDivElement>(null);
+  const measure = useRef<HTMLDivElement>(null);
+  const [fits, setFits] = useState(false);
+  useLayoutEffect(() => {
+    const check = () =>
+      setFits(
+        !!container.current &&
+          !!measure.current &&
+          measure.current.scrollWidth <= container.current.clientWidth,
+      );
+    check();
+    const observer = new ResizeObserver(check);
+    if (container.current) observer.observe(container.current);
+    if (measure.current) observer.observe(measure.current);
+    return () => observer.disconnect();
+  }, [options]);
+  return (
+    <div
+      ref={container}
+      className={`choice ${swatches ? "choice-swatches" : ""}`}
+    >
+      {!swatches && options.length <= 5 && (
+        <div ref={measure} className="choice-measure" aria-hidden="true">
+          {options.map((option) => (
+            <span key={option.value}>
+              {option.icon && <Icon icon={option.icon} />} {option.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {swatches || (options.length <= 5 && fits) ? (
+        <RadioGroup.Root
+          value={value}
+          onValueChange={onChange}
+          disabled={disabled}
+          aria-label={label}
+          orientation="horizontal"
+          className="choice-radio"
+        >
+          {options.map((option) => (
+            <RadioGroup.Item
+              key={option.value}
+              value={option.value}
+              className="choice-option"
+              aria-label={option.label}
+              title={option.label}
+              style={
+                option.color
+                  ? ({ "--swatch": option.color } as CSSProperties)
+                  : undefined
+              }
+            >
+              {swatches ? (
+                <Icon icon={Check} />
+              ) : (
+                <>
+                  {option.icon && <Icon icon={option.icon} />}
+                  <span>{option.label}</span>
+                </>
+              )}
+            </RadioGroup.Item>
+          ))}
+        </RadioGroup.Root>
+      ) : (
+        <S.Root value={value} onValueChange={onChange} disabled={disabled}>
+          <S.Trigger className="select-trigger" aria-label={label}>
+            <S.Value />
+            <S.Icon>
+              <Icon icon={ChevronDown} />
+            </S.Icon>
+          </S.Trigger>
+          <S.Portal>
+            <S.Content
+              className="select-content"
+              position="popper"
+              sideOffset={6}
+              collisionPadding={12}
+            >
+              <S.ScrollUpButton className="select-scroll">
+                <Icon icon={ChevronUp} />
+              </S.ScrollUpButton>
+              <S.Viewport>
+                {options.map((option) => (
+                  <S.Item
+                    key={option.value}
+                    value={option.value}
+                    className="select-item"
+                  >
+                    <S.ItemText>{option.label}</S.ItemText>
+                    <S.ItemIndicator>
+                      <Icon icon={Check} />
+                    </S.ItemIndicator>
+                  </S.Item>
+                ))}
+              </S.Viewport>
+              <S.ScrollDownButton className="select-scroll">
+                <Icon icon={ChevronDown} />
+              </S.ScrollDownButton>
+            </S.Content>
+          </S.Portal>
+        </S.Root>
+      )}
+    </div>
+  );
+}
+export const DialogClose = D.Close;
+export { default as Dialog } from "../ElasticPanel";
+export function Tooltip({
+  text,
+  children,
+  side = "top",
+}: {
+  text: ReactNode;
+  children: ReactNode;
+  side?: "top" | "bottom" | "left" | "right";
+}) {
+  return (
+    <T.Root>
+      <T.Trigger asChild>{children}</T.Trigger>
+      <T.Portal>
+        <T.Content className="tooltip" side={side} sideOffset={6} collisionPadding={10}>
+          {text}
+        </T.Content>
+      </T.Portal>
+    </T.Root>
+  );
+}
+export const TooltipProvider = T.Provider;
+export function Popover({
+  trigger,
+  children,
+  label,
+  onBounds,
+  side = "bottom",
+  hover = false,
+  nativeHover = false,
+}: {
+  trigger: ReactNode;
+  children: ReactNode;
+  label: string;
+  side?: "left" | "right" | "bottom" | "top";
+  hover?: boolean;
+  nativeHover?: boolean;
+  onBounds?: (rect: DOMRect | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const hoverTarget = useRef<boolean | undefined>(undefined);
+  const schedule = (value: boolean) => {
+    if (hoverTarget.current === value) return;
+    hoverTarget.current = value;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setOpen(value), value ? 120 : 180);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!nativeHover || !isDesktop) return;
+    let stopped = false;
+    let off: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(async ({ listen }) => {
+      const dispose = await listen<{ x: number; y: number }>(
+        "usage-panel:hover",
+        (event) => {
+          const { x, y } = event.payload;
+          const inside = [triggerRef.current, content.current].some((el) => {
+            const r = el?.getBoundingClientRect();
+            return (
+              r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+            );
+          });
+          schedule(inside);
+        },
+      );
+      if (stopped) dispose();
+      else off = dispose;
+    });
+    return () => {
+      stopped = true;
+      off?.();
+    };
+  }, [nativeHover]);
+  useLayoutEffect(() => {
+    if (!open || !content.current) {
+      onBounds?.(null);
+      return;
+    }
+    const report = () => onBounds?.(content.current!.getBoundingClientRect());
+    const observer = new ResizeObserver(report);
+    observer.observe(content.current);
+    const frame = requestAnimationFrame(report);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      onBounds?.(null);
+    };
+  }, [open, onBounds]);
+  return (
+    <P.Root
+      open={open}
+      onOpenChange={(value) => {
+        hoverTarget.current = undefined;
+        clearTimeout(timer.current);
+        setOpen(value);
+      }}
+    >
+      <P.Trigger
+        ref={triggerRef}
+        asChild
+        onMouseEnter={hover ? () => schedule(true) : undefined}
+        onMouseLeave={hover ? () => schedule(false) : undefined}
+      >
+        {trigger}
+      </P.Trigger>
+      <P.Portal>
+        <P.Content
+          ref={content}
+          className={`popover ${nativeHover ? "rail-popover" : ""}`}
+          aria-label={label}
+          side={side}
+          sideOffset={8}
+          collisionPadding={12}
+          onOpenAutoFocus={(event) => {
+            if (hover) event.preventDefault();
+          }}
+          onMouseEnter={hover ? () => schedule(true) : undefined}
+          onMouseLeave={hover ? () => schedule(false) : undefined}
+        >
+          {children}
+        </P.Content>
+      </P.Portal>
+    </P.Root>
+  );
+}
+export function Menu({
+  trigger,
+  items,
+  label,
+}: {
+  trigger: ReactNode;
+  label: string;
+  items: {
+    label: string;
+    action: () => void;
+    disabled?: boolean;
+    danger?: boolean;
+  }[];
+}) {
+  return (
+    <M.Root>
+      <M.Trigger asChild>{trigger}</M.Trigger>
+      <M.Portal>
+        <M.Content
+          className="menu"
+          aria-label={label}
+          sideOffset={6}
+          collisionPadding={12}
+        >
+          {items.map((item, index) => (
+            <M.Item
+              key={index}
+              className={`menu-item ${item.danger ? "danger" : ""}`}
+              disabled={item.disabled}
+              onSelect={item.action}
+            >
+              {item.label}
+            </M.Item>
+          ))}
+        </M.Content>
+      </M.Portal>
+    </M.Root>
+  );
+}
+export function Progress({
+  value,
+  label,
+  color,
+}: {
+  value: number;
+  label: string;
+  color?: string;
+}) {
+  return (
+    <R.Root
+      className="progress"
+      value={Math.max(0, Math.min(100, value))}
+      aria-label={label}
+    >
+      <R.Indicator
+        style={{
+          width: `${Math.max(0, Math.min(100, value))}%`,
+          background: color,
+        }}
+      />
+    </R.Root>
+  );
+}
+export function CopyField({
+  value,
+  label,
+  password = false,
+  loading = false,
+  placeholder = "",
+}: {
+  value: string;
+  label: string;
+  password?: boolean;
+  loading?: boolean;
+  placeholder?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <div>
+      <div className="copy-field">
+        <Input
+          aria-label={label}
+          value={value}
+          readOnly
+          type={password && !visible ? "password" : "text"}
+          placeholder={placeholder}
+          aria-busy={loading}
+          autoComplete="off"
+        />
+        {loading ? (
+          <Icon icon={LoaderCircle} className="spin" />
+        ) : (
+          <>
+            {password && (
+              <IconButton
+                icon={visible ? EyeOff : Eye}
+                label={t(visible ? "hideSecret" : "showSecret")}
+                onClick={() => setVisible(!visible)}
+              />
+            )}
+            <IconButton
+              icon={copied ? Check : Copy}
+              label={t(copied ? "copied" : "copy")}
+              disabled={!value}
+              onClick={() => {
+                setError("");
+                void copyText(value)
+                  .then(() => setCopied(true))
+                  .catch(() =>
+                    setError(t("copyFailedSelectAndCopyTheTextManually")),
+                  );
+              }}
+            />
+          </>
+        )}
+      </div>
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+      {copied && (
+        <span className="sr-only" role="status">
+          {t("copied")}
+        </span>
+      )}
+    </div>
+  );
+}

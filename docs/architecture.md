@@ -1,6 +1,6 @@
 # Architecture
 
-Vue + Tauri + Rust provides a single native core for connection state, MCP requests, idempotent receipts, and user logs. The frontend runs in the system WebView; the main application package includes no Node/npm/node_modules. Claude ACP components and a private Bun runtime are downloaded into the application data directory on explicit enable; they reuse the installed Claude executable and run only as task-owned children.
+React + Tauri + Rust provides a single native core for connection state, MCP requests, idempotent receipts, and user logs. The frontend runs in the system WebView; the main application package includes no Node/npm/node_modules. Claude ACP components and a private Bun runtime are downloaded into the application data directory on explicit enable; they reuse the installed Claude executable and run only as task-owned children.
 
 `service::Service` owns the only Control and AgentHost, a shared `execution::Execution` dispatcher, and a map of `ingress::Ingress` runtimes. Ingress calls the dispatcher with domain values; the MCP transport applies result storage and the pure `egress` envelope/error projection. The dispatcher is the application composition boundary; `kernel` contains provider-independent origin, policy, receipts and result storage. Each ingress owns its lifecycle lock, listener, provider child, temporary directory, URL, logs, error and verification challenge. Runtime failure or stop affects only that ingress. Core shutdown closes all ingresses, then AgentHost and Control. Desktop-owned Codex tasks retain Desktop ownership.
 
@@ -22,7 +22,7 @@ Task approval is an optional confirmation flow controlled locally or from the cl
 
 `native/src/waiter.rs` provides a shared read-only waiting engine. The Codex adapter stays attached to the task's App Server or Desktop owner. Notifications wake the waiter; fresh native snapshots determine state, with a two-second fallback check. Truncated buffers, missing notifications, and coalesced events do not affect the final classification. Reads and waits do not hold a global lock. Cancelling drops the wait future without interrupting the turn. Connector shutdown notifies waiters through a watch channel.
 
-`ingress/config.json` is shared by Rust and Vue. It defines field defaults and size limits, secret presence flags, provider modes and credential requirements. Persistence, validation, credential redaction and provider form controls consume this descriptor. Provider process startup remains in its existing runtime adapter.
+`ingress/config.json` is shared by Rust and React. It defines field defaults and size limits, secret presence flags, provider modes and credential requirements. Persistence, validation, credential redaction and provider form controls consume this descriptor. Provider process startup remains in its existing runtime adapter.
 
 ## Agent boundaries
 

@@ -91,9 +91,9 @@ npm ci
 npm run dev:ui
 ```
 
-The stack is **Tauri + Rust + Vue**. Rust manages connections, configuration, MCP, and Desktop communication; Vue runs in the system WebView. Installers contain no Node, npm, Rust, or Cargo runtime. Node is used only for source development and frontend builds.
+The stack is **Tauri + Rust + React**. Rust manages connections, configuration, MCP, and Desktop communication; React runs in the system WebView. Installers contain no Node, npm, Rust, or Cargo runtime. Node is used only for source development and frontend builds.
 
-Development requires Node 24.12+, stable Rust, and the platform SDK. The Vite development UI shares the running built app's backend and can change its configuration, connections, and tasks. Open the built app first; development does not start a separate backend.
+Development requires Node 24.12+, stable Rust, and the platform SDK. Run `npm run dev` to start the complete development desktop app and its backend. Open `http://127.0.0.1:5187` to debug the same backend in a browser. Frontend edits hot-reload; Rust changes rebuild and restart the development app. No installed build is required. Development shares the installed app’s persistent data by default; quit the installed app before starting development.
 
 Documentation:
 

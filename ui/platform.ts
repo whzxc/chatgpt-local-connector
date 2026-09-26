@@ -29,3 +29,10 @@ export async function notifyNative(title: string, body: string) {
   )
     sendNotification({ title, body });
 }
+
+export async function copyText(value: string) {
+  if (isDesktop) {
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(value);
+  } else await navigator.clipboard.writeText(value);
+}

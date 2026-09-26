@@ -1,16 +1,16 @@
 import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue';
+import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { request as httpRequest } from 'node:http';
 import path from 'node:path';
+import { devStateDir } from './tooling/dev-state.mjs';
 
-const stateRoot = process.env.CLC_STATE_DIR || path.join(process.platform === 'win32' ? process.env.LOCALAPPDATA || path.join(homedir(), 'AppData/Local') : path.join(homedir(), '.local/state'), 'chatgpt-local-connector');
+const stateRoot = devStateDir;
 type Endpoint = { port: number; token: string };
 export default defineConfig({
   root: fileURLToPath(new URL('./ui', import.meta.url)),
-  plugins: [vue(), {
+  plugins: [react(), {
     name: 'connector-native-preview',
     configureServer(server) {
       function ownerIdentity() {
@@ -24,8 +24,8 @@ export default defineConfig({
             const response = await fetch(`http://127.0.0.1:${info.port}/healthz`, { headers: { Authorization: `Bearer ${info.token}` }, signal: AbortSignal.timeout(500) });
             if (response.ok && (await response.json()).instance === info.instance) return info;
           }
-        } catch { /* The installed app is the only backend owner. */ }
-        throw new Error('无法连接后台，请先打开 Local Connector 桌面应用。');
+        } catch { /* The development owner may still be compiling or restarting. */ }
+        throw new Error('开发后台尚未就绪，请运行 npm run dev；首次编译或 Rust 重启期间请稍候。');
       }
       server.middlewares.use((request, response, next) => {
         if (!request.url?.startsWith('/api/')) return next();

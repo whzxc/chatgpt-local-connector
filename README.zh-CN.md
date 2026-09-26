@@ -91,9 +91,9 @@ npm ci
 npm run dev:ui
 ```
 
-技术栈是 **Tauri + Rust + Vue**：Rust 管理连接、配置、MCP 与 Desktop 通信，Vue 运行在系统 WebView 中。安装包不携带 Node、npm、Rust 或 Cargo，Node 仅用于源码开发和前端构建。
+技术栈是 **Tauri + Rust + React**：Rust 管理连接、配置、MCP 与 Desktop 通信，React 运行在系统 WebView 中。安装包不携带 Node、npm、Rust 或 Cargo，Node 仅用于源码开发和前端构建。
 
-开发需要 Node 24.12+、Rust stable 和对应平台 SDK。Dev 界面使用 Vite 热更新，与正在运行的构建版共用同一个后台，可直接操作配置、连接与任务。请先打开构建版；Dev 不启动独立后台。
+开发需要 Node 24.12+、Rust stable 和对应平台 SDK。运行 `npm run dev` 即可启动完整的开发应用和后台，再打开 `http://127.0.0.1:5187` 可在浏览器中调试同一个后台。前端热更新，Rust 改动增量编译并重启开发应用；不依赖已安装的构建版。开发模式默认复用构建版的数据与连接配置；启动前先退出构建版。
 
 相关文档：
 

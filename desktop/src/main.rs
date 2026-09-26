@@ -50,9 +50,6 @@ async fn request(
         )
         .await;
     }
-    if cfg!(debug_assertions) {
-        return connector_core::transport::forward_request(route, method, body).await;
-    }
     app.state::<Arc<Service>>()
         .inner()
         .clone()
@@ -130,41 +127,66 @@ fn main() {
             windows_frame::set_windows_appearance
         ])
         .setup(|app| {
-            if !cfg!(debug_assertions) {
-                let service = Service::new().map_err(std::io::Error::other)?;
-                app.manage(service.clone());
-                tauri::async_runtime::block_on(connector_core::transport::listen(
-                    service.clone(),
-                    Some(Arc::new(desktop_access::Owner(app.handle().clone()))),
-                ))
-                .map_err(std::io::Error::other)?;
-                let autostart = std::env::args().any(|arg| arg == "--autostart");
-                let resume = updates::take_resume().or_else(|| {
-                    if autostart {
-                        None
-                    } else {
-                        session::restore()
+            #[cfg(all(debug_assertions, unix))]
+            if std::env::var_os("CLC_DEV_SUPERVISED").is_some() {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    use std::io::Read;
+                    let mut byte = [0];
+                    while std::io::stdin().read(&mut byte).is_ok_and(|n| n > 0) {}
+                    handle.exit(0);
+                });
+                let handle = app.handle().clone();
+                let (mut terminate, mut interrupt) = tauri::async_runtime::block_on(async {
+                    Ok::<_, std::io::Error>((
+                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?,
+                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?,
+                    ))
+                })?;
+                tauri::async_runtime::spawn(async move {
+                    tokio::select! {
+                        _ = terminate.recv() => {},
+                        _ = interrupt.recv() => {},
+                    }
+                    handle.exit(0);
+                });
+            }
+            let service = Service::new().map_err(std::io::Error::other)?;
+            app.manage(service.clone());
+            tauri::async_runtime::block_on(connector_core::transport::listen(
+                service.clone(),
+                Some(Arc::new(desktop_access::Owner(app.handle().clone()))),
+            ))
+            .map_err(std::io::Error::other)?;
+            let autostart = std::env::args().any(|arg| arg == "--autostart");
+            let resume =
+                updates::take_resume().or_else(
+                    || {
+                        if autostart {
+                            None
+                        } else {
+                            session::restore()
+                        }
+                    },
+                );
+            if resume.is_some() || autostart {
+                tauri::async_runtime::spawn(async move {
+                    if let Some(ids) = resume {
+                        for id in ids {
+                            if let Err(error) = service
+                                .request(&format!("ingress/{id}/start"), "POST", json!({}))
+                                .await
+                            {
+                                service.log("ERROR", &error).await;
+                            }
+                        }
+                    } else if let Err(error) = service
+                        .request("ingress/start-all", "POST", json!({}))
+                        .await
+                    {
+                        service.log("ERROR", &error).await;
                     }
                 });
-                if resume.is_some() || autostart {
-                    tauri::async_runtime::spawn(async move {
-                        if let Some(ids) = resume {
-                            for id in ids {
-                                if let Err(error) = service
-                                    .request(&format!("ingress/{id}/start"), "POST", json!({}))
-                                    .await
-                                {
-                                    service.log("ERROR", &error).await;
-                                }
-                            }
-                        } else if let Err(error) = service
-                            .request("ingress/start-all", "POST", json!({}))
-                            .await
-                        {
-                            service.log("ERROR", &error).await;
-                        }
-                    });
-                }
             }
             if let Some(window) = app.get_webview_window("main") {
                 // Clear the live WebView backing as well as the window configuration.
@@ -222,6 +244,16 @@ fn main() {
                 let metadata = connector_core::root().join("web/native.json");
                 if connector_core::load(&metadata).is_ok_and(|v| v["pid"] == std::process::id()) {
                     let _ = std::fs::remove_file(metadata);
+                }
+            }
+            // Tauri sets a static development icon on Ready; let AppKit resolve
+            // the bundled Xcode catalog and its native appearances instead.
+            #[cfg(all(debug_assertions, target_os = "macos"))]
+            if let tauri::RunEvent::Ready = event {
+                let mtm = objc2::MainThreadMarker::new().expect("main thread");
+                unsafe {
+                    objc2_app_kit::NSApplication::sharedApplication(mtm)
+                        .setApplicationIconImage(None);
                 }
             }
             #[cfg(target_os = "macos")]

@@ -18,8 +18,8 @@ export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amou
     if(at>=start && at<=end){tokens+=count;usd+=cost;priced+=known;}
   }
   if(tokens<=0 || priced!==tokens || usd<=0 || !Number.isFinite(usd))return null;
-  const money=new Intl.NumberFormat(locale.value,{style:'currency',currency:'USD',maximumFractionDigits:2});
-  const compact=new Intl.NumberFormat(locale.value,{notation:'compact',maximumFractionDigits:1});
+  const money=new Intl.NumberFormat(locale.get(),{style:'currency',currency:'USD',maximumFractionDigits:2});
+  const compact=new Intl.NumberFormat(locale.get(),{notation:'compact',maximumFractionDigits:1});
   const amount=money.format(usd*100/w.usedPercent);
   return {amount,lines:[t('usageCycleEstimate',{amount}),
     t('usageCycleSample',{tokens:compact.format(tokens),amount:money.format(usd),percent:w.usedPercent})]};

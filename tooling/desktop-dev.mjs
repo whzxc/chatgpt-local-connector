@@ -1,11 +1,26 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { requireXcode } from './macos-icons.mjs';
 
-// Development owns the window only; operations are forwarded to the running build.
+import { devStateDir } from './dev-state.mjs';
+
+// One development process owns the core and all desktop windows.
 const root = new URL('../', import.meta.url);
-if (process.argv.includes('--release')) throw new Error('desktop:dev 仅运行开发模式；发行构建请用 desktop:build。');
-const env = { ...process.env };
+if (process.argv.includes('--release')) throw new Error('dev 仅运行开发模式；发行构建请用 desktop:build。');
+const env = { ...process.env, CLC_STATE_DIR: devStateDir };
+let owner;
+try {
+  const info = JSON.parse(readFileSync(path.join(devStateDir, 'web/native.json'), 'utf8'));
+  if (Number.isInteger(info.port) && info.port > 0 && info.port <= 65535 && typeof info.token === 'string') {
+    const response = await fetch(`http://127.0.0.1:${info.port}/healthz`, {
+      headers: { Authorization: `Bearer ${info.token}` }, signal: AbortSignal.timeout(1000),
+    });
+    if (response.ok && (await response.json()).instance === info.instance) owner = info;
+  }
+} catch { /* Stale metadata does not prevent starting a new development owner. */ }
+if (owner) throw new Error('这份数据已有 Local Connector 后台运行，请先退出该应用，再运行 npm run dev。');
 if (spawnSync('cargo', ['--version'], { env, stdio: 'ignore' }).status !== 0) {
   const cargo = spawnSync('rustup', ['which', 'cargo'], { env, encoding: 'utf8' });
   if (cargo.status !== 0) throw new Error('请先安装 Rust stable 工具链，并确保 cargo 或 rustup 在 PATH 中。');
@@ -14,12 +29,37 @@ if (spawnSync('cargo', ['--version'], { env, stdio: 'ignore' }).status !== 0) {
 const prune = spawnSync(process.execPath, [fileURLToPath(new URL('tooling/prune-build-cache.mjs', root))],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 if (prune.status !== 0) throw new Error('无法检查 Rust 构建缓存');
+if (process.platform === 'darwin') {
+  requireXcode(env);
+  const output = fileURLToPath(new URL('desktop/target/dev-icon/', root));
+  const source = path.join(output, 'Icon.icon');
+  cpSync(fileURLToPath(new URL('desktop/icons/LocalConnector.icon', root)), source, { recursive: true });
+  const document = JSON.parse(readFileSync(path.join(source, 'icon.json'), 'utf8'));
+  document['fill-specializations'][0].value['linear-gradient'] = [
+    'srgb:0.87843,0.94902,0.99216,1.00000',
+    'srgb:0.65098,0.81176,0.92941,1.00000',
+  ];
+  writeFileSync(path.join(source, 'icon.json'), JSON.stringify(document, null, 2) + '\n');
+  mkdirSync(path.join(output, 'Resources'), { recursive: true });
+  execFileSync('xcrun', ['actool', source, '--compile', path.join(output, 'Resources'),
+    '--output-format', 'human-readable-text', '--output-partial-info-plist', path.join(output, 'icon.plist'),
+    '--app-icon', 'Icon', '--include-all-app-icons', '--enable-on-demand-resources', 'NO',
+    '--development-region', 'en', '--target-device', 'mac', '--minimum-deployment-target', '26.0',
+    '--platform', 'macosx'], { env, stdio: 'inherit' });
+  const runner = 'node ../tooling/macos-dev-app.mjs';
+  env.CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER = runner;
+  env.CARGO_TARGET_X86_64_APPLE_DARWIN_RUNNER = runner;
+}
 const args = [fileURLToPath(new URL('node_modules/@tauri-apps/cli/tauri.js', root)), 'dev'];
 if (process.platform === 'win32') args.push('--config', 'tauri.windows.conf.json');
-args.push('--config', 'tauri.dev.conf.json', ...process.argv.slice(2));
+args.push('--config', 'tauri.dev.conf.json');
+if (process.platform === 'darwin') args.push('--config', JSON.stringify({ bundle: {
+  icon: ['icons/icon.png', 'target/dev-icon/Resources/Icon.icns'],
+} }));
 args.push('--config', JSON.stringify({ build: { beforeDevCommand: {
   script: 'npm run dev:ui', cwd: fileURLToPath(root),
 } } }));
+args.push(...process.argv.slice(2));
 const child = spawn(process.execPath, args, {
   cwd: fileURLToPath(new URL('desktop/', root)), stdio: 'inherit', env,
 });

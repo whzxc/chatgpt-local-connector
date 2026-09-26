@@ -1,0 +1,216 @@
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import { t, locale } from "../i18n";
+import {
+  identifyPolicy,
+  normalizeSelection,
+  presetPolicy,
+  type ToolCatalog,
+  type ToolMode,
+  type ToolPolicy,
+} from "../toolPolicy";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  Field,
+  Notice,
+  SingleChoice,
+  Tooltip,
+} from "./ui";
+export default function ToolPolicyField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ToolPolicy;
+  onChange: (value: ToolPolicy) => void;
+  disabled?: boolean;
+}) {
+  const [catalog, setCatalog] = useState<ToolCatalog>(),
+    [mode, setMode] = useState<ToolMode>(value === "all" ? "all" : "custom"),
+    [failure, setFailure] = useState(false),
+    [open, setOpen] = useState(false),
+    [draft, setDraft] = useState<string[]>([]);
+  async function load() {
+    setFailure(false);
+    try {
+      const next = await api<ToolCatalog>("tool-catalog");
+      setCatalog(next);
+      setMode(identifyPolicy(value, next));
+    } catch {
+      setFailure(true);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  const selected =
+    value === "all"
+      ? (catalog?.tools.map((tool) => tool.name) ?? [])
+      : value.allowlist;
+  const options = [
+    { value: "all", label: t("toolsAll") },
+    { value: "common", label: t("toolsCommon") },
+    { value: "readOnly", label: t("toolsReadOnly") },
+    { value: "custom", label: t("toolsCustom") },
+  ];
+  function choose(next: string) {
+    if (!catalog) return;
+    setMode(next as ToolMode);
+    onChange(
+      next === "all"
+        ? "all"
+        : next === "custom"
+          ? { allowlist: normalizeSelection(selected, catalog) }
+          : presetPolicy(next as "common" | "readOnly", catalog),
+    );
+  }
+  const exposed =
+    catalog?.tools.filter((tool) => selected.includes(tool.name)) ?? [];
+  const locked = new Set(catalog?.required ?? []);
+  for (const tool of catalog?.tools ?? [])
+    if (draft.includes(tool.name))
+      for (const name of tool.requires) locked.add(name);
+  function toggle(names: string[], checked: boolean) {
+    setDraft(
+      normalizeSelection(
+        checked
+          ? [...draft, ...names]
+          : draft.filter((name) => !names.includes(name)),
+        catalog!,
+      ),
+    );
+  }
+  return (
+    <>
+      <Field label={t("toolList")}>
+        <SingleChoice
+          value={mode}
+          onChange={choose}
+          label={t("toolList")}
+          options={options}
+          disabled={disabled || !catalog}
+        />
+        {catalog && (
+          <div className="actions">
+            <span className="muted small">
+              {t("toolSelectionCount", {
+                groups: new Set(exposed.map((tool) => tool.group)).size,
+                count: exposed.length,
+              })}
+            </span>
+            <Button
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                setDraft([...selected]);
+                setOpen(true);
+              }}
+            >
+              {t("toolViewAll")}
+            </Button>
+          </div>
+        )}
+        {failure && (
+          <Notice
+            action={
+              <Button onClick={() => void load()}>
+                {t("toolCatalogRetry")}
+              </Button>
+            }
+          >
+            {t("toolCatalogFailed")}
+          </Notice>
+        )}
+      </Field>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={`${t("toolList")} · ${options.find((option) => option.value === mode)?.label}`}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>{t("cancel")}</Button>
+            <Button
+              variant="primary"
+              disabled={disabled}
+              onClick={() => {
+                if (mode === "custom")
+                  onChange({ allowlist: normalizeSelection(draft, catalog!) });
+                setOpen(false);
+              }}
+            >
+              {t("done")}
+            </Button>
+          </>
+        }
+      >
+        <div className="tool-groups">
+          {catalog?.groups.map((group) => {
+            const tools = catalog.tools.filter(
+              (tool) =>
+                tool.group === group.id &&
+                (mode === "custom" || draft.includes(tool.name)),
+            );
+            if (!tools.length) return null;
+            const all = tools.every((tool) => draft.includes(tool.name));
+            return (
+              <section key={group.id}>
+                {mode === "custom" ? (
+                  <Checkbox
+                    checked={
+                      all
+                        ? true
+                        : tools.some((tool) => draft.includes(tool.name))
+                          ? "indeterminate"
+                          : false
+                    }
+                    onChange={(checked) =>
+                      toggle(
+                        tools.map((tool) => tool.name),
+                        checked,
+                      )
+                    }
+                    disabled={disabled}
+                  >
+                    <strong>{group.label[locale.get()]}</strong>
+                  </Checkbox>
+                ) : (
+                  <h3>{group.label[locale.get()]}</h3>
+                )}
+                <div className="tool-items">
+                  {tools.map((tool) => (
+                    <div key={tool.name}>
+                      {mode === "custom" ? (
+                        <Checkbox
+                          checked={draft.includes(tool.name)}
+                          onChange={(checked) => toggle([tool.name], checked)}
+                          disabled={
+                            disabled ||
+                            (draft.includes(tool.name) && locked.has(tool.name))
+                          }
+                        >
+                          <Tooltip text={tool.description}>
+                            <span tabIndex={0} className="tool-name">
+                              {tool.name}
+                            </span>
+                          </Tooltip>
+                        </Checkbox>
+                      ) : (
+                        <Tooltip text={tool.description}>
+                          <span tabIndex={0} className="tool-name">
+                            {tool.name}
+                          </span>
+                        </Tooltip>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </Dialog>
+    </>
+  );
+}

@@ -176,45 +176,15 @@ pub fn install(app: &tauri::AppHandle) {
         });
     }
     tauri::async_runtime::spawn(async move {
-        if cfg!(debug_assertions) {
-            // Development forwards to the build owner; never creates a core.
-            let mut revision = Value::Null;
-            loop {
-                if let Ok(snapshot) = crate::request(&app, "subscriptions", "GET", json!({})).await
-                {
-                    let key = json!([snapshot["instanceId"], snapshot["revision"]]);
-                    if key != revision {
-                        revision = key;
-                        apply(&app, snapshot, &state);
-                    }
-                } else {
-                    revision = Value::Null;
-                    if state.count.swap(0, Ordering::Relaxed) > 0 {
-                        #[cfg(target_os = "macos")]
-                        {
-                            let handle = app.clone();
-                            let _ = app.run_on_main_thread(move || {
-                                macos::close();
-                                if let Some(w) = handle.get_webview_window("usage-rail") {
-                                    let _ = w.destroy();
-                                }
-                            });
-                        }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            }
-        } else {
-            let service = app
-                .state::<Arc<connector_core::service::Service>>()
-                .inner()
-                .clone();
-            let mut receiver = service.subscriptions.subscribe();
-            apply(&app, service.subscriptions.snapshot().await, &state);
-            while receiver.changed().await.is_ok() {
-                let snapshot = serde_json::to_value(receiver.borrow_and_update().clone()).unwrap();
-                apply(&app, snapshot, &state);
-            }
+        let service = app
+            .state::<Arc<connector_core::service::Service>>()
+            .inner()
+            .clone();
+        let mut receiver = service.subscriptions.subscribe();
+        apply(&app, service.subscriptions.snapshot().await, &state);
+        while receiver.changed().await.is_ok() {
+            let snapshot = serde_json::to_value(receiver.borrow_and_update().clone()).unwrap();
+            apply(&app, snapshot, &state);
         }
     });
 }

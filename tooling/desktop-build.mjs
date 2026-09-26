@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { requireXcode } from './macos-icons.mjs';
 const root = new URL('../', import.meta.url);
 const args = [fileURLToPath(new URL('node_modules/@tauri-apps/cli/tauri.js', root)), 'build'];
 if (process.platform === 'win32') args.push('--config', 'tauri.windows.conf.json');
@@ -18,17 +19,7 @@ args.push(...buildArgs);
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (/^(APPLE_|CSC_|WIN_CSC_)/.test(key)) delete env[key];
 if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
-  // Tauri otherwise silently skips the native appearance catalog without Xcode 26.
-  let version;
-  try {
-    version = execFileSync('xcrun', ['actool', '--version', '--output-format=human-readable-text'],
-      { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch {
-    throw new Error('macOS 原生深浅图标需要完整 Xcode 26+；请用 DEVELOPER_DIR 指向 Xcode.app/Contents/Developer，Command Line Tools 不包含 actool。');
-  }
-  if (Number(version.match(/short-bundle-version:\s*(\d+)/)?.[1] ?? 0) < 26) {
-    throw new Error('macOS 原生深浅图标需要 Xcode 26+，当前 actool 版本不满足要求。');
-  }
+  requireXcode(env);
 }
 // Avoid embedding private source and Cargo registry paths in release binaries.
 const flags = env.CARGO_ENCODED_RUSTFLAGS?.split('\x1f') ?? env.RUSTFLAGS?.trim().split(/\s+/).filter(Boolean) ?? [];

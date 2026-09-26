@@ -4,7 +4,7 @@ import type { ProviderSnapshot } from './types';
 import { duration as readableDuration } from './presentation';
 export const isFiveHour = (value:string) => ['rolling','five_hour','session','300 min','18000 s'].includes(value);
 export function windowLabel(value: string) {
-  const suffix = quotaDisplay.value === 'used' ? 'Limit' : '';
+  const suffix = quotaDisplay.get() === 'used' ? 'Limit' : '';
   const period = (key:string) => t(key + suffix);
   const names: Record<string, string> = { rolling: period('usageFiveHour'), weekly: period('usageWeekly'), monthly: period('usageMonthly'), five_hour: period('usageFiveHour'), seven_day: period('usageWeekly'), session: period('usageFiveHour'), weekly_all: period('usageWeekly'), weekly_scoped: period('usageWeekly'), 'current-period': t('usageCurrentPeriod'), cursorModels: t('usageCursorModels'), otherModels: t('usageOtherModels'), plan: t('usagePlan') };
   const duration = /^(\d+) (min|s)$/.exec(value);

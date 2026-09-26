@@ -5,17 +5,18 @@
 Use Node 24.12+, npm, stable Rust, and the macOS/Windows platform SDK. Node runs development tools only; it is not a product runtime dependency.
 
 ```sh
-npm ci
-npm run dev:ui
+npm run dev
 ```
 
-Vite listens on `http://127.0.0.1:5187`. Vue/CSS edits hot-reload without packaging, installing, or restarting the built app. The authenticated local proxy shares the built app's connections, configuration, and tasks: saves, connection changes, and approvals affect its real backend immediately. Open the built app first. An unavailable backend produces an error rather than starting a fallback service. The proxy retains local Host, Origin, and write-request checks and does not automatically retry writes.
+This starts Vite at `http://127.0.0.1:5187` and the complete Tauri development application, including its Rust Service, local API, connections, Agents, tray, and usage rail. The desktop WebView and browser use the same development backend. No installed build is required. React/CSS changes hot-reload; Rust changes incrementally compile and restart the development app. Connection sessions restore after an ordinary restart; in-flight tasks are subject to the normal process lifecycle.
 
-For native window development, use `npm run desktop:dev`; Tauri incrementally compiles Rust changes. The development window forwards reads and writes to the built app and owns no separate connection. Rebuild and run the built app to exercise backend changes. Updates are still handled by the built app.
+Development shares the packaged app’s persistent data by default: `~/.local/state/chatgpt-local-connector` on macOS and `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Connections, settings, and records carry over in both directions. Quit the packaged app before starting development; the launcher rejects an already running owner for the selected directory. Do not start the packaged app while development owns that data. `CLC_STATE_DIR` optionally selects another directory for both desktop and Vite. Automatic installation of release updates remains disabled in development.
+
+`npm run dev:ui` starts only Vite against the same state directory; it needs an already running desktop backend. The proxy retains loopback, origin, credential, and write-header checks. Initial compilation or a Rust restart can briefly make the API unavailable; Retry reconnects after startup. Stop a standalone Vite instance on port 5187 before starting the full `npm run dev` command.
 
 ## Code layout
 
-- `ui/`: Vue pages, state types, and interactions.
+- `ui/`: React pages, state types, and interactions.
 - `native/`: Rust core for Desktop IPC, auxiliary Codex RPC, AgentHost and Pi/ACP processes, 42 MCP tools, receipts, events, configuration, and Tunnel lifecycle.
 - `desktop/`: Tauri entry point, tray, windows, OS integration, and updates; calls the in-process Rust core.
 - `tooling/`: development/build scripts, excluded from runtime resources.
@@ -27,11 +28,11 @@ Its `cli` subcommand provides configuration and diagnostics through the existing
 
 ## UI languages
 
-`ui/i18n.ts` configures Vue I18n in Composition API mode. Vue I18n handles reactive translation, interpolation, and fallback; VueUse handles browser language detection and persistent preferences. English is the default and fallback. `ui/locales/en.json` defines typed keys; `zh-CN.json` supplies Simplified Chinese. Language uses the same localStorage preference mechanism as theme and notifications. Missing or invalid preferences select Auto; unsupported system/browser languages resolve to English. Manual choices take priority. WebView and browser previews have separate storage origins.
+`ui/i18n.ts` owns translation, named interpolation, browser/system language selection, and English fallback. The small stores in `ui/state/store.ts` expose immutable snapshots through React's `useSyncExternalStore`; preferences persist in localStorage and subscribe to storage events. `ui/locales/en.json` defines messages; `zh-CN.json` supplies Simplified Chinese. Missing or invalid language preferences select Auto; unsupported system/browser languages resolve to English. Manual choices take priority. WebView and browser previews have separate storage origins.
 
-Use `t(key, params)` for display text, with whole messages and named placeholders. Put derived label dictionaries in computed values so switching language updates them. Dates use the resolved locale; filters and protocol state retain stable identifiers. `ui/messages.ts` translates recognized CLC messages at the rendering boundary, including retained feedback and service errors. Unknown third-party diagnostics remain verbatim. Do not apply it to user task content, identifiers, or entire API responses.
+Use `t(key, params)` for display text, with whole messages and named placeholders. Derive labels during rendering and subscribe each renderer root to the resolved locale so switching language updates all visible text. Dates use the resolved locale; filters and protocol state retain stable identifiers. `ui/messages.ts` translates recognized CLC messages at the rendering boundary, including retained feedback and service errors. Unknown third-party diagnostics remain verbatim. Do not apply it to user task content, identifiers, or entire API responses.
 
-The menu-bar panel is a separate Vue WebView using the same locale and theme preferences. The WebView also sends its resolved locale to `desktop/src/i18n.rs` for native rail menu labels. Native labels default to English until the WebView reports its preference. This state is presentation-only: the service, MCP schemas/descriptions, error codes, and Agent/Codex contracts never read it. Text copied into ChatGPT as a model instruction or connection description stays English regardless of UI language.
+The menu-bar panel is a separate React WebView using the same locale and theme preferences. The WebView also sends its resolved locale to `desktop/src/i18n.rs` for native rail menu labels. Native labels default to English until the WebView reports its preference. This state is presentation-only: the service, MCP schemas/descriptions, error codes, and Agent/Codex contracts never read it. Text copied into ChatGPT as a model instruction or connection description stays English regardless of UI language.
 
 To add a language, add its JSON resource with matching keys/placeholders, register the locale, option and language matching in `ui/i18n.ts`, and extend the tray resource selection in `desktop/src/i18n.rs`. Missing translated keys fall back to English. Check both languages' rendered pages, long labels, Auto/manual switching, persisted and invalid preferences, dates, retained errors, and tray labels. README and the three core user guides have English canonical versions and corresponding `zh-CN` translations; link each translation to its source. No translation pipeline is required.
 
@@ -43,9 +44,7 @@ For real calls, use an isolated `CLC_STATE_DIR` and temporary working directory 
 
 ## UI controls
 
-`ui/tokens.css` defines desktop control sizing. Buttons, single-line inputs, and selects in `ui/style.css` use a 28px height, 12px font, 18px line height, 6px radius, and 10px horizontal padding. Textareas share typography and radius with content-appropriate heights; switches have their own shape.
-
-Settings uses `SettingsGroup` and `SettingsRow`. Add layout and necessary widths rather than locally overriding control height, typography, radius, or vertical padding. Change shared tokens to adjust density, then inspect Settings and Tasks rendering.
+`ui/tokens.css` defines semantic colors, typography, spacing, radii, and sizing. Standard controls are 36px high; compact icon controls are 32px. Text uses 13px/14px defaults and the operating system font stack. Shared components in `ui/components/ui/index.tsx` consume these tokens; Radix owns complex interaction behavior. `Group` and `Row` arrange settings without overriding control appearance. See [UI components](ui.md) for information hierarchy, focus, and responsive rules.
 
 ## Checks
 
@@ -84,7 +83,7 @@ npm run check:package
 
 Packages contain the native executable, frontend static resources, icons, and applicable third-party license notices. Build scripts remap local user/repository paths in Rust source to generic build paths, avoiding private paths in binaries. Official Tunnel Client is downloaded and verified separately on first use. Codex uses the binary bundled in the user's Desktop installation rather than packaging another copy. Building does not overwrite the installed app.
 
-macOS app packaging requires full Xcode 26 or later, including `actool`; Command Line Tools alone are insufficient. Select Xcode with `DEVELOPER_DIR` or `xcode-select`. Tauri compiles `desktop/icons/LocalConnector.icon` into `Assets.car` and sets `CFBundleIconName` to `Icon`. `CFBundleIconFile` uses the same extensionless name, with `desktop/icons/macos/Icon.icns` as the static fallback; both names must stay aligned so AppKit and Finder resolve the same icon. The Icon Composer document contains a light sage gradient, the system dark background, and a separate opaque character layer. macOS 26 controls the background shape, lighting, and icon appearance across Dock, Finder, and application launchers, independently of the app's UI theme. Older macOS versions use the bundled static ICNS; Windows uses ICO. The unbundled development process uses its separate static Dev icon. Edit the native source in Icon Composer; its `Assets/head.png` is copied from `ui/assets/local-connector-head.png` and should be updated together when the artwork changes. `desktop:build` checks the compiler before building and validates the compiled icon catalog before generating the DMG.
+macOS app packaging requires full Xcode 26 or later, including `actool`; Command Line Tools alone are insufficient. Select Xcode with `DEVELOPER_DIR` or `xcode-select`. Tauri compiles `desktop/icons/LocalConnector.icon` into `Assets.car` and sets `CFBundleIconName` to `Icon`. `CFBundleIconFile` uses the same extensionless name, with `desktop/icons/macos/Icon.icns` as the static fallback; both names must stay aligned so AppKit and Finder resolve the same icon. The Icon Composer document contains a light sage gradient, the system dark background, and a separate opaque character layer. macOS 26 controls the background shape, lighting, and icon appearance across Dock, Finder, and application launchers, independently of the app's UI theme. Older macOS versions use the bundled static ICNS; Windows uses ICO. On macOS, `dev` derives a light blue background from the same Icon Composer document, preserving all other layers and appearance settings. Xcode compiles its catalog and static fallback, and the Cargo runner launches `Local Connector Dev.app` from the build directory with frontend and Rust hot reload intact. Both build commands use `DEVELOPER_DIR` when set, otherwise the standard `/Applications/Xcode.app` installation when available. Edit the native source in Icon Composer; its `Assets/head.png` is copied from `ui/assets/local-connector-head.png` and should be updated together when the artwork changes. `desktop:build` checks the compiler before building and validates the compiled icon catalog before generating the DMG.
 
 Keep versions synchronized across `package.json`, `native/Cargo.toml`, `desktop/Cargo.toml`, and Tauri configuration. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).
 
@@ -116,12 +115,9 @@ fields such as plan names and available resets are extracted by the shared front
 adapter in `ui/subscriptions/response.ts`. Changing that extraction does not require
 a new native build when the existing endpoint already supplies the data. Account
 changes clear both the normalized reading and the raw response. New native routes need
-a matching build owner. For an isolated desktop check, use the existing Tauri
-build `--config` override with a distinct application identifier/product name,
-launch that build with `--state-dir` pointing to a separate private directory,
-and leave ingress configuration disabled. A development window or Vite preview
-may forward to that isolated owner through `CLC_STATE_DIR`. Do not point an old
-production owner at new routes and silently start a second development core.
+a matching development backend; `npm run dev` rebuilds it with Rust changes.
+Use `CLC_STATE_DIR` to select an isolated persistent directory for desktop and browser together.
+Packaged-build checks use the existing Tauri build `--config` override and `--state-dir`; ordinary UI and backend development do not require packaging.
 
 
 ### Subscription sources and usage estimates
