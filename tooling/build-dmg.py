@@ -28,7 +28,7 @@ dmgbuild.build_dmg(str(output), name, settings={
     "format": "UDZO",
     "files": [str(application)],
     "symlinks": {"Applications": "/Applications"},
-    "icon": str(desktop / "icons" / "icon.icns"),
+    "icon": str(desktop / "icons" / "macos" / "Icon.icns"),
     "background": str(desktop / layout["background"]),
     "window_rect": ((200, 160), (layout["windowSize"]["width"], layout["windowSize"]["height"])),
     "icon_locations": {

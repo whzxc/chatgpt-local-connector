@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { toolFingerprint } from './catalog.mjs';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,4 +16,20 @@ async function inspect(dir) {
   }
 }
 await inspect(root);
+if (process.platform === 'darwin' && root.endsWith('.app')) {
+  const resources = path.join(root, 'Contents', 'Resources');
+  const assets = JSON.parse(execFileSync('xcrun', ['assetutil', '--info', path.join(resources, 'Assets.car')], { encoding: 'utf8' }));
+  const name = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconName', path.join(root, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
+  const file = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIconFile', path.join(root, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
+  if (file !== name) throw new Error('CFBundleIconFile 与 CFBundleIconName 必须使用同一个原生图标名称。');
+  await stat(path.join(resources, `${file}.icns`));
+  if (!assets.some(asset => asset.AssetType === 'Icon Image' && asset.Name === name)) {
+    throw new Error('安装包缺少与 CFBundleIconName 对应的原生分层图标。');
+  }
+  for (const appearance of ['NSAppearanceNameAqua', 'NSAppearanceNameDarkAqua']) {
+    if (!assets.some(asset => asset.AssetType === 'IconImageStack' && asset.Name === name && asset.Appearance === appearance)) {
+      throw new Error(`安装包缺少原生图标外观：${appearance}`);
+    }
+  }
+}
 console.log(`原生发行产物检查通过：${(bytes / 1024 / 1024).toFixed(2)} MiB，无 Node/npm 运行环境。`);

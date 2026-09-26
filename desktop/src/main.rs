@@ -7,6 +7,7 @@ use tauri::Manager;
 mod appearance;
 mod desktop_access;
 mod i18n;
+mod session;
 mod tray;
 mod updates;
 mod usage_panel;
@@ -137,8 +138,15 @@ fn main() {
                     Some(Arc::new(desktop_access::Owner(app.handle().clone()))),
                 ))
                 .map_err(std::io::Error::other)?;
-                let resume = updates::take_resume();
-                if resume.is_some() || std::env::args().any(|arg| arg == "--autostart") {
+                let autostart = std::env::args().any(|arg| arg == "--autostart");
+                let resume = updates::take_resume().or_else(|| {
+                    if autostart {
+                        None
+                    } else {
+                        session::restore()
+                    }
+                });
+                if resume.is_some() || autostart {
                     tauri::async_runtime::spawn(async move {
                         if let Some(ids) = resume {
                             for id in ids {
@@ -177,12 +185,6 @@ fn main() {
             if window.label() != "main" {
                 return;
             }
-            #[cfg(target_os = "macos")]
-            if matches!(event, tauri::WindowEvent::ThemeChanged(_)) {
-                if let Err(error) = appearance::update_dock_icon(window.app_handle()) {
-                    eprintln!("{error}");
-                }
-            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if !cfg!(debug_assertions)
                     || window
@@ -208,7 +210,13 @@ fn main() {
                     .load(std::sync::atomic::Ordering::SeqCst)
                 {
                     if let Some(service) = app.try_state::<Arc<Service>>() {
-                        tauri::async_runtime::block_on(service.stop()).ok();
+                        tauri::async_runtime::block_on(async {
+                            if let Err(error) = session::remember(service.inner()).await {
+                                service.log("ERROR", &error).await;
+                            }
+                            service.stop().await
+                        })
+                        .ok();
                     }
                 }
                 let metadata = connector_core::root().join("web/native.json");

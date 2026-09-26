@@ -5,7 +5,7 @@ The production app is one Tauri/Rust process owning a single connection core. Th
 - **Connect:** Desktop mode ensures Desktop is available; background mode initializes Connector's app-server without opening Desktop. Official mode starts Tunnel Client, which launches the same executable's `stdio` adapter as needed. HTTPS mode starts a separate MCP listener and the configured Cloudflare/ngrok client. Tunnel management and auxiliary RPC use Desktop's bundled native Codex binary directly, without npm launcher scripts.
 - **Disconnect:** stops only the selected ingress process group and MCP forwarding; Connector app-server and Agent processes continue until core shutdown. Unconfirmed requests retain receipts and must not be automatically retried as unexecuted.
 - **Close window:** hides it while keeping the connection running. Reopen through the macOS menu bar/Dock or Windows tray.
-- **Quit:** stops Connector-owned connection processes, then exits.
+- **Quit:** remembers which connections are running, stops Connector-owned connection processes, then exits. Opening the app again restores those connections; connections left disconnected remain disconnected.
 - **Start at sign-in:** the OS starts the native app and connects it.
 - **Update:** downloads and verifies the signature, then disconnects, installs, and restarts. Codex Desktop task ownership does not change.
 

@@ -35,7 +35,7 @@ debug = 1
 incremental = false
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSImage", "NSBezierPath", "NSView", "NSWindow", "NSButton", "NSResponder", "NSControl", "NSPanel", "NSMenu", "NSMenuItem", "NSEvent", "NSScreen", "NSColor", "NSGraphics", "NSWorkspace", "NSAccessibility", "block2"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSImage", "NSView", "NSWindow", "NSButton", "NSResponder", "NSControl", "NSPanel", "NSMenu", "NSMenuItem", "NSEvent", "NSScreen", "NSColor", "NSGraphics", "NSWorkspace", "NSAccessibility", "block2"] }
 
 objc2 = "0.6.3"
 objc2-foundation = { version = "0.3.2", features = ["NSGeometry"] }

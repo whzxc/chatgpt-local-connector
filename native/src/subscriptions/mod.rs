@@ -48,7 +48,7 @@ impl SubscriptionService {
             save(&path, &serde_json::to_value(&settings).unwrap())?;
         }
         validate(&settings)?;
-        let slots: BTreeMap<String, Slot> = REGISTRY
+        let mut slots: BTreeMap<String, Slot> = REGISTRY
             .iter()
             .map(|r| {
                 (
@@ -93,6 +93,12 @@ impl SubscriptionService {
                 )
             })
             .collect();
+        // Serve the last successful reading before potentially slow Agent discovery.
+        // Inventory reconciles eligibility in the background; cached values remain stale.
+        for slot in slots.values_mut().filter(|slot| slot.view.selected) {
+            cache::restore(slot);
+            slot.view.eligible = slot.view.observed_at.is_some();
+        }
         let initial = Snapshot {
             instance_id: id(),
             revision: 0,

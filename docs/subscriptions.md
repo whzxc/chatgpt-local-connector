@@ -7,6 +7,8 @@ quota readings. Missing quota data is not treated as a full allowance.
 ## Cached readings
 
 All providers persist their last successful reading in the private local state directory.
+Readings are restored during core initialization, before Agent discovery or network
+requests, so home quota rings can display cached values immediately.
 Restored readings are marked stale while quota refresh runs in the background;
 they do not trigger live quota alerts or consumption forecasts. Failed requests retain
 the last reading and retry with backoff, including authentication failures. The server's

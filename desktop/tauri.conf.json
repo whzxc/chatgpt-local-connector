@@ -32,7 +32,7 @@
     ],
     "icon": [
       "icons/icon.png",
-      "icons/icon.icns",
+      "icons/macos/Icon.icns",
       "icons/icon.ico"
     ],
     "macOS": {

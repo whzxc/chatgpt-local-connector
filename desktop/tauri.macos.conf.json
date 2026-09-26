@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "icon": [
+      "icons/icon.png",
+      "icons/macos/Icon.icns",
+      "icons/LocalConnector.icon"
+    ]
+  }
+}

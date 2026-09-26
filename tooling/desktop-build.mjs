@@ -17,6 +17,19 @@ args.push(...buildArgs);
 // Keep platform-signing credentials out of ad-hoc builds.
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (/^(APPLE_|CSC_|WIN_CSC_)/.test(key)) delete env[key];
+if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
+  // Tauri otherwise silently skips the native appearance catalog without Xcode 26.
+  let version;
+  try {
+    version = execFileSync('xcrun', ['actool', '--version', '--output-format=human-readable-text'],
+      { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch {
+    throw new Error('macOS 原生深浅图标需要完整 Xcode 26+；请用 DEVELOPER_DIR 指向 Xcode.app/Contents/Developer，Command Line Tools 不包含 actool。');
+  }
+  if (Number(version.match(/short-bundle-version:\s*(\d+)/)?.[1] ?? 0) < 26) {
+    throw new Error('macOS 原生深浅图标需要 Xcode 26+，当前 actool 版本不满足要求。');
+  }
+}
 // Avoid embedding private source and Cargo registry paths in release binaries.
 const flags = env.CARGO_ENCODED_RUSTFLAGS?.split('\x1f') ?? env.RUSTFLAGS?.trim().split(/\s+/).filter(Boolean) ?? [];
 flags.push(`--remap-path-prefix=${homedir()}=/build-user`, `--remap-path-prefix=${fileURLToPath(root)}=/workspace/`);
@@ -28,6 +41,10 @@ execFileSync(process.execPath, [fileURLToPath(new URL('tooling/prepare-desktop.m
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 execFileSync(process.execPath, args, { cwd: fileURLToPath(new URL('desktop/', root)), env, stdio: 'inherit' });
 if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
+  const profile = buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release';
+  execFileSync(process.execPath, [fileURLToPath(new URL('tooling/check-package.mjs', root)),
+    `desktop/target/aarch64-apple-darwin/${profile}/bundle/macos/Local Connector.app`],
+  { cwd: fileURLToPath(root), env, stdio: 'inherit' });
   execFileSync('uv', ['run', '--script', fileURLToPath(new URL('tooling/build-dmg.py', root)),
     buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release'], { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 }
