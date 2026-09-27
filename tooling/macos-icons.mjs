@@ -1,5 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+
+export function compileIcon(source, output, env) {
+  mkdirSync(output, { recursive: true });
+  const icon = path.join(output, 'Icon.icon');
+  cpSync(source, icon, { recursive: true });
+  // Compile outside the Node-hosted Tauri bundler, whose inherited stdin is
+  // closed on exec (tauri-apps/tauri#15991). Keep generated assets in target.
+  execFileSync('xcrun', ['actool', icon, '--compile', output,
+    '--output-format', 'human-readable-text', '--output-partial-info-plist', path.join(output, 'icon.plist'),
+    '--app-icon', 'Icon', '--include-all-app-icons', '--enable-on-demand-resources', 'NO',
+    '--development-region', 'en', '--target-device', 'mac', '--minimum-deployment-target', '26.0',
+    '--platform', 'macosx'], { env, stdio: ['ignore', 'inherit', 'inherit'] });
+}
 
 export function requireXcode(env) {
   if (!env.DEVELOPER_DIR && existsSync('/Applications/Xcode.app/Contents/Developer')) {

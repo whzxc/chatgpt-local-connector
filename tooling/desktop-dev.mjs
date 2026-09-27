@@ -1,8 +1,8 @@
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { requireXcode } from './macos-icons.mjs';
+import { cpSync, readFileSync, writeFileSync } from 'node:fs';
+import { compileIcon, requireXcode } from './macos-icons.mjs';
 
 import { devStateDir } from './dev-state.mjs';
 
@@ -40,12 +40,7 @@ if (process.platform === 'darwin') {
     'srgb:0.65098,0.81176,0.92941,1.00000',
   ];
   writeFileSync(path.join(source, 'icon.json'), JSON.stringify(document, null, 2) + '\n');
-  mkdirSync(path.join(output, 'Resources'), { recursive: true });
-  execFileSync('xcrun', ['actool', source, '--compile', path.join(output, 'Resources'),
-    '--output-format', 'human-readable-text', '--output-partial-info-plist', path.join(output, 'icon.plist'),
-    '--app-icon', 'Icon', '--include-all-app-icons', '--enable-on-demand-resources', 'NO',
-    '--development-region', 'en', '--target-device', 'mac', '--minimum-deployment-target', '26.0',
-    '--platform', 'macosx'], { env, stdio: 'inherit' });
+  compileIcon(source, path.join(output, 'Resources'), env);
   const runner = 'node ../tooling/macos-dev-app.mjs';
   env.CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER = runner;
   env.CARGO_TARGET_X86_64_APPLE_DARWIN_RUNNER = runner;

@@ -44,6 +44,8 @@ Windows 在原生 Windows 环境使用 `--target x86_64-pc-windows-msvc`，stage
 
 macOS DMG 使用 `desktop/assets/dmg-background.png` 提供无文案的拖拽安装引导，窗口尺寸与图标位置在 `desktop/tauri.conf.json` 的 `bundle.macOS.dmg` 中配置。背景中的两个落点对应实际应用与 Applications 文件夹，箭头指向右侧。macOS 构建需要 `uv`；`desktop:build` 在 Tauri 生成应用后，通过 `tooling/build-dmg.py` 调用固定版本的 dmgbuild 直接写入布局，无需 Finder 会话。Python 与 dmgbuild 仅用于构建，不进入安装包。
 
+原生深浅色图标需要完整 Xcode 26+。构建脚本先用 `actool` 编译 `.icon` 源文件，再将 `target` 下生成的 `Assets.car` 交给 Tauri 打包；开发模式复用相同编译入口。生成资源不进入版本库。
+
 Stage 目录必须为空，每次使用新目录。脚本只挑选指定平台的发行文件，统一文件名，并使用与 Tauri 相同的 Minisign 验签库验证实际更新包与内置公钥匹配。
 
 ## 发布流程
