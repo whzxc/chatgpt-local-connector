@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useSpring } from "../usage-rail/spring";
+import { useSpring } from "../motion/spring";
 import railMetrics from "../../shared/usage-panel.json";
 import { Bot } from "lucide-react";
 import { t } from "../i18n";
@@ -57,8 +57,8 @@ function TimeTick({
 export function AgentQuotaIcon({ agent }: { agent: string }) {
   const { snapshot } = subscriptions.use();
   const active = activeAgents.use();
-  quotaDisplay.use();
   const now = useNow();
+  quotaDisplay.use();
   const provider = snapshot?.settings.enabled
     ? snapshot.providers.find(
         (p) => p.agentId === agent && p.eligible && p.selected,
@@ -102,7 +102,7 @@ export function AgentQuotaIcon({ agent }: { agent: string }) {
             cy="24"
             r="21"
             pathLength="100"
-            stroke={readingStatus(weekly, provider).color}
+            stroke={readingStatus(weekly, provider, now).color}
             strokeDasharray={`${quotaValue(weekly)} 100`}
             transform="rotate(-90 24 24)"
           />
@@ -129,13 +129,12 @@ export function AgentQuotaIcon({ agent }: { agent: string }) {
 }
 export default function QuotaRing({
   provider,
-  warningAt,
   showPercentage = true,
 }: {
   provider: ProviderSnapshot;
-  warningAt?: number;
   showPercentage?: boolean;
 }) {
+  const now = useNow();
   quotaDisplay.use();
   const active = activeAgents.use();
   const current = provider.windows.find(
@@ -168,7 +167,7 @@ export default function QuotaRing({
               className="value"
               pathLength="100"
               transform="rotate(-90 18 18)"
-              stroke={quotaColor(current, provider, warningAt)}
+              stroke={quotaColor(current, provider, now)}
               strokeDasharray={`${Math.max(0, Math.min(100, progress.value[0]!))} 100`}
             />
           )}

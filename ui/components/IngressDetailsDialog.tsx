@@ -138,7 +138,7 @@ export default function IngressDetailsDialog({
     return () => {
       alive.current = false;
     };
-  }, []);
+  }, [ingress, autoConnect]);
   return (
     <Dialog
       title={

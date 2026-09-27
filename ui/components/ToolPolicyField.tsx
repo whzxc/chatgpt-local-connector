@@ -13,6 +13,7 @@ import {
   Button,
   Checkbox,
   Dialog,
+  DialogClose,
   Field,
   Notice,
   SingleChoice,
@@ -130,18 +131,21 @@ export default function ToolPolicyField({
         title={`${t("toolList")} · ${options.find((option) => option.value === mode)?.label}`}
         footer={
           <>
-            <Button onClick={() => setOpen(false)}>{t("cancel")}</Button>
-            <Button
-              variant="primary"
-              disabled={disabled}
-              onClick={() => {
-                if (mode === "custom")
-                  onChange({ allowlist: normalizeSelection(draft, catalog!) });
-                setOpen(false);
-              }}
-            >
-              {t("done")}
-            </Button>
+            <DialogClose asChild>
+              <Button>{t("cancel")}</Button>
+            </DialogClose>
+            <DialogClose asChild>
+              <Button
+                variant="primary"
+                disabled={disabled}
+                onClick={() => {
+                  if (mode === "custom")
+                    onChange({ allowlist: normalizeSelection(draft, catalog!) });
+                }}
+              >
+                {t("done")}
+              </Button>
+            </DialogClose>
           </>
         }
       >

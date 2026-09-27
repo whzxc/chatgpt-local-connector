@@ -35,10 +35,12 @@ export default function IngressDialog({
   ingress,
   onClose,
   onSaved,
+  onRemoved,
 }: {
   ingress?: Ingress;
   onClose: () => void;
   onSaved: (ingress: Ingress) => void;
+  onRemoved: () => void;
 }) {
   const { status } = connector.use();
   const [selected, setSelected] = useState(
@@ -200,7 +202,7 @@ export default function IngressDialog({
     try {
       await api(`ingress/${ingress.id}`, "DELETE");
       await refreshConnector();
-      onClose();
+      onRemoved();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -245,7 +247,8 @@ export default function IngressDialog({
   return (
     <Dialog
       title={`${t(ingress ? "editControlSource" : "addControlSource")}${selected ? " · " + (preset?.displayName || t("customControlSource")) : ""}`}
-      onClose={onClose}
+      onClose={() => !ingress && selected ? setSelected("") : onClose()}
+      depthOffset={!ingress && selected ? 1 : 0}
       headerless={!ingress}
       width={!selected ? 480 : undefined}
       busy={working}

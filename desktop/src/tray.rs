@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod macos;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tauri::{
     tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -27,9 +29,12 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
     .visible_on_all_workspaces(true)
     .build()?;
     window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
+    #[cfg(target_os = "macos")]
+    macos::install(&window)?;
     let handle = window.clone();
     window.on_window_event(move |event| {
-        if matches!(event, tauri::WindowEvent::Focused(false))
+        if !cfg!(target_os = "macos")
+            && matches!(event, tauri::WindowEvent::Focused(false))
             && !handle
                 .app_handle()
                 .state::<PanelInteraction>()
@@ -38,28 +43,14 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
         {
             // Let the tray click own toggling while the pointer is over its icon.
             // Blur may arrive before or after that click; neither should consume a later click.
-            if let (Ok(point), Some(tray)) = (
-                handle.cursor_position(),
-                handle.app_handle().tray_by_id("main-tray"),
-            ) {
-                if let Ok(Some(rect)) = tray.rect() {
-                    let scale = handle.scale_factor().unwrap_or(1.);
-                    let pos = rect.position.to_physical::<f64>(scale);
-                    let size = rect.size.to_physical::<f64>(scale);
-                    if point.x >= pos.x
-                        && point.x <= pos.x + size.width
-                        && point.y >= pos.y
-                        && point.y <= pos.y + size.height
-                    {
-                        return;
-                    }
-                }
+            if pointer_on_icon(&handle) {
+                return;
             }
-            let _ = handle.hide();
+            let _ = hide(&handle);
         }
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            let _ = handle.hide();
+            let _ = hide(&handle);
         }
     });
     TrayIconBuilder::with_id("main-tray")
@@ -83,6 +74,33 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
         .build(app)?;
     Ok(())
 }
+fn pointer_on_icon(window: &tauri::WebviewWindow) -> bool {
+    if let (Ok(point), Some(tray)) = (
+        window.cursor_position(),
+        window.app_handle().tray_by_id("main-tray"),
+    ) {
+        if let Ok(Some(rect)) = tray.rect() {
+            let scale = window.scale_factor().unwrap_or(1.);
+            let pos = rect.position.to_physical::<f64>(scale);
+            let size = rect.size.to_physical::<f64>(scale);
+            return point.x >= pos.x
+                && point.x <= pos.x + size.width
+                && point.y >= pos.y
+                && point.y <= pos.y + size.height;
+        }
+    }
+    false
+}
+fn hide(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::hide(window)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.hide()
+    }
+}
 fn toggle(
     app: &tauri::AppHandle,
     point: tauri::PhysicalPosition<f64>,
@@ -91,13 +109,20 @@ fn toggle(
     let Some(window) = app.get_webview_window("tray-panel") else {
         return Ok(());
     };
-    if window.is_visible()? {
-        return window.hide();
+    #[cfg(target_os = "macos")]
+    {
+        macos::toggle(&window, point, rect)
     }
-    let side = position_panel(&window, point, rect)?;
-    window.emit("tray-panel:open", serde_json::json!({"side":side}))?;
-    window.show()?;
-    window.set_focus()
+    #[cfg(not(target_os = "macos"))]
+    {
+        if window.is_visible()? {
+            return hide(&window);
+        }
+        let side = position_panel(&window, point, rect)?;
+        window.emit("tray-panel:open", serde_json::json!({"side":side}))?;
+        window.show()?;
+        window.set_focus()
+    }
 }
 fn position_panel(
     window: &tauri::WebviewWindow,
@@ -181,6 +206,8 @@ pub async fn tray_panel_resize(window: tauri::WebviewWindow, height: f64) -> Res
             rect,
         )
         .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        macos::resize(&window).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -201,24 +228,27 @@ pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), S
             app.state::<PanelInteraction>()
                 .0
                 .store(false, Ordering::Relaxed);
+            #[cfg(target_os = "macos")]
+            macos::menu_closed(&window).map_err(|e| e.to_string())?;
+            #[cfg(not(target_os = "macos"))]
             if !window.is_focused().map_err(|e| e.to_string())? {
-                window.hide().map_err(|e| e.to_string())?;
+                hide(&window).map_err(|e| e.to_string())?;
             }
             Ok(())
         }
         "updates" => {
-            window.hide().map_err(|e| e.to_string())?;
+            hide(&window).map_err(|e| e.to_string())?;
             crate::show_main_window(app);
             app.emit_to("main", "updates:check", ())
                 .map_err(|e| e.to_string())
         }
-        "hide" => window.hide().map_err(|e| e.to_string()),
+        "hide" => hide(&window).map_err(|e| e.to_string()),
         "quit" => {
             app.exit(0);
             Ok(())
         }
         "overview" | "settings" | "logs" | "tasks" => {
-            window.hide().map_err(|e| e.to_string())?;
+            hide(&window).map_err(|e| e.to_string())?;
             crate::show_main_window(app);
             app.emit_to("main", "navigate", action)
                 .map_err(|e| e.to_string())

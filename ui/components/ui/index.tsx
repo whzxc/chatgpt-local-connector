@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { t } from "../../i18n";
 import { isDesktop, copyText } from "../../platform";
+import { HoverScope } from "./HoverScope";
+export { HoverScope };
 export function Icon({
   icon: Component,
   size = 16,
@@ -384,11 +386,13 @@ export function SingleChoice({
                 <Icon icon={ChevronUp} />
               </S.ScrollUpButton>
               <S.Viewport>
+                <HoverScope tracking="highlighted">
                 {options.map((option) => (
                   <S.Item
                     key={option.value}
                     value={option.value}
                     className="select-item"
+                    data-hover-target={option.value}
                   >
                     <S.ItemText>{option.label}</S.ItemText>
                     <S.ItemIndicator>
@@ -396,6 +400,7 @@ export function SingleChoice({
                     </S.ItemIndicator>
                   </S.Item>
                 ))}
+                </HoverScope>
               </S.Viewport>
               <S.ScrollDownButton className="select-scroll">
                 <Icon icon={ChevronDown} />
@@ -561,9 +566,11 @@ export function Menu({
           sideOffset={6}
           collisionPadding={12}
         >
+          <HoverScope tracking="highlighted">
           {items.map((item, index) => (
             <M.Item
               key={index}
+              data-hover-target={item.danger ? undefined : String(index)}
               className={`menu-item ${item.danger ? "danger" : ""}`}
               disabled={item.disabled}
               onSelect={item.action}
@@ -571,6 +578,7 @@ export function Menu({
               {item.label}
             </M.Item>
           ))}
+          </HoverScope>
         </M.Content>
       </M.Portal>
     </M.Root>

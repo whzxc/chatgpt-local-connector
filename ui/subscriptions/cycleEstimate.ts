@@ -1,5 +1,5 @@
 import type {ProviderSnapshot, QuotaWindow} from './types';
-import {quotaPeriod} from './pace';
+import {quotaPeriod} from './quotaTiming';
 import {t, locale} from '../i18n';
 
 export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amount:string;lines:string[]}|null {

@@ -173,11 +173,19 @@ fn place(p: &mut Panel, mut screen: ScreenGeometry, at: Option<NSPoint>) {
         emit(&p.app, p);
     }
 }
-// Keep the WebView's layout canvas stable while the native window crops to
-// the pixels Vue actually presents. Hit testing and dragging stay in canvas coordinates.
+// Expanded surfaces use the full stable canvas. Crop only during collapse;
+// transparent pixels are controlled independently by input hit testing.
 fn fit_visible_frame(p: &Panel) {
     let Some(layout) = &p.layout else { return };
     let canvas = layout.frame;
+    if p.expanded {
+        if p.native.frame() != canvas {
+            p.native.setFrame_display(canvas, false);
+        }
+        p.canvas
+            .setFrame(NSRect::new(NSPoint::new(0., 0.), canvas.size));
+        return;
+    }
     let points: Vec<(f64, f64)> = ["rail", "detail", "controls", "corridor"]
         .iter()
         .filter_map(|key| p.geometry[*key].as_array())
@@ -413,8 +421,12 @@ fn pointer(app: &tauri::AppHandle) {
             p.expanded = true;
         }
         // Wake zones/corridors observe only; unpainted pixels still click through.
-        p.native.setIgnoresMouseEvents(!(rail || detail));
+        let content = hit(&p.geometry["primaryInput"], x, y)
+            || hit(&p.geometry["secondaryInput"], x, y)
+            || hit(&p.geometry["controls"], x, y);
+        p.native.setIgnoresMouseEvents(!(rail || content));
         if old != (p.expanded, p.slot, p.provider_id.clone()) {
+            fit_visible_frame(p);
             emit(app, p);
         }
     });
@@ -651,20 +663,25 @@ fn hit(value: &Value, x: f64, y: f64) -> bool {
 }
 
 pub fn geometry(app: &tauri::AppHandle, body: Value) {
-    if ["rail", "detail", "corridor", "controls"]
-        .iter()
-        .any(|key| {
-            body[*key].as_array().is_none_or(|v| {
-                v.len() > 512
-                    || v.iter().any(|p| {
-                        p.as_array().is_none_or(|a| {
-                            a.len() != 2
-                                || a.iter().any(|v| v.as_f64().is_none_or(|n| !n.is_finite()))
-                        })
+    if [
+        "rail",
+        "detail",
+        "corridor",
+        "controls",
+        "primaryInput",
+        "secondaryInput",
+    ]
+    .iter()
+    .any(|key| {
+        body[*key].as_array().is_none_or(|v| {
+            v.len() > 512
+                || v.iter().any(|p| {
+                    p.as_array().is_none_or(|a| {
+                        a.len() != 2 || a.iter().any(|v| v.as_f64().is_none_or(|n| !n.is_finite()))
                     })
-            })
+                })
         })
-    {
+    }) {
         return;
     }
     PANEL.with(|cell| {

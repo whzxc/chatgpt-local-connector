@@ -33,6 +33,10 @@ import { navigation, type Page } from "./state/navigation";
 import { panelPreferences } from "./usage-rail/preferences";
 import type { PanelPreferences } from "./usage-rail/layout";
 import { panelLayers, panelHandoff, panelAnchorAt } from "./state/panels";
+import {
+  capturePanelOrigin, takePanelOrigin, animateOriginContent, surfaceOf,
+  morphEasing, reducedMotion, type PanelOrigin,
+} from "./components/panelMorph";
 import { displayMessage } from "./messages";
 import ConnectionOverview from "./components/ConnectionOverview";
 import TasksPage from "./components/TasksPage";
@@ -40,7 +44,7 @@ import RecordsPage from "./components/RecordsPage";
 import { AppUpdateDialogs } from "./components/AppUpdate";
 import AgentDisplaySettings from "./components/AgentDisplaySettings";
 import TrayPanel from "./tray-panel/TrayPanel";
-import { Dialog, Icon, IconButton, Loading, Notice } from "./components/ui";
+import { Dialog, Icon, IconButton, Loading, Notice, HoverScope } from "./components/ui";
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRailPreview = import.meta.env.DEV
   ? lazy(() => import("./usage-rail/BrowserRailPreview"))
@@ -56,7 +60,10 @@ export default function App() {
   const [sheetWide, setSheetWide] = useState(false);
   const sheet = useRef<HTMLElement>(null),
     lastPage = useRef<Page>("tasks"),
+    sheetOrigin = useRef<PanelOrigin | undefined>(undefined),
+    sheetVisualCleanup = useRef<(() => void) | undefined>(undefined),
     sheetMotion = useRef<Animation | null>(null),
+    sheetClosing = useRef(false),
     backdropDown = useRef(false);
   const layers = panelLayers.use();
   useLayoutEffect(() => {
@@ -67,51 +74,101 @@ export default function App() {
         ((panelHandoff.until ?? 0) > performance.now()
           ? panelHandoff.from
           : undefined) ??
+        sheetOrigin.current?.rect ??
         document.querySelector(".navigation-surface")?.getBoundingClientRect();
+    const handedOff = (panelHandoff.until ?? 0) > performance.now() && !!panelHandoff.from;
     panelHandoff.from = undefined;
-    if (source && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+    if (source && !reducedMotion()) {
+      const visual = handedOff ? undefined : sheetOrigin.current;
       sheetMotion.current = node.animate(
         [
           {
-            transform: `translate(${source.x - rect.x}px,${source.y - rect.y}px) scale(${source.width / rect.width},${source.height / rect.height})`,
-            opacity: 0,
+            transform: `translate(${source.x - rect.x}px,${source.y - rect.y}px)`,
+            width: `${source.width}px`, height: `${source.height}px`, opacity: 1,
+            ...(visual?.surface ?? {}),
           },
-          { transform: "none", opacity: 1 },
+          { transform: "none", width: `${rect.width}px`, height: `${rect.height}px`, opacity: 1, ...surfaceOf(node) },
         ],
-        { duration: 480, easing: "cubic-bezier(.22,1,.36,1)" },
+        { duration: 480, easing: morphEasing },
       );
+      const contentAnimations = Array.from(node.children).map((child) => child.animate(
+        [{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 130, fill: "backwards" },
+      ));
+      const cleanup = sheetVisuals(rect, false, !handedOff);
+      sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.cancel()); };
+      void sheetMotion.current.finished.then(cleanup, cleanup);
+    }
     document.querySelector<HTMLElement>(".capsule-title")?.focus();
-    return () => sheetMotion.current?.cancel();
+    return () => { sheetMotion.current?.cancel(); sheetVisualCleanup.current?.(); };
   }, [page]);
+
+  function sheetVisuals(rect: DOMRect, closing: boolean, showOrigin = true) {
+    const visual = showOrigin ? sheetOrigin.current : undefined;
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(".navigation-capsule, .navigation-surface"));
+    const opacities = nodes.map((el) => el.style.opacity);
+    const transitions = nodes.map((el) => el.style.transition);
+    nodes.forEach((el) => { el.style.opacity = "0"; el.style.transition = "none"; });
+    const clear = visual ? animateOriginContent(visual, rect, 480, 51, closing) : () => {};
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      clear();
+      nodes.forEach((el, i) => {
+        // Settle the capsule's new layout before enabling its CSS transitions.
+        void el.offsetHeight;
+        el.style.opacity = opacities[i];
+        el.style.transition = transitions[i];
+      });
+    };
+  }
+
   async function closeSheet(replacement?: HTMLElement) {
     const node = sheet.current;
+    if (!node || sheetClosing.current) return;
+    sheetClosing.current = true;
     if (
       node &&
       !matchMedia("(prefers-reduced-motion: reduce)").matches &&
       !replacement
     ) {
-      const rect = node.getBoundingClientRect(),
-        dock = document
-          .querySelector(".navigation-surface")!
-          .getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      const dock = document.querySelector(".navigation-surface")!.getBoundingClientRect();
+      const visual = sheetOrigin.current;
+      if (visual) {
+        visual.rect = new DOMRect(dock.x, dock.bottom - visual.rect.height, visual.rect.width, visual.rect.height);
+      }
+      const to = visual?.rect ?? dock;
+      const current = { transform: getComputedStyle(node).transform, width: `${rect.width}px`, height: `${rect.height}px`, ...surfaceOf(node) };
       sheetMotion.current?.cancel();
+      sheetVisualCleanup.current?.();
+      const natural = node.getBoundingClientRect();
       sheetMotion.current = node.animate(
         [
-          { transform: "none", opacity: 1 },
+          current,
           {
-            transform: `translate(${dock.x - rect.x}px,${dock.y - rect.y}px) scale(${dock.width / rect.width},${dock.height / rect.height})`,
-            opacity: 0,
+            transform: `translate(${to.x - natural.x}px,${to.y - natural.y}px)`,
+            width: `${to.width}px`, height: `${to.height}px`,
+            ...(visual?.surface ?? {}),
           },
         ],
-        { duration: 220, easing: "cubic-bezier(.4,0,.6,1)", fill: "forwards" },
+        { duration: 480, easing: morphEasing, fill: "forwards" },
       );
+      const cleanup = sheetVisuals(rect, true);
+      const contentAnimations = Array.from(node.children).map((child) => child.animate(
+        [{ opacity: getComputedStyle(child).opacity }, { opacity: 0 }],
+        { duration: 180, fill: "forwards" },
+      ));
+      sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.cancel()); };
       await sheetMotion.current.finished.catch(() => {});
     }
+
     if (replacement && node) {
       panelHandoff.from = node.getBoundingClientRect();
       panelHandoff.until = performance.now() + 100;
       panelHandoff.trigger = replacement;
     }
+    sheetClosing.current = false;
     setPage("overview");
     requestAnimationFrame(() => {
       const target =
@@ -126,6 +183,7 @@ export default function App() {
 
   function navigate(next: Page) {
     if (next !== "overview") {
+      sheetOrigin.current = takePanelOrigin();
       lastPage.current = next;
       setSheetWide(false);
     }
@@ -187,6 +245,7 @@ export default function App() {
   return (
     <div
       className={`app-scene ${sheetWide ? "sheet-wide" : ""} ${isDesktop ? "desktop" : ""} ${isDesktop && navigator.platform.toLowerCase().includes("mac") ? "mac" : ""}`}
+      onClickCapture={(e) => capturePanelOrigin(e.target)}
       onKeyDown={(e) => {
         if (
           e.key === "Escape" &&
@@ -250,51 +309,54 @@ export default function App() {
         <section
           ref={sheet}
           className="page-sheet"
+          data-panel-depth="1"
+          data-recessed={layers.length > 0 || undefined}
           inert={layers.length > 0}
           aria-label={pages.find((item) => item.id === page)?.label}
         >
-          <main
-            className={`workspace ${page === "logs" ? "records-workspace" : ""}`}
-          >
-            {page === "tasks" ? (
-              <TasksPage />
-            ) : page === "logs" ? (
-              <RecordsPage />
-            ) : (
-              <Suspense fallback={<Loading />}>
-                <SettingsPage />
-              </Suspense>
-            )}
-          </main>
-          <IconButton
-            className="panel-width-toggle"
-            icon={sheetWide ? Minimize2 : Maximize2}
-            label={t(sheetWide ? "restorePanelWidth" : "expandPanelWidth")}
-            aria-pressed={sheetWide}
-            onClick={() => setSheetWide(!sheetWide)}
-          />
+          <div className="page-sheet-content">
+            <main
+              className={`workspace ${page === "logs" ? "records-workspace" : ""}`}
+            >
+              {page === "tasks" ? (
+                <TasksPage />
+              ) : page === "logs" ? (
+                <RecordsPage />
+              ) : (
+                <Suspense fallback={<Loading />}>
+                  <SettingsPage />
+                </Suspense>
+              )}
+            </main>
+            <footer className="sheet-footer">
+              <IconButton
+                className="capsule-close"
+                icon={X}
+                label={t("backToHome")}
+                onClick={() => void closeSheet()}
+              />
+              <h1 className="capsule-title" tabIndex={-1}>
+                {pages.find((item) => item.id === page)?.label}
+              </h1>
+              <IconButton
+                className="panel-width-toggle"
+                icon={sheetWide ? Minimize2 : Maximize2}
+                label={t(sheetWide ? "restorePanelWidth" : "expandPanelWidth")}
+                aria-pressed={sheetWide}
+                onClick={() => setSheetWide(!sheetWide)}
+              />
+            </footer>
+          </div>
         </section>
       )}
       <nav
         className={`navigation-capsule ${page !== "overview" ? "expanded" : ""} ${updateVisible() ? "has-update" : ""}`}
-        inert={layers.length > 0}
+        inert={page !== "overview" || layers.length > 0}
+        aria-hidden={page !== "overview"}
         aria-label={t("mainNavigation")}
       >
-        {page !== "overview" && (
-          <>
-            <button
-              className="capsule-close"
-              aria-label={t("backToHome")}
-              onClick={() => void closeSheet()}
-            >
-              <Icon icon={X} size={20} />
-            </button>
-            <h1 className="capsule-title" tabIndex={-1}>
-              {pages.find((item) => item.id === page)?.label}
-            </h1>
-          </>
-        )}
-        <div
+        <HoverScope
+          activeKey={page !== "overview" || layers.length > 0 ? "" : undefined}
           className="capsule-icons"
           inert={page !== "overview"}
           aria-hidden={page !== "overview"}
@@ -312,6 +374,7 @@ export default function App() {
               key={item.id}
               data-panel-anchor
               data-page={item.id}
+              data-hover-target={item.id}
               aria-label={item.label}
               title={item.label}
               onClick={() => navigate(item.id)}
@@ -322,7 +385,7 @@ export default function App() {
               )}
             </button>
           ))}
-        </div>
+        </HoverScope>
       </nav>
       {feedback.text && (
         <div className="app-feedback">

@@ -151,15 +151,15 @@
   width: 100%;
 }
 .usage-history > .history-period {
-  padding: 4.5px 0;
+  padding: 0;
 }
 .history-toggle.button {
   color: inherit;
   flex: none;
   min-height: 0;
   font: inherit;
-  padding: 3px 6px;
-  margin: -3px -6px;
+  padding: 4.5px 6px;
+  margin: 0 -6px;
   border-radius: 7px;
 }
 .rail-quota,
@@ -216,7 +216,7 @@
 }
 .history-popover {
   position: relative;
-  width: 250px;
+  width: 266px;
   max-width: calc(100vw - 32px);
   padding: 18px;
   box-sizing: border-box;
@@ -233,12 +233,16 @@
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.history-scroll::-webkit-scrollbar {
+  display: none;
 }
 .history-detail {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 214px;
+  width: 100%;
   max-width: 100%;
   font-size: 11.5px;
   line-height: 14px;
@@ -281,9 +285,17 @@
   color: white;
   font-size: 10px;
 }
-.expiry-row {
+.expiry-row > span {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.expiry-row > span:last-child {
+  text-align: right;
+}
+.history-detail .expiry-row {
+  justify-content: space-between;
   font-size: 11px;
-  gap: 6px;
+  gap: 24px;
 }
 .usage-detail-tail {
   position: absolute;
@@ -328,4 +340,9 @@
 
 .history-popover.rail-popover .usage-detail-tail {
   fill: #000;
+}
+
+/* Native non-key rail windows receive forwarded hover, not CSS :hover. */
+.quota-bubble [aria-expanded="true"] {
+  background: var(--hover);
 }

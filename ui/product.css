@@ -715,7 +715,7 @@
 .app-scene {
   --sheet-open-motion: 540ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --sheet-close-motion: 220ms cubic-bezier(0.4, 0, 0.6, 1);
-  --sheet-width: min(960px, calc(100% - 2 * var(--sheet-inset)));
+  --sheet-width: min(960px, calc(100vw - 2 * var(--sheet-inset)));
   --sheet-inset: 20px;
   --sheet-top: 20px;
   --dock-left: 24px;
@@ -727,7 +727,7 @@
   background: var(--canvas);
 }
 .app-scene.sheet-wide {
-  --sheet-width: calc(100% - 2 * var(--sheet-inset));
+  --sheet-width: calc(100vw - 2 * var(--sheet-inset));
 }
 .app-scene.desktop {
   --sheet-top: 48px;
@@ -807,17 +807,6 @@
   height: 22px;
   stroke-width: 1.7;
 }
-.navigation-capsule.expanded {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-.navigation-capsule .capsule-close {
-  background: var(--surface-subtle);
-}
 .page-sheet {
   position: absolute;
   inset: var(--sheet-top) auto var(--sheet-inset) var(--sheet-inset);
@@ -833,44 +822,56 @@
   transform-origin: top left;
   transition: width var(--sheet-open-motion);
 }
-.page-sheet::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 72px;
-  z-index: 5;
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--surface) 28%);
+/* Layout stays at the destination size; the animated shell only clips it. */
+.page-sheet-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  align-self: center;
+  width: calc(var(--sheet-width) - 2px);
+  height: calc(100dvh - var(--sheet-top) - var(--sheet-inset) - 2px);
+  min-height: 0;
 }
-.capsule-title {
-  margin: 0 12px 0 0;
+.sheet-footer {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 12px;
+  padding: 6px 12px 6px 6px;
+  min-height: 64px;
+}
+.sheet-footer .capsule-close {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+.sheet-footer .capsule-title {
+  flex: 1;
+  margin: 0;
   font-size: 18px;
   font-weight: 600;
   outline: none;
-  animation: capsule-title-in 300ms ease both;
 }
-@keyframes capsule-title-in {
-  from {
-    opacity: 0;
-    transform: translateX(-22px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.page-sheet[data-recessed],
+.navigation-capsule.expanded,
+.navigation-surface.expanded {
+  visibility: hidden;
+  pointer-events: none;
 }
+
 .workspace {
   min-height: 0;
   flex: 1;
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 24px 26.5px 80px;
+  padding: 24px 26.5px;
   overflow: auto;
   overscroll-behavior: contain;
 }
 .workspace.records-workspace {
-  padding-bottom: 80px;
+  padding-bottom: 24px;
 }
 .workspace > .settings-page {
   max-width: none;
@@ -888,14 +889,14 @@
 
 @media (max-width: 600px) {
   .app-scene {
-    --sheet-width: min(960px, calc(100% - 2 * var(--sheet-inset)));
+    --sheet-width: min(960px, calc(100vw - 2 * var(--sheet-inset)));
     --sheet-inset: 12px;
     --sheet-top: 12px;
     --dock-left: 16px;
     --dock-bottom: 16px;
   }
   .workspace {
-    padding: 24px 26.5px 80px;
+    padding: 24px 26.5px;
   }
   .home-workspace .connection-core {
     padding: 0 20px;
@@ -921,15 +922,9 @@
   box-shadow: var(--shadow);
   transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.navigation-surface.expanded {
-  height: 58px;
-}
 @media (prefers-reduced-motion: reduce) {
   .navigation-surface {
     transition: none;
-  }
-  .capsule-title {
-    animation: none;
   }
 }
 
@@ -938,11 +933,6 @@
   height: 154px;
   display: block;
   transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.navigation-capsule.expanded {
-  height: 58px;
-  width: 58px;
-  min-width: 0;
 }
 .capsule-icons {
   position: absolute;
@@ -964,65 +954,29 @@
 .capsule-icons [data-page="settings"] {
   bottom: 6px;
 }
-.expanded .capsule-icons [data-page="tasks"] {
-  opacity: 0;
-}
-.expanded .capsule-icons [data-page="logs"] {
-  opacity: 0;
-}
-.expanded .capsule-icons [data-page="settings"] {
-  opacity: 0;
-}
-.navigation-capsule .capsule-close {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  background: transparent;
-  animation: capsule-close-in 260ms 100ms ease both;
-}
-.navigation-capsule .capsule-title {
-  position: absolute;
-  left: 68px;
-  bottom: 6px;
-  margin: 0;
-  line-height: 44px;
-  white-space: nowrap;
-  animation: capsule-title-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
 @media (prefers-reduced-motion: reduce) {
   .navigation-capsule,
   .capsule-icons button {
     transition: none;
   }
-  .navigation-capsule .capsule-close {
-    animation: none;
-  }
 }
-
-.page-sheet > .panel-width-toggle {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
-  z-index: 6;
+.sheet-footer .panel-width-toggle {
   display: none;
 }
 @media (min-width: 1000px) {
-  .page-sheet > .panel-width-toggle {
+  .sheet-footer .panel-width-toggle {
     display: inline-flex;
   }
 }
 
-.navigation-surface.has-update:not(.expanded),
-.navigation-capsule.has-update:not(.expanded) {
+.navigation-surface.has-update,
+.navigation-capsule.has-update {
   height: 202px;
 }
 .capsule-icons .update-shortcut {
   bottom: 150px;
   width: 44px;
   height: 44px;
-}
-.expanded .capsule-icons .update-shortcut {
-  opacity: 0;
 }
 
 .sheet-backdrop {
@@ -1031,14 +985,6 @@
   z-index: 28;
 }
 
-@keyframes capsule-close-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
 
 .app-scene {
   --color-black: #000;
@@ -1125,7 +1071,7 @@
     gap: 40px;
   }
   .workspace {
-    padding: 20px 16px 80px;
+    padding: 20px 16px;
   }
   .home-workspace .connection-core {
     padding: 0 16px;
@@ -1141,12 +1087,23 @@
   background: transparent;
 }
 .dialog.elastic-panel {
-  width: min(var(--preferred-width), calc(100vw - 40px));
+  --panel-border: 1px;
+  --panel-layout-width: min(var(--preferred-width), calc(100vw - 40px));
+  width: var(--panel-layout-width);
   max-height: calc(100dvh - 40px);
   border-radius: 28px;
   animation: none;
 
   overflow: hidden;
+}
+.elastic-panel-content {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  align-self: center;
+  width: calc(var(--panel-layout-width) - 2 * var(--panel-border));
+  max-height: calc(100dvh - 40px - 2 * var(--panel-border));
+  min-height: 0;
 }
 .elastic-panel[data-recessed] {
   visibility: hidden;
@@ -1176,6 +1133,7 @@
   padding: 12px 28px 28px;
 }
 .elastic-panel.unframed {
+  --panel-border: 0px;
   background: transparent;
   border: 0;
   box-shadow: none;
@@ -1452,9 +1410,6 @@
 .elastic-panel:not(.unframed) {
   background: var(--canvas);
 }
-.page-sheet::after {
-  background: linear-gradient(to bottom, transparent, var(--canvas) 28%);
-}
 .app-scene .connection-core {
   --knob: light-dark(#fff, #f5f5f7);
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--canvas));
@@ -1465,4 +1420,11 @@
 
 .dialog.elastic-panel:focus {
   outline: none;
+}
+
+.navigation-capsule .hover-scope button[data-hover-target]:hover {
+  background: transparent;
+}
+.navigation-capsule .hover-highlight {
+  background: var(--surface-subtle);
 }

@@ -302,7 +302,6 @@ pub fn layout(
     at: NSPoint,
 ) -> Layout {
     let metrics = fitted_metrics(p, count, placement, screen);
-    let s = scale(p);
     let size = rail_size(p, count, placement, screen);
     let a = area(screen, placement);
     let edge = if placement.dock == "floating" {
@@ -321,60 +320,8 @@ pub fn layout(
         &placement.dock
     }
     .to_string();
-    let pad = metric("windowPadding") * s;
-    let card = metric("cardWidth") * s;
-    let gap = (metric("pointerWidth") + metric("cardGap")) * s;
-    // Keep enough transparent budget for the short turn between axes. This is
-    // decided once per layout change, never resized on animation frames.
-    let mut vertical = placement.clone();
-    vertical.dock = "right".into();
-    let turn = metrics_for_turn(p, count, &vertical).min(a.size.width.min(a.size.height));
-    let (w, h) = if placement.horizontal() {
-        (
-            (size.width
-                + if placement.dock == "top" && p["notchFusion"] != false && screen.notch.is_some()
-                {
-                    64. * s
-                } else {
-                    0.
-                })
-            .max(size.width + 2. * (card + gap) + 2. * pad)
-            .min(a.size.width)
-            .max(turn),
-            (size.height + gap + metric("cardBudgetHeight") * s + pad)
-                .max(turn)
-                .min(a.size.height),
-        )
-    } else {
-        (
-            (size.width + 2. * gap + 2. * card.max(metric("cardWidth")) + 2. * pad)
-                .max(turn)
-                .min(a.size.width),
-            size.height
-                .max(metric("cardBudgetHeight") * s + 2. * pad)
-                .min(a.size.height),
-        )
-    };
-    let x = if placement.horizontal() {
-        at.x + (size.width - w) / 2.
-    } else if edge == "right" {
-        at.x + size.width - w
-    } else {
-        at.x
-    };
-    let y = if !placement.horizontal() {
-        at.y + (size.height - h) / 2.
-    } else if edge == "top" {
-        at.y + size.height - h
-    } else {
-        at.y
-    };
-    let frame = rect(
-        x.clamp(a.origin.x, (a.origin.x + a.size.width - w).max(a.origin.x)),
-        y.clamp(a.origin.y, (a.origin.y + a.size.height - h).max(a.origin.y)),
-        w,
-        h,
-    );
+    // Keep one stable, screen-sized canvas for every expanded surface.
+    let frame = a;
     Layout {
         frame,
         rail: rect(
@@ -391,8 +338,4 @@ pub fn layout(
         },
         metrics,
     }
-}
-
-fn metrics_for_turn(p: &Value, count: usize, placement: &Placement) -> f64 {
-    metrics(p, count, placement)["length"].as_f64().unwrap()
 }

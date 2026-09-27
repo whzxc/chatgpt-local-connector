@@ -10,7 +10,6 @@ export const panelPreferences = createStore<PanelPreferences>({
   spacing: "standard",
   horizontalPercentages: false,
   alertColor: true,
-  warningAt: 75,
   placement: { dock: "right", display: "", x: 1, y: 0.5 },
 });
 export async function readPanelPreferences() {

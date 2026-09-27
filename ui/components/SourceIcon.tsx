@@ -5,13 +5,15 @@ import { Icon } from "./ui";
 export default function SourceIcon({
   platform,
   add = false,
+  panelVisual = false,
 }: {
   platform: string;
   add?: boolean;
+  panelVisual?: boolean;
 }) {
   const raw = sourceVectors[controlSource(platform)?.icon || platform];
   return (
-    <span className="source-icon" aria-hidden="true">
+    <span className="source-icon" data-panel-visual={panelVisual || undefined} aria-hidden="true">
       {add ? (
         <Icon icon={Plus} size={20} />
       ) : raw ? (

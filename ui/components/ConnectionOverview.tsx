@@ -555,7 +555,7 @@ export default function ConnectionOverview({
                   aria-label="ChatGPT"
                   onClick={() => edit()}
                 >
-                  <SourceIcon platform="chatgpt" />
+                  <SourceIcon platform="chatgpt" panelVisual />
                 </button>
               </Tooltip>
             )}
@@ -570,7 +570,7 @@ export default function ConnectionOverview({
                     setDetails(source);
                   }}
                 >
-                  <SourceIcon platform={source.controlSource} />
+                  <SourceIcon platform={source.controlSource} panelVisual />
                 </button>
               </Tooltip>
             ))}
@@ -581,7 +581,7 @@ export default function ConnectionOverview({
                 aria-label={t("addControlSource")}
                 onClick={() => edit()}
               >
-                <span className="source-icon">
+                <span className="source-icon" data-panel-visual>
                   <Icon icon={Plus} />
                 </span>
               </button>
@@ -681,6 +681,7 @@ export default function ConnectionOverview({
         <IngressDialog
           ingress={editing}
           onClose={() => setFormOpen(false)}
+          onRemoved={() => { setFormOpen(false); setDetails(undefined); }}
           onSaved={(ingress) => {
             setFormOpen(false);
             setAutoConnect(true);
@@ -694,7 +695,6 @@ export default function ConnectionOverview({
           autoConnect={autoConnect}
           onClose={() => setDetails(undefined)}
           onEdit={(ingress) => {
-            setDetails(undefined);
             edit(ingress);
           }}
         />

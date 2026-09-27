@@ -1198,3 +1198,29 @@ pre {
 .row-control .choice-radio {
   margin-left: auto;
 }
+.hover-scope {
+  position: relative;
+  isolation: isolate;
+}
+.hover-highlight {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--hover);
+  transition: opacity 100ms ease-out;
+}
+.hover-scope [data-hover-target].button,
+.hover-scope [data-hover-target].button:hover:not(:disabled),
+.hover-scope [data-hover-target].button[aria-expanded="true"] {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hover-highlight { transition: none; }
+}
+
+.hover-scope .select-item[data-hover-target][data-highlighted],
+.hover-scope .menu-item[data-hover-target][data-highlighted] {
+  background: transparent;
+}

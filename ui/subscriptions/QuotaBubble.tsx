@@ -4,7 +4,7 @@ import { t } from "../i18n";
 import { openUrl } from "../platform";
 import { useNow } from "../state/hooks";
 import { refreshSubscription } from "../state/subscriptions";
-import { Button, IconButton, Icon, Progress } from "../components/ui";
+import { Button, IconButton, Icon, Progress, HoverScope } from "../components/ui";
 import {
   quotaDisplay,
   resetDisplay,
@@ -30,13 +30,11 @@ import UsageHistory from "./UsageHistory";
 import "./bubble.css";
 export default function QuotaBubble({
   provider,
-  warningAt,
   rail = false,
   onPopover,
   detailPlacement = "left",
 }: {
   provider: ProviderSnapshot;
-  warningAt?: number;
   rail?: boolean;
   onPopover?: (points: [number, number][]) => void;
   detailPlacement?: "left" | "right" | "bottom";
@@ -199,7 +197,7 @@ export default function QuotaBubble({
         detail={detail}
         onBounds={onPopover}
       >
-        {({ register, hover, focus, expanded, displayed }) => (
+        {({ register, hover, focus, expanded, displayed, highlighted }) => (
           <>
             <header>
               <span
@@ -231,8 +229,8 @@ export default function QuotaBubble({
                 {notices.length > 0 && (
                   <span
                     ref={(node) => register("notices", node)}
-                    onMouseEnter={() => hover("notices")}
-                    onMouseLeave={() => hover("")}
+                    onPointerEnter={(event) => event.pointerType !== "touch" && hover("notices")}
+                    onPointerLeave={(event) => event.pointerType !== "touch" && hover("")}
                     onFocus={() => focus("notices")}
                     onBlur={() => focus("")}
                     tabIndex={0}
@@ -284,8 +282,8 @@ export default function QuotaBubble({
                         variant="ghost"
                         className="pace-warning"
                         ref={(node) => register(key, node)}
-                        onMouseEnter={() => hover(key)}
-                        onMouseLeave={() => hover("")}
+                        onPointerEnter={(event) => event.pointerType !== "touch" && hover(key)}
+                        onPointerLeave={(event) => event.pointerType !== "touch" && hover("")}
                         onClick={() => focus(key)}
                         onFocus={() => focus(key)}
                         onBlur={() => focus("")}
@@ -308,7 +306,7 @@ export default function QuotaBubble({
                       style={{
                         width: `${quotaValue(w)}%`,
                         background:
-                          pace?.color ?? quotaColor(w, provider, warningAt),
+                          pace?.color ?? quotaColor(w, provider, now),
                       }}
                     />
                     {pace?.tick != null && (
@@ -333,7 +331,7 @@ export default function QuotaBubble({
                 </div>
               );
             })}
-            <div className="usage-history">
+            <HoverScope className="usage-history" activeKey={highlighted}>
               {provider.availableResetCount != null && (
                 <div className="history-period">
                   <span>{t("usageResetCount")}</span>
@@ -343,8 +341,9 @@ export default function QuotaBubble({
                     }}
                     variant="ghost"
                     className="history-toggle"
-                    onMouseEnter={() => hover("resets")}
-                    onMouseLeave={() => hover("")}
+                    data-hover-target="resets"
+                    onPointerEnter={(event) => event.pointerType !== "touch" && hover("resets")}
+                    onPointerLeave={(event) => event.pointerType !== "touch" && hover("")}
                     onClick={() => focus("resets")}
                     onFocus={() => focus("resets")}
                     onBlur={() => focus("")}
@@ -366,11 +365,12 @@ export default function QuotaBubble({
                     <Button
                       variant="ghost"
                       className="history-toggle"
+                      data-hover-target={row.id}
                       ref={(node) => {
                         register(row.id, node);
                       }}
-                      onMouseEnter={() => hover(row.id)}
-                      onMouseLeave={() => hover("")}
+                      onPointerEnter={(event) => event.pointerType !== "touch" && hover(row.id)}
+                      onPointerLeave={(event) => event.pointerType !== "touch" && hover("")}
                       onFocus={() => focus(row.id)}
                       onBlur={() => focus("")}
                       aria-expanded={expanded && displayed === row.id}
@@ -385,7 +385,7 @@ export default function QuotaBubble({
                     </Button>
                   </div>
                 ))}
-            </div>
+            </HoverScope>
           </>
         )}
       </UsageHistory>

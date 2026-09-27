@@ -15,7 +15,7 @@ struct Runtime {
     wake: tokio::sync::Notify,
 }
 fn defaults() -> Value {
-    json!({"visible":true,"autoCollapse":true,"size":"standard","spacing":"standard","horizontalPercentages":false,"alertColor":true,"notchFusion":true,"warningAt":75,"placement":{"dock":"right","display":"","x":1.,"y":0.5}})
+    json!({"visible":true,"autoCollapse":true,"size":"standard","spacing":"standard","horizontalPercentages":false,"alertColor":true,"notchFusion":true,"placement":{"dock":"right","display":"","x":1.,"y":0.5}})
 }
 pub fn preferences() -> Value {
     let mut value = defaults();
@@ -51,7 +51,6 @@ pub fn configure(app: &tauri::AppHandle, body: Value) -> Result<Value, String> {
             }
             "size" => ["small", "standard", "large"].contains(&v.as_str().unwrap_or("")),
             "spacing" => ["compact", "standard", "roomy"].contains(&v.as_str().unwrap_or("")),
-            "warningAt" => [60, 70, 75, 80, 85, 90].contains(&v.as_u64().unwrap_or(0)),
             "dock" => {
                 ["left", "right", "top", "bottom", "floating"].contains(&v.as_str().unwrap_or(""))
             }

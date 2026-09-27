@@ -11,7 +11,7 @@ import { api } from "../api";
 import { t } from "../i18n";
 import { isDesktop } from "../platform";
 import { themeColor, themeColors } from "../theme";
-import { useWindowSize } from "../state/hooks";
+import { useNow, useWindowSize } from "../state/hooks";
 import { activeAgents, subscriptions } from "../state/subscriptions";
 import { surfaceStatus } from "../subscriptions/presentation";
 import type { ProviderSnapshot } from "../subscriptions/types";
@@ -26,7 +26,7 @@ import {
   type Point,
 } from "./geometry";
 import type { PanelState, PanelGeometry } from "./layout";
-import { useSpring } from "./spring";
+import { useSpring } from "../motion/spring";
 export default function UsageRail({
   state,
   onGeometry,
@@ -135,7 +135,8 @@ export default function UsageRail({
     if (!pointer?.generation) rail.jump(values);
     else rail.to(values);
   }, [pointer?.expanded, l, pointer?.dock]);
-  const status = surfaceStatus(rows, prefs?.warningAt ?? 75),
+  const now = useNow();
+  const status = surfaceStatus(rows, now),
     alert =
       prefs?.alertColor && status.alert
         ? status.color
@@ -373,10 +374,10 @@ export default function UsageRail({
     const points = [...detail, ...popover],
       xs = points.map((p) => p[0]),
       ys = points.map((p) => p[1]),
-      left = Math.min(...xs),
-      right = Math.max(...xs),
-      top = Math.min(...ys),
-      bottom = Math.max(...ys);
+      left = Math.min(...xs) - 24,
+      right = Math.max(...xs) + 24,
+      top = Math.min(...ys) - 24,
+      bottom = Math.max(...ys) + 24;
     detail = [
       [left, top],
       [right, top],
@@ -402,6 +403,8 @@ export default function UsageRail({
       dock: pointer?.dock,
       rail: railPoints,
       detail,
+      primaryInput: visible ? bubble : [],
+      secondaryInput: visible ? popover : [],
       rings:
         openness > 0.9
           ? ringPositions.map(([x, y], i) => ({
@@ -528,7 +531,6 @@ export default function UsageRail({
             >
               <QuotaRing
                 provider={p}
-                warningAt={prefs?.warningAt}
                 showPercentage={l?.metrics.percentages}
               />
             </button>
@@ -574,7 +576,6 @@ export default function UsageRail({
               key={active.providerId}
               rail
               provider={active}
-              warningAt={prefs?.warningAt}
               detailPlacement={l?.edge === "right" ? "left" : "right"}
               onPopover={acceptPopover}
             />

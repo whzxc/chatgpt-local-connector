@@ -93,7 +93,7 @@ For a known reset window, average consumption is used quota divided by elapsed t
 The bubble projects when the remaining quota would run out at that rate. A reference
 tick marks even consumption across the cycle and flips with Used/Remaining mode.
 Green means at least 10% is projected to remain at reset, amber means less headroom,
-and red warns of exhaustion. Hovering anywhere in the quota block (label, bar or remaining/reset row) opens its secondary bubble.
+and red warning requires both strictly less than 25% remaining and projected exhaustion before reset. Exactly 25% remaining does not warn. Rings, progress bars and the rail share this fixed rule; missing reset/cycle data does not imply a warning. Confirmed exhaustion and upstream blocking remain separate unavailable states. Hovering anywhere in the quota block (label, bar or remaining/reset row) opens its secondary bubble.
 
 Projection waits for at least 60 seconds or 1% of the cycle. Under 5% used, unstable
 near-limit/over-limit projections are suppressed. Zero usage, stale readings and unknown

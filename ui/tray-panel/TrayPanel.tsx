@@ -174,11 +174,48 @@ export default function TrayPanel({
         void select("hide");
       }
     };
+    // The native window reserves transparent space for portaled details.
+    // Consume the complete canvas click before hiding: removing the native
+    // window on pointerdown leaves mouse-up targeting the window underneath.
+    const inContent = (e: Event) => e.composedPath().some(
+        (node) => node instanceof Element &&
+          node.matches(".tray-card, .history-popover, [role='menu']"),
+    );
+    const consume = (e: Event) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    let canvasPress = false;
+    const outsideDown = (e: PointerEvent) => {
+      canvasPress = !inContent(e);
+      if (canvasPress) consume(e);
+    };
+    const outsideClick = (e: MouseEvent) => {
+      const dismiss = canvasPress && !inContent(e);
+      canvasPress = false;
+      if (!dismiss) return;
+      consume(e);
+      void select("hide");
+    };
+    const cancelPress = () => { canvasPress = false; };
+    const outsideMenu = (e: MouseEvent) => {
+      if (!inContent(e)) consume(e);
+    };
     document.addEventListener("keydown", key);
+    document.addEventListener("pointerdown", outsideDown, true);
+    document.addEventListener("click", outsideClick, true);
+    document.addEventListener("auxclick", outsideClick, true);
+    document.addEventListener("contextmenu", outsideMenu, true);
+    document.addEventListener("pointercancel", cancelPress, true);
     return () => {
       stopped = true;
       off?.();
       document.removeEventListener("keydown", key);
+      document.removeEventListener("pointerdown", outsideDown, true);
+      document.removeEventListener("click", outsideClick, true);
+      document.removeEventListener("auxclick", outsideClick, true);
+      document.removeEventListener("contextmenu", outsideMenu, true);
+      document.removeEventListener("pointercancel", cancelPress, true);
     };
   }, [embedded]);
   useLayoutEffect(() => {

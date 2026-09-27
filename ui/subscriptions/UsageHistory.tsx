@@ -8,13 +8,14 @@ import {
   type CSSProperties,
 } from "react";
 import { Popover } from "radix-ui";
-import { useSpring } from "../usage-rail/spring";
+import { useSpring } from "../motion/spring";
 import m from "../../shared/usage-panel.json";
 import { isDesktop } from "../platform";
 export type BubbleControls = {
   register: (key: string, node: HTMLElement | null) => void;
   hover: (key: string) => void;
   focus: (key: string) => void;
+  highlighted: string;
   expanded: boolean;
   displayed: string;
 };
@@ -31,6 +32,7 @@ export default function UsageHistory({
   side?: "left" | "right" | "bottom";
   onBounds?: (points: [number, number][]) => void;
 }) {
+  const [pointed, setPointed] = useState("");
   const [expanded, setExpanded] = useState(false),
     [displayed, setDisplayed] = useState("");
   const triggers = useRef(new Map<string, HTMLElement>()),
@@ -46,10 +48,9 @@ export default function UsageHistory({
   live.current = { expanded, displayed };
   const hoverTarget = useRef(""),
     timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const motion = useSpring([0, 0, 80], m.cardResponse, m.cardDamping),
-    fade = useSpring([1], 0.18, 0.9);
-  const refs = useRef({ motion, fade, onBounds, side });
-  refs.current = { motion, fade, onBounds, side };
+  const motion = useSpring([0, 0, 80, 0], m.cardResponse, m.cardDamping);
+  const refs = useRef({ motion, onBounds });
+  refs.current = { motion, onBounds };
   const register = (key: string, node: HTMLElement | null) => {
     if (node) triggers.current.set(key, node);
     else triggers.current.delete(key);
@@ -58,23 +59,24 @@ export default function UsageHistory({
     const trigger = triggers.current.get(key);
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
-    const currentSide = refs.current.side;
+    // Keep both horizontal edges: collision flipping must clear the whole rail
+    // card rather than flip around a point on its right-hand text.
+    const bounds = (rail && trigger.closest(".rail-bubble")) || trigger;
+    const anchorRect = bounds.getBoundingClientRect();
     return [
-      currentSide === "left"
-        ? rect.left
-        : currentSide === "right"
-          ? rect.right
-          : rect.left + rect.width / 2,
+      anchorRect.left,
       rect.top + rect.height / 2,
       Math.min(
         content.current?.scrollHeight || 80,
         Math.min(360, innerHeight * 0.6),
       ),
+      anchorRect.width,
     ];
   };
   function schedule(key: string) {
     if (hoverTarget.current === key) return;
     hoverTarget.current = key;
+    setPointed(key);
     clearTimeout(timer.current);
     timer.current = setTimeout(
       () => {
@@ -86,10 +88,6 @@ export default function UsageHistory({
         if (!next) return;
         if (!live.current.expanded) refs.current.motion.jump(next);
         else refs.current.motion.to(next);
-        if (live.current.displayed !== key && live.current.expanded) {
-          refs.current.fade.jump([0.35]);
-          refs.current.fade.to([1]);
-        }
         setDisplayed(key);
         setExpanded(true);
       },
@@ -99,6 +97,7 @@ export default function UsageHistory({
   const dismiss = () => {
     clearTimeout(timer.current);
     hoverTarget.current = "";
+    setPointed("");
     setExpanded(false);
   };
   useLayoutEffect(() => {
@@ -131,16 +130,23 @@ export default function UsageHistory({
     const report = () => {
       const r = card.current?.getBoundingClientRect();
       if (r) {
-        // Reserve the incoming content's height while the spring is growing.
-        // Native clipping must not trail the visible bubble's animation.
-        const targetHeight = Math.min(content.current?.scrollHeight || 0, Math.min(360, innerHeight * 0.6)) + 36;
-        const growth = Math.max(0, targetHeight - r.height);
-        onBounds?.([
-          [r.left - 24, r.top - 24 - growth],
-          [r.right + 24, r.top - 24 - growth],
-          [r.right + 24, r.bottom + 24 + growth],
-          [r.left - 24, r.bottom + 24 + growth],
-        ]);
+        // Report the painted card, not a padded rectangle that would intercept
+        // clicks in transparent space. Hover retention is handled by the rail.
+        const radius = Math.min(20, r.width / 2, r.height / 2);
+        const points: [number, number][] = [];
+        const corners = [
+          [r.right - radius, r.top + radius, -Math.PI / 2],
+          [r.right - radius, r.bottom - radius, 0],
+          [r.left + radius, r.bottom - radius, Math.PI / 2],
+          [r.left + radius, r.top + radius, Math.PI],
+        ];
+        for (const [x, y, start] of corners) {
+          for (let i = 0; i <= 12; i++) {
+            const angle = start! + i / 12 * Math.PI / 2;
+            points.push([x! + radius * Math.cos(angle), y! + radius * Math.sin(angle)]);
+          }
+        }
+        onBounds?.(points);
       }
       frame = requestAnimationFrame(report);
     };
@@ -161,9 +167,9 @@ export default function UsageHistory({
                 r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
               );
             };
-            const key = [...triggers.current].find(([, node]) =>
-              contains(node),
-            )?.[0];
+            const key = live.current.expanded && contains(card.current)
+              ? live.current.displayed
+              : [...triggers.current].find(([, node]) => contains(node))?.[0];
             schedule(
               key ??
                 (live.current.expanded && contains(card.current)
@@ -184,11 +190,12 @@ export default function UsageHistory({
   }, [rail]);
   const anchor = useRef({ getBoundingClientRect: () => new DOMRect() });
   anchor.current.getBoundingClientRect = () =>
-    new DOMRect(motion.value[0], motion.value[1], 0, 0);
+    new DOMRect(motion.value[0], motion.value[1], motion.value[3], 0);
   return (
     <>
       {children({
         register,
+        highlighted: pointed || (expanded ? displayed : ""),
         hover: (key) => {
           if (!(rail && isDesktop)) schedule(key);
         },
@@ -226,14 +233,13 @@ export default function UsageHistory({
               triggers.current.get(displayed)?.focus({ preventScroll: true });
               dismiss();
             }}
-            onMouseEnter={() => schedule(displayed)}
-            onMouseLeave={() => schedule("")}
+            onMouseEnter={() => { if (!(rail && isDesktop)) schedule(displayed); }}
+            onMouseLeave={() => { if (!(rail && isDesktop)) schedule(""); }}
           >
             <div className="history-scroll">
               <div
                 ref={attachContent}
                 className="history-detail"
-                style={{ opacity: fade.value[0] }}
               >
                 {detail(displayed)}
               </div>
