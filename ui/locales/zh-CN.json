@@ -14,6 +14,7 @@
   "trayStartup": "登录系统时连接",
   "trayApproval": "任务审批",
   "trayOverview": "打开主窗口",
+  "trayOpen": "打开",
   "trayTasks": "任务",
   "trayLogs": "记录",
   "traySettings": "设置",

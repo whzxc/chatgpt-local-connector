@@ -11,7 +11,9 @@ The production app is one Tauri/Rust process owning a single connection core. Th
 
 The home view places control sources on the left, the shared Connector in the center, and installed, supported Agents on the right. Each line shows its own status; an installed Agent can remain on standby. The top Connect/Disconnect button starts enabled ingresses or stops running ingresses. Click a built-in platform icon to open its website, or its line status icon to edit the connection, or use the plus button to add ChatGPT, Notion, Slack, or a custom MCP client. Each source has its own connection dialog with save, connect, disconnect, and remove actions. Applicable authentication and listener fields are displayed directly. Platform and display name are separate: the chosen platform stays fixed, and every source has an editable name; only ChatGPT offers OpenAI Tunnel. The editor reads back that ingress’s API key as a password, while other blank secret fields preserve saved credentials. General Settings contains application preferences; Agents management and its separate settings panel open from the home graph.
 
-Clicking the menu-bar or tray icon toggles a subscription usage panel. It shows
+On Windows, left-clicking the tray icon opens and focuses the main window. Right-clicking opens a native menu containing connection status, Open, Tasks, Records, Settings and Quit. Connection status is read-only and refreshes every five seconds; an unavailable backend is shown as unknown. Open shows the overview, and the other navigation items open their corresponding pages. Windows does not create a tray usage panel.
+
+On macOS, clicking the menu-bar icon toggles a subscription usage panel. It shows
 scrollable subscription cards.
 Quota blocks, usage rows and warning icons open secondary detail bubbles; the
 header itself has no hover details. Scrolling dismisses open detail bubbles.

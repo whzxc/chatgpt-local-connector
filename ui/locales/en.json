@@ -14,6 +14,7 @@
   "trayStartup": "Connect at login",
   "trayApproval": "Task approval",
   "trayOverview": "Open main window",
+  "trayOpen": "Open",
   "trayTasks": "Tasks",
   "trayLogs": "Records",
   "traySettings": "Settings",

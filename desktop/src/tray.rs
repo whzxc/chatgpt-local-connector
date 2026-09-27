@@ -1,14 +1,18 @@
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "windows")]
+mod windows;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use tauri::{
-    tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
-};
+#[cfg(not(target_os = "windows"))]
+use tauri::tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
+#[cfg(target_os = "windows")]
+pub use windows::install;
 
 #[derive(Default)]
 struct PanelInteraction(AtomicBool);
 struct PanelHeight(AtomicU32);
+#[cfg(not(target_os = "windows"))]
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     app.manage(PanelInteraction::default());
     app.manage(PanelHeight(AtomicU32::new(100)));
@@ -74,6 +78,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
         .build(app)?;
     Ok(())
 }
+#[cfg(not(target_os = "windows"))]
 fn pointer_on_icon(window: &tauri::WebviewWindow) -> bool {
     if let (Ok(point), Some(tray)) = (
         window.cursor_position(),
@@ -101,6 +106,7 @@ fn hide(window: &tauri::WebviewWindow) -> tauri::Result<()> {
         window.hide()
     }
 }
+#[cfg(not(target_os = "windows"))]
 fn toggle(
     app: &tauri::AppHandle,
     point: tauri::PhysicalPosition<f64>,

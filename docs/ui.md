@@ -52,7 +52,7 @@ Agent management shows availability, installation/version details, enable switch
 
 ## Quota, tray, and native surfaces
 
-On macOS the menu-bar WebView is hosted by a nonactivating NSPanel. It can receive keyboard focus without activating the application and cannot become the main window. Clicking outside the panel or its visible content dismisses it without opening the main window; explicit navigation actions open the main window. Native outside-click monitors preserve the menu-bar icon's toggle and the options menu's tracking session. Windows retains the standard tray WebView and blur dismissal.
+On macOS the menu-bar WebView is hosted by a nonactivating NSPanel. It can receive keyboard focus without activating the application and cannot become the main window. Clicking outside the panel or its visible content dismisses it without opening the main window; explicit navigation actions open the main window. Native outside-click monitors preserve the menu-bar icon's toggle and the options menu's tracking session. On Windows, left-clicking the tray icon opens the main window; right-clicking opens a native menu with connection status, Open, Tasks, Records, Settings and Quit. No tray WebView is created on Windows.
 
 QuotaBubble and QuotaRing share presentation across home details, tray, and rail. Summaries show allowance and reset time; model estimates, reset-credit details, and history appear on demand. Unknown amounts remain unknown. Existing pace/cycle calculations and source limitations remain in [Subscription usage](subscriptions.md).
 
