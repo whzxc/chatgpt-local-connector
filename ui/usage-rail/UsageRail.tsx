@@ -26,7 +26,7 @@ import {
   type Point,
 } from "./geometry";
 import type { PanelState, PanelGeometry } from "./layout";
-import { useSpring } from "../motion/spring";
+import { useGeometrySpring } from "../motion/geometry";
 export default function UsageRail({
   state,
   onGeometry,
@@ -71,15 +71,15 @@ export default function UsageRail({
     [measured, setMeasured] = useState(117),
     content = useRef<HTMLDivElement>(null),
     [popover, setPopover] = useState<Point[]>([]);
-  const rail = useSpring(
+  const rail = useGeometrySpring(
       [0, 238, 64, 46, 88, 0, 0],
       m.railResponse,
       m.railDamping,
     ),
-    axis = useSpring([0], m.railResponse, m.railDamping),
-    turnOffset = useSpring([0, 0], m.railResponse, m.railDamping),
-    card = useSpring([0, 0, 0, 117, 0], m.cardResponse, m.cardDamping);
-  const contentFade = useSpring([1], 0.18, 0.9);
+    axis = useGeometrySpring([0], m.railResponse, m.railDamping),
+    turnOffset = useGeometrySpring([0, 0], m.railResponse, m.railDamping),
+    card = useGeometrySpring([0, 0, 0, 117, 0], m.cardResponse, m.cardDamping);
+  const contentFade = useGeometrySpring([1], 0.18, 0.9);
   const previousLayout = useRef(l);
   const scale = l?.metrics.scale || 1,
     openness = clamp(rail.value[0]!, 0, 1),
@@ -141,7 +141,7 @@ export default function UsageRail({
       prefs?.alertColor && status.alert
         ? status.color
         : themeColors[color].dark;
-  const tint = useSpring([0, 0, 0], m.railResponse, m.railDamping);
+  const tint = useGeometrySpring([0, 0, 0], m.railResponse, m.railDamping);
   useEffect(() => {
     const color =
       pointer?.expanded || pointer?.dock === "floating" ? "#000000" : alert;

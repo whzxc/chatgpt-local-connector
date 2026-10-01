@@ -8,7 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { Popover } from "radix-ui";
-import { useSpring } from "../motion/spring";
+import { useGeometrySpring } from "../motion/geometry";
 import m from "../../shared/usage-panel.json";
 import { isDesktop } from "../platform";
 export type BubbleControls = {
@@ -48,7 +48,7 @@ export default function UsageHistory({
   live.current = { expanded, displayed };
   const hoverTarget = useRef(""),
     timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const motion = useSpring([0, 0, 80, 0], m.cardResponse, m.cardDamping);
+  const motion = useGeometrySpring([0, 0, 80, 0], m.cardResponse, m.cardDamping);
   const refs = useRef({ motion, onBounds });
   refs.current = { motion, onBounds };
   const register = (key: string, node: HTMLElement | null) => {

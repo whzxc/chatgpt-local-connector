@@ -15,6 +15,8 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
+import { animate } from "motion";
+import { surfaceMotion, reducedMotion } from "./motion/surface";
 import { t, locale } from "./i18n";
 import { isDesktop } from "./platform";
 import { connector, notify, startConnector } from "./state/connector";
@@ -35,7 +37,7 @@ import type { PanelPreferences } from "./usage-rail/layout";
 import { panelLayers, panelHandoff, panelAnchorAt } from "./state/panels";
 import {
   capturePanelOrigin, takePanelOrigin, animateOriginContent, surfaceOf,
-  morphEasing, reducedMotion, type PanelOrigin,
+  type PanelOrigin,
 } from "./components/panelMorph";
 import { displayMessage } from "./messages";
 import ConnectionOverview from "./components/ConnectionOverview";
@@ -62,7 +64,7 @@ export default function App() {
     lastPage = useRef<Page>("tasks"),
     sheetOrigin = useRef<PanelOrigin | undefined>(undefined),
     sheetVisualCleanup = useRef<(() => void) | undefined>(undefined),
-    sheetMotion = useRef<Animation | null>(null),
+    sheetMotion = useRef<ReturnType<typeof surfaceMotion> | null>(null),
     sheetClosing = useRef(false),
     backdropDown = useRef(false);
   const layers = panelLayers.use();
@@ -78,37 +80,54 @@ export default function App() {
         document.querySelector(".navigation-surface")?.getBoundingClientRect();
     const handedOff = (panelHandoff.until ?? 0) > performance.now() && !!panelHandoff.from;
     panelHandoff.from = undefined;
+    const surface = surfaceMotion(node);
+    sheetMotion.current = surface;
     if (source && !reducedMotion()) {
       const visual = handedOff ? undefined : sheetOrigin.current;
-      sheetMotion.current = node.animate(
-        [
-          {
-            transform: `translate(${source.x - rect.x}px,${source.y - rect.y}px)`,
-            width: `${source.width}px`, height: `${source.height}px`, opacity: 1,
-            ...(visual?.surface ?? {}),
-          },
-          { transform: "none", width: `${rect.width}px`, height: `${rect.height}px`, opacity: 1, ...surfaceOf(node) },
-        ],
-        { duration: 480, easing: morphEasing },
+      const animation = surface.to(
+        { transform: "translate(0px,0px)", width: `${rect.width}px`, height: `${rect.height}px`, opacity: 1, ...surfaceOf(node) },
+        { from: {
+          transform: `translate(${source.x - rect.x}px,${source.y - rect.y}px)`,
+          width: `${source.width}px`, height: `${source.height}px`, opacity: 1,
+          ...(visual?.surface ?? {}),
+        } },
       );
-      const contentAnimations = Array.from(node.children).map((child) => child.animate(
-        [{ opacity: 0 }, { opacity: 1 }], { duration: 280, delay: 130, fill: "backwards" },
-      ));
-      const cleanup = sheetVisuals(rect, false, !handedOff);
-      sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.cancel()); };
-      void sheetMotion.current.finished.then(cleanup, cleanup);
+      const contentAnimations = Array.from(node.children).map((child) =>
+        animate(child, { opacity: [0, 1] }, { duration: 0.28, delay: 0.13 }));
+      const cleanup = sheetVisuals(false, !handedOff);
+      sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.stop()); };
+      void animation.then(cleanup);
     }
-    document.querySelector<HTMLElement>(".capsule-title")?.focus();
-    return () => { sheetMotion.current?.cancel(); sheetVisualCleanup.current?.(); };
+    document.querySelector<HTMLElement>(".capsule-title")?.focus({ preventScroll: true });
+    const observer = new ResizeObserver(() => {
+      if (sheetClosing.current) return;
+      const surface = sheetMotion.current;
+      if (!surface) return;
+      const layout = node.firstElementChild!.getBoundingClientRect();
+      const next = { width: layout.width + 2, height: layout.height + 2 };
+      if (Math.abs(next.width - rect.width) <= 1 && Math.abs(next.height - rect.height) <= 1) return;
+      surface.to({ width: `${next.width}px`, height: `${next.height}px`, transform: "translate(0px,0px)" }, {
+        from: surface.running ? undefined : { width: `${rect.width}px`, height: `${rect.height}px` },
+      });
+      rect.width = next.width;
+      rect.height = next.height;
+    });
+    if (node.firstElementChild) observer.observe(node.firstElementChild);
+    return () => {
+      observer.disconnect();
+      sheetMotion.current?.dispose();
+      sheetMotion.current = null;
+      sheetVisualCleanup.current?.();
+    };
   }, [page]);
 
-  function sheetVisuals(rect: DOMRect, closing: boolean, showOrigin = true) {
+  function sheetVisuals(closing: boolean, showOrigin = true) {
     const visual = showOrigin ? sheetOrigin.current : undefined;
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(".navigation-capsule, .navigation-surface"));
     const opacities = nodes.map((el) => el.style.opacity);
     const transitions = nodes.map((el) => el.style.transition);
     nodes.forEach((el) => { el.style.opacity = "0"; el.style.transition = "none"; });
-    const clear = visual ? animateOriginContent(visual, rect, 480, 51, closing) : () => {};
+    const clear = visual ? animateOriginContent(visual, 480, 51, closing) : () => {};
     let done = false;
     return () => {
       if (done) return;
@@ -132,35 +151,27 @@ export default function App() {
       !matchMedia("(prefers-reduced-motion: reduce)").matches &&
       !replacement
     ) {
-      const rect = node.getBoundingClientRect();
       const dock = document.querySelector(".navigation-surface")!.getBoundingClientRect();
       const visual = sheetOrigin.current;
       if (visual) {
         visual.rect = new DOMRect(dock.x, dock.bottom - visual.rect.height, visual.rect.width, visual.rect.height);
       }
       const to = visual?.rect ?? dock;
-      const current = { transform: getComputedStyle(node).transform, width: `${rect.width}px`, height: `${rect.height}px`, ...surfaceOf(node) };
-      sheetMotion.current?.cancel();
       sheetVisualCleanup.current?.();
-      const natural = node.getBoundingClientRect();
-      sheetMotion.current = node.animate(
-        [
-          current,
-          {
-            transform: `translate(${to.x - natural.x}px,${to.y - natural.y}px)`,
-            width: `${to.width}px`, height: `${to.height}px`,
-            ...(visual?.surface ?? {}),
-          },
-        ],
-        { duration: 480, easing: morphEasing, fill: "forwards" },
-      );
-      const cleanup = sheetVisuals(rect, true);
-      const contentAnimations = Array.from(node.children).map((child) => child.animate(
-        [{ opacity: getComputedStyle(child).opacity }, { opacity: 0 }],
-        { duration: 180, fill: "forwards" },
-      ));
-      sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.cancel()); };
-      await sheetMotion.current.finished.catch(() => {});
+      const surface = sheetMotion.current ?? surfaceMotion(node);
+      sheetMotion.current = surface;
+      const placement = getComputedStyle(node);
+      const natural = { x: parseFloat(placement.left), y: parseFloat(placement.top) };
+      const animation = surface.to({
+        transform: `translate(${to.x - natural.x}px,${to.y - natural.y}px)`,
+        width: `${to.width}px`, height: `${to.height}px`,
+        ...(visual?.surface ?? {}),
+      }, { retain: true });
+      const cleanup = sheetVisuals(true);
+      const contentAnimations = Array.from(node.children).map((child) =>
+        animate(child, { opacity: 0 }, { duration: 0.18 }));
+      sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.stop()); };
+      await animation;
     }
 
     if (replacement && node) {

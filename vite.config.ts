@@ -68,6 +68,25 @@ export default defineConfig({
       });
     },
   }],
-  build: { outDir: '../dist/ui', emptyOutDir: true, rollupOptions: { input: { trayPanel: fileURLToPath(new URL('./ui/tray-panel.html', import.meta.url)), main: fileURLToPath(new URL('./ui/index.html', import.meta.url)), usageRail: fileURLToPath(new URL('./ui/usage-rail.html', import.meta.url)) } } },
+  build: {
+    outDir: '../dist/ui',
+    emptyOutDir: true,
+    rolldownOptions: {
+      input: {
+        trayPanel: fileURLToPath(new URL('./ui/tray-panel.html', import.meta.url)),
+        main: fileURLToPath(new URL('./ui/index.html', import.meta.url)),
+        usageRail: fileURLToPath(new URL('./ui/usage-rail.html', import.meta.url)),
+      },
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/ },
+            { name: 'motion', test: /node_modules[\\/](?:motion|motion-dom|motion-utils|framer-motion)[\\/]/ },
+            { name: 'radix', test: /node_modules[\\/](?:radix-ui|@radix-ui|@floating-ui)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   server: { host: '127.0.0.1', port: 5187, strictPort: true },
 });

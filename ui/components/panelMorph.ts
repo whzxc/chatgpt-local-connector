@@ -1,19 +1,18 @@
+import { animate } from "motion";
+import type { Surface } from "../motion/surface";
 // A short-lived visual copy keeps trigger content crisp while its surface grows.
 // The real trigger and Radix content retain ownership of all interaction.
 export type PanelOrigin = {
   trigger: HTMLElement;
   visual: HTMLElement;
   rect: DOMRect;
-  surface: Keyframe;
+  surface: Surface;
   copy: HTMLElement;
   parent?: HTMLElement;
 };
 
-export const morphEasing = "cubic-bezier(.2,.8,.3,1)";
-export const reducedMotion = () =>
-  matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function surfaceOf(node: Element): Keyframe {
+export function surfaceOf(node: Element): Surface {
   const s = getComputedStyle(node);
   const rect = node.getBoundingClientRect();
   const corners = [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius]
@@ -118,31 +117,27 @@ export function hideOrigin(origin: PanelOrigin) {
 }
 
 export function animateOriginContent(
-  origin: PanelOrigin, target: DOMRect, duration: number, zIndex: number, closing = false,
+  origin: PanelOrigin, duration: number, zIndex: number, closing = false,
 ) {
   const host = document.createElement("div");
   host.className = "panel-morph-content";
   host.setAttribute("aria-hidden", "true");
   host.inert = true;
   Object.assign(host.style, {
-    position: "fixed", left: "0", top: "0", pointerEvents: "none",
+    position: "fixed", left: `${origin.rect.x}px`, top: `${origin.rect.y}px`, pointerEvents: "none",
     width: `${origin.rect.width}px`, height: `${origin.rect.height}px`,
     zIndex: String(zIndex),
   });
   host.append(origin.copy.cloneNode(true));
   document.body.append(host);
-  const start = `translate(${origin.rect.x}px, ${origin.rect.y}px)`;
-  // Move the old content with the surface, without stretching text or SVGs.
-  const end = `translate(${target.x + (target.width - origin.rect.width) / 2}px, ${target.y + Math.min(28, (target.height - origin.rect.height) / 2)}px)`;
-  const frames: Keyframe[] = [
-    { transform: start, opacity: 1, offset: 0 },
-    { opacity: 0, offset: 0.55 },
-    { transform: end, opacity: 0, offset: 1 },
-  ];
-  const animation = host.animate(closing
-    ? [...frames].reverse().map((frame) => ({ ...frame, offset: 1 - Number(frame.offset) }))
-    : frames, { duration, easing: morphEasing, fill: "both" });
-  const cleanup = () => { animation.cancel(); host.remove(); };
-  void animation.finished.then(cleanup, cleanup);
+  // The anchor's content stays at its own screen position throughout the morph.
+  const animation = animate(host, {
+    opacity: closing ? [0, 0, 1] : [1, 0, 0],
+  }, { duration: duration / 1000, ease: [0.2, 0.8, 0.3, 1],
+    opacity: { times: closing ? [0, 0.45, 1] : [0, 0.55, 1] } });
+  const cleanup = () => { animation.stop(); host.remove(); };
+  // On dismissal the shell is spring-driven and can outlive this fade. Keep
+  // the visible copy until its owner restores the real anchor in the same turn.
+  if (!closing) void animation.then(cleanup);
   return cleanup;
 }

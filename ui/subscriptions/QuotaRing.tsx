@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useSpring } from "../motion/spring";
+import { useGeometrySpring } from "../motion/geometry";
 import railMetrics from "../../shared/usage-panel.json";
 import { Bot } from "lucide-react";
 import { t } from "../i18n";
@@ -142,7 +142,7 @@ export default function QuotaRing({
     ),
     value = quotaValue(current),
     running = active.includes(provider.agentId);
-  const progress = useSpring(
+  const progress = useGeometrySpring(
     [value ?? 0],
     railMetrics.readingResponse,
     railMetrics.readingDamping,

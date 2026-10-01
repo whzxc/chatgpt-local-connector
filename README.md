@@ -103,6 +103,7 @@ Documentation:
 - [Development and builds](docs/development.md)
 - [Desktop lifecycle](docs/desktop.md)
 - [MCP tools and task boundaries](docs/tools.md)
+- [ChatGPT desktop companion plugin](docs/plugin.md)
 - [Architecture](docs/architecture.md)
 
 Local data defaults to `~/.local/state/chatgpt-local-connector` on macOS or `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Override it with `CLC_STATE_DIR`. Keys, receipts, and logs are stored locally; removing the app does not remove Codex history.

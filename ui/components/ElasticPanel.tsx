@@ -7,6 +7,8 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
+import { animate, type AnimationPlaybackControlsWithThen } from "motion";
+import { surfaceMotion, reducedMotion as reduced, type Surface } from "../motion/surface";
 import { Dialog as D } from "radix-ui";
 import { X } from "lucide-react";
 import { t } from "../i18n";
@@ -18,11 +20,10 @@ import {
 } from "../state/panels";
 import {
   takePanelOrigin, readOrigin, hideOrigin, animateOriginContent, surfaceOf,
-  reducedMotion as reduced, type PanelOrigin,
+  type PanelOrigin,
 } from "./panelMorph";
-const easing = "cubic-bezier(.2,.8,.3,1)";
 const duration = 480;
-const frameAt = (rect: DOMRect, opacity: number, borderRadius: string): Keyframe => ({
+const frameAt = (rect: DOMRect, opacity: number, borderRadius: string): Surface => ({
   transform: `translate(calc(-50% + ${rect.x + rect.width / 2 - innerWidth / 2}px),calc(-50% + ${rect.y + rect.height / 2 - innerHeight / 2}px))`,
   width: `${rect.width}px`,
   height: `${rect.height}px`,
@@ -73,7 +74,7 @@ export default function ElasticPanel({
   const parentPanel = useRef<HTMLElement | undefined>(undefined);
   const [baseDepth, setBaseDepth] = useState(1);
   const closing = useRef(false),
-    motion = useRef<Animation | null>(null),
+    motion = useRef<ReturnType<typeof surfaceMotion> | null>(null),
     backdropPressed = useRef(false);
   const drag = useRef<
     { id: number; x: number; y: number; left: number; top: number } | undefined
@@ -132,88 +133,56 @@ export default function ElasticPanel({
       setPosition({ x, y });
       rect = new DOMRect((innerWidth - rect.width) / 2 + x, (innerHeight - rect.height) / 2 + y, rect.width, rect.height);
     }
+    const surface = surfaceMotion(node, () => ({
+      transform: `translate(calc(-50% + ${positionRef.current.x}px),calc(-50% + ${positionRef.current.y}px))`,
+    }));
+    motion.current = surface;
+    const fades: AnimationPlaybackControlsWithThen[] = [];
     if (!reduced() && source && rect.width) {
       const visual = !parent && !handoff ? visualOrigin.current : undefined;
-      const timing = parent || handoff ? 320 : duration;
-      motion.current = node.animate(
-        [
-          { ...frameAt(source, visual || parent || handoff ? 1 : 0, "28px"), ...(parent ? surfaceOf(parent) : visual?.surface ?? {}) },
-          { ...frameAt(rect, 1, "28px"), ...surfaceOf(node) },
-        ],
-        { duration: timing, easing },
-      );
+      surface.to({ ...frameAt(rect, 1, "28px"), ...surfaceOf(node) }, {
+        from: { ...frameAt(source, visual || parent || handoff ? 1 : 0, "28px"), ...(parent ? surfaceOf(parent) : visual?.surface ?? {}) },
+      });
       if (visual) {
         restoreOrigin.current = hideOrigin(visual);
-        clearGhost.current = animateOriginContent(visual, rect, timing, Number(node.style.zIndex) + 1);
+        clearGhost.current = animateOriginContent(visual, duration, Number(node.style.zIndex) + 1);
       }
-      Array.from(node.children).forEach((child) =>
-        child.animate([{ opacity: 0 }, { opacity: 1 }], {
-          duration: 280,
-          delay: parent ? 40 : 130,
-          fill: "backwards",
-        }),
-      );
+      for (const child of Array.from(node.children))
+        fades.push(animate(child, { opacity: [0, 1] }, { duration: 0.28, delay: parent ? 0.04 : 0.13 }));
     }
-    // Keep the natural target height, not the opening animation's trigger height.
-    // Otherwise ResizeObserver replays the expansion as soon as opening finishes.
-    let height = rect.height,
-      layoutWidth = rect.width,
-      resizing: Animation | undefined,
-      resizeFrame = 0;
-    // Async content can change the natural target while the opening animation
-    // still fixes the panel's height. Measure without its effect in the same
-    // frame, then retarget it before the browser paints.
-    const openingContent = new MutationObserver(() => {
-      const animation = motion.current;
-      if (closing.current || animation?.playState !== "running") return;
-      const effect = animation.effect as KeyframeEffect | null;
-      if (!effect) return;
-      animation.effect = null;
-      const target = node.getBoundingClientRect();
-      animation.effect = effect;
-      const frames = effect.getKeyframes();
-      frames[frames.length - 1].height = `${target.height}px`;
-      frames[frames.length - 1].width = `${target.width}px`;
-      effect.setKeyframes(frames);
-      height = target.height;
-      layoutWidth = target.width;
-    });
-    openingContent.observe(node, { childList: true, subtree: true, characterData: true });
+    let height = rect.height, layoutWidth = rect.width;
     const resize = () => {
-      if (
-        closing.current ||
-        motion.current?.playState === "running" ||
-        motion.current?.playState === "paused" ||
-        resizing?.playState === "running"
-      )
-        return;
-      const next = node.offsetHeight;
-      const nextWidth = node.offsetWidth;
-      if ((Math.abs(next - height) > 1 || Math.abs(nextWidth - layoutWidth) > 1) && !reduced()) {
-        resizing = node.animate(
-          [{ width: `${layoutWidth}px`, height: `${height}px` }, { width: `${nextWidth}px`, height: `${next}px` }],
-          { duration: 320, easing },
-        );
-      }
-      height = next;
-      layoutWidth = nextWidth;
+      if (closing.current) return;
+      const content = node.firstElementChild;
+      if (!content) return;
+      const border = parseFloat(getComputedStyle(node).getPropertyValue("--panel-border")) || 0;
+      const layout = content.getBoundingClientRect();
+      const w = layout.width + border * 2, h = layout.height + border * 2;
+      // The shell can still be between its anchor and destination. Only the
+      // independently laid-out content defines the target size and center.
+      const next = new DOMRect(
+        (innerWidth - w) / 2 + positionRef.current.x,
+        (innerHeight - h) / 2 + positionRef.current.y, w, h,
+      );
+      if (Math.abs(next.height - height) <= 1 && Math.abs(next.width - layoutWidth) <= 1) return;
+      const from = !surface.running ? frameAt(new DOMRect(next.x, next.y, layoutWidth, height), 1, "28px") : undefined;
+      height = next.height;
+      layoutWidth = next.width;
+      surface.to(frameAt(next, 1, "28px"), { from });
     };
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(resize);
-    });
-    observer.observe(node);
+    const observer = new ResizeObserver(resize);
+    // Observe the destination layout, not the animated shell.
+    if (node.firstElementChild) observer.observe(node.firstElementChild);
     return () => {
       cancelAnimationFrame(focusFrame);
-      cancelAnimationFrame(resizeFrame);
       restoreOrigin.current?.();
       clearGhost.current?.();
       if (!closing.current) rememberPanel(node, trigger.current ?? undefined);
       panelLayers.set((old) => old.filter((el) => el !== node));
       observer.disconnect();
-      openingContent.disconnect();
-      resizing?.cancel();
-      motion.current?.cancel();
+      fades.forEach((fade) => fade.stop());
+      surface.dispose();
+      motion.current = null;
     };
   }, [node, open]);
   useEffect(() => {
@@ -230,15 +199,13 @@ export default function ElasticPanel({
       // when returning, just as an animated Close does before removing it.
       const from = returned && (panelHandoff.until ?? 0) > performance.now()
         ? panelHandoff.from : undefined;
-      const surface = from ? node.animate(
-        [frameAt(from, 1, "28px"), frameAt(node.getBoundingClientRect(), 1, "28px")],
-        { duration: 320, easing },
-      ) : undefined;
-      if (from) panelHandoff.from = undefined;
-      const animation = node.firstElementChild?.animate(
-        [{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing },
-      );
-      return () => { animation?.cancel(); surface?.cancel(); };
+      if (from) {
+        motion.current?.to(frameAt(node.getBoundingClientRect(), 1, "28px"), { from: frameAt(from, 1, "28px") });
+        panelHandoff.from = undefined;
+      }
+      const content = node.firstElementChild;
+      const animation = content ? animate(content, { opacity: [0, 1] }, { duration: 0.18 }) : undefined;
+      return () => { animation?.stop(); };
     }
   }, [node, recessed, depthOffset]);
   async function close(replacement?: HTMLElement) {
@@ -264,29 +231,19 @@ export default function ElasticPanel({
       const style = getComputedStyle(node);
       const current = { ...frameAt(from, Number(style.opacity), style.borderRadius), ...surfaceOf(node) };
       const closeDuration = parent ? 320 : duration;
-      motion.current?.cancel();
-      motion.current = node.animate(
-        [
-          current,
-          { ...frameAt(to, visual || parent ? 1 : 0, parent ? "28px" : "50%"), ...(parent ? surfaceOf(parent) : visual?.surface ?? {}) },
-        ],
-        { duration: closeDuration, easing, fill: "forwards" },
+      const animation = motion.current?.to(
+        { ...frameAt(to, visual || parent ? 1 : 0, parent ? "28px" : "50%"), ...(parent ? surfaceOf(parent) : visual?.surface ?? {}) },
+        { retain: true, ...(motion.current.running ? {} : { from: current }) },
       );
       if (visual) {
         restoreOrigin.current = hideOrigin(visual);
-        clearGhost.current = animateOriginContent(visual, from, closeDuration, Number(node.style.zIndex) + 1, true);
+        clearGhost.current = animateOriginContent(visual, closeDuration, Number(node.style.zIndex) + 1, true);
       }
       Array.from(node.children).forEach((child) => {
-        const opacity = getComputedStyle(child).opacity;
-        child.getAnimations().forEach((animation) => animation.cancel());
-        child.animate([{ opacity: 0 }, { opacity }], {
-          duration: 150,
-          delay: 0,
-          direction: "reverse",
-          fill: "both",
-        });
+        animate(child, { opacity: 0 }, { duration: 0.15 });
       });
-      await motion.current.finished.catch(() => {});
+      await animation;
+
     }
     latest.current.onClose();
     if (replacement)
@@ -366,7 +323,7 @@ export default function ElasticPanel({
                     e.button !== 0 ||
                     !e.isPrimary ||
                     (e.target as Element).closest("button") ||
-                    motion.current?.playState === "running"
+                    motion.current?.running
                   )
                     return;
                   drag.current = {

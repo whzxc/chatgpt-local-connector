@@ -103,6 +103,7 @@ npm run dev:ui
 - [开发与构建](docs/development.md)
 - [桌面生命周期](docs/desktop.md)
 - [MCP 工具与任务边界](docs/tools.md)
+- [ChatGPT 桌面配套插件](docs/plugin.md)
 - [架构说明](docs/architecture.md)
 
 本机数据默认位于 macOS 的 `~/.local/state/chatgpt-local-connector` 或 Windows 的 `%LOCALAPPDATA%/chatgpt-local-connector`，可通过 `CLC_STATE_DIR` 指定。密钥、回执和日志只保存在本机；卸载应用不会删除 Codex 历史。

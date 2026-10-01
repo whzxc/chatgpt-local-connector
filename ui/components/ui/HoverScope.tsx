@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type HTMLAttributes } from "react";
-import { useSpring } from "../../motion/spring";
+import { motion, useSpring } from "motion/react";
+import { springTransition } from "../../motion/geometry";
 
 // Controlled owners retain bubble sources; Radix owns highlighted menu items.
 // Ordinary groups derive a temporary target from pointer and keyboard focus.
@@ -33,11 +34,15 @@ function Highlight({ root, activeKey, tracking }: {
   activeKey: string;
   tracking: "pointer" | "highlighted";
 }) {
-  const motion = useSpring([0, 0, 0, 0, 0], 0.22, 0.9);
+  const transition = springTransition(0.22, 0.9);
+  const x = useSpring(0, transition), y = useSpring(0, transition);
+  const width = useSpring(0, transition), height = useSpring(0, transition);
+  const radius = useSpring(0, transition);
   const [visible, setVisible] = useState(false);
   const present = useRef(false);
   useLayoutEffect(() => {
     const scope = root;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     let hideTimer: ReturnType<typeof setTimeout> | undefined;
     const hide = () => {
       if (hideTimer) return;
@@ -55,8 +60,8 @@ function Highlight({ root, activeKey, tracking }: {
       if (!box.width || !box.height || !parent.width || !parent.height) { hide(); return; }
       // Undo ancestor scaling; the local layer follows elastic panels naturally.
       const sx = parent.width / scope.offsetWidth, sy = parent.height / scope.offsetHeight;
-      const radius = getComputedStyle(target).borderTopLeftRadius;
-      const r = radius.endsWith("%") ? parseFloat(radius) * Math.min(box.width / sx, box.height / sy) / 100 : parseFloat(radius);
+      const corner = getComputedStyle(target).borderTopLeftRadius;
+      const r = corner.endsWith("%") ? parseFloat(corner) * Math.min(box.width / sx, box.height / sy) / 100 : parseFloat(corner);
       const next = [
         (box.left - parent.left) / sx + scope.scrollLeft - scope.clientLeft,
         (box.top - parent.top) / sy + scope.scrollTop - scope.clientTop,
@@ -64,8 +69,10 @@ function Highlight({ root, activeKey, tracking }: {
       ];
       clearTimeout(hideTimer);
       hideTimer = undefined;
-      if (present.current) motion.to(next);
-      else motion.jump(next);
+      [x, y, width, height, radius].forEach((value, i) => {
+        if (present.current && !reduced.matches) value.set(next[i]);
+        else value.jump(next[i]);
+      });
       present.current = true;
       setVisible(true);
     };
@@ -80,19 +87,20 @@ function Highlight({ root, activeKey, tracking }: {
     changes.observe(scope, { childList: true, subtree: true, characterData: true,
       attributes: true, attributeFilter: ["data-hover-target", "data-highlighted", "data-disabled", "disabled", "aria-disabled"] });
     observe();
+    reduced.addEventListener("change", measure);
     window.addEventListener("resize", measure);
     scope.addEventListener("scroll", measure, true);
     return () => {
       clearTimeout(hideTimer);
       resize.disconnect();
       changes.disconnect();
+      reduced.removeEventListener("change", measure);
       window.removeEventListener("resize", measure);
       scope.removeEventListener("scroll", measure, true);
     };
-  }, [activeKey, tracking, root, motion.to, motion.jump]);
-  const [x, y, width, height, radius] = motion.value;
-  return <span aria-hidden="true" className="hover-highlight" style={{
-    transform: `translate3d(${x}px, ${y}px, 0)`, width, height,
+  }, [activeKey, tracking, root, x, y, width, height, radius]);
+  return <motion.span aria-hidden="true" className="hover-highlight" style={{
+    x, y, width, height,
     borderRadius: radius, opacity: visible ? 1 : 0,
   }} />;
 }

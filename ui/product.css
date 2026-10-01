@@ -820,7 +820,6 @@
   flex-direction: column;
   overflow: hidden;
   transform-origin: top left;
-  transition: width var(--sheet-open-motion);
 }
 /* Layout stays at the destination size; the animated shell only clips it. */
 .page-sheet-content {
