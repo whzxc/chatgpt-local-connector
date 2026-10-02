@@ -1,0 +1,368 @@
+//! One authenticated, leased Core process per state directory, shared by all local entrypoints.
+use crate::*;
+use std::{
+    collections::HashMap,
+    fs::File,
+    process::Stdio,
+    time::{Duration, Instant},
+};
+use tokio::sync::Notify;
+
+const LEASE_TTL: Duration = Duration::from_secs(10);
+struct Lease {
+    pid: u32,
+    kind: String,
+    seen: Instant,
+    desktop: Option<Value>,
+}
+#[derive(Default)]
+pub struct State {
+    leases: std::sync::Mutex<HashMap<String, Lease>>,
+    pub shutdown: Notify,
+    closing: std::sync::atomic::AtomicBool,
+}
+impl State {
+    fn active(&self) -> std::sync::MutexGuard<'_, HashMap<String, Lease>> {
+        let mut leases = self.leases.lock().unwrap();
+        leases.retain(|_, lease| lease.seen.elapsed() < LEASE_TTL);
+        leases
+    }
+    pub fn clients(&self) -> Value {
+        json!(self
+            .active()
+            .iter()
+            .map(|(id, lease)| json!({"id":id,"pid":lease.pid,"kind":lease.kind}))
+            .collect::<Vec<_>>())
+    }
+    pub fn request(&self, route: &str, body: Value) -> Result<Value> {
+        let key = string(&body, "id");
+        uuid::Uuid::parse_str(key).map_err(|_| "invalid client id")?;
+        let mut leases = self.active();
+        match route {
+            "runtime/lease" => {
+                if self.closing.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err("core shutting down".into());
+                }
+                let kind = string(&body, "kind");
+                if !["desktop", "plugin"].contains(&kind) || !body["pid"].is_u64() {
+                    return Err("invalid local entrypoint".into());
+                }
+                if leases.len() >= 128 && !leases.contains_key(key) {
+                    return Err("too many local clients".into());
+                }
+                if kind == "desktop"
+                    && leases
+                        .iter()
+                        .any(|(id, lease)| id != key && lease.kind == kind)
+                {
+                    return Err("这份数据已有 Desktop 入口运行，请使用另一数据目录。".into());
+                }
+                let desktop = body.get("desktop").filter(|v| v.is_object()).cloned();
+                if let Some(endpoint) = &desktop {
+                    if !endpoint["port"]
+                        .as_u64()
+                        .is_some_and(|p| p > 0 && p <= 65535)
+                        || string(endpoint, "token").len() < 32
+                    {
+                        return Err("invalid desktop endpoint".into());
+                    }
+                }
+                leases.insert(
+                    key.into(),
+                    Lease {
+                        pid: body["pid"].as_u64().unwrap() as u32,
+                        kind: kind.into(),
+                        seen: Instant::now(),
+                        desktop,
+                    },
+                );
+                Ok(json!({"instance":key,"version":env!("CARGO_PKG_VERSION")}))
+            }
+            "runtime/release" => {
+                leases.remove(key);
+                Ok(json!({"released":true}))
+            }
+            "runtime/shutdown" => {
+                if !leases.contains_key(key) || leases.keys().any(|id| id != key) {
+                    return Err(
+                        "其他本地入口仍在使用 Core；请先关闭这些插件或 Desktop，再安装更新。"
+                            .into(),
+                    );
+                }
+                self.closing
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                self.shutdown.notify_one();
+                Ok(json!({"closing":true}))
+            }
+            _ => Err("UNKNOWN_ROUTE".into()),
+        }
+    }
+    pub async fn desktop_request(
+        &self,
+        operation: crate::transport::DesktopRequest,
+    ) -> Result<Value> {
+        let endpoint = self
+            .active()
+            .values()
+            .find_map(|lease| lease.desktop.clone())
+            .ok_or("Desktop 未运行；该操作需要 Desktop 入口。")?;
+        let (route, method, body) = match operation {
+            crate::transport::DesktopRequest::ServiceGet => ("service", "GET", json!({})),
+            crate::transport::DesktopRequest::ServiceSet(body) => ("service", "POST", body),
+            crate::transport::DesktopRequest::PanelGet => ("usage-panel", "GET", json!({})),
+            crate::transport::DesktopRequest::PanelSet(body) => ("usage-panel", "PUT", body),
+            crate::transport::DesktopRequest::SubscriptionsOpen(body) => {
+                ("subscriptions/open", "POST", body)
+            }
+        };
+        crate::transport::forward_to(&endpoint, route, method, body).await
+    }
+}
+
+pub fn binary() -> Result<PathBuf> {
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let name = if cfg!(windows) {
+        "local-connector.exe"
+    } else {
+        "local-connector"
+    };
+    if executable.file_name().is_some_and(|v| v == name) {
+        return Ok(executable);
+    }
+    let parent = executable.parent().ok_or("missing executable directory")?;
+    for path in [
+        parent.join("../Resources/bin").join(name),
+        parent.join("bin").join(name),
+    ] {
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    Err("安装包缺少独立 Core 可执行文件。".into())
+}
+
+pub fn build_id(binary: &Path) -> Result<String> {
+    Ok(hash(std::fs::read(binary).map_err(|e| e.to_string())?))
+}
+
+async fn owner(build: &str) -> Result<Option<Value>> {
+    let Ok(info) = load(&root().join("web/native.json")) else {
+        return Ok(None);
+    };
+    let Some(port) = info["port"].as_u64().filter(|p| *p > 0 && *p <= 65535) else {
+        return Ok(None);
+    };
+    let response = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| e.to_string())?
+        .get(format!("http://127.0.0.1:{port}/healthz"))
+        .bearer_auth(string(&info, "token"))
+        .timeout(Duration::from_millis(800))
+        .send()
+        .await;
+    let Ok(response) = response else {
+        return Ok(None);
+    };
+    let Ok(health) = response.json::<Value>().await else {
+        return Ok(None);
+    };
+    if health["instance"] != info["instance"] {
+        return Ok(None);
+    }
+    if health["owner"] != "core"
+        || health["version"] != env!("CARGO_PKG_VERSION")
+        || health["build"] != build
+    {
+        return Err(
+            "CORE_BUILD_MISMATCH：请关闭其他本地入口，再重新加载同一构建的 Desktop 与插件。".into(),
+        );
+    }
+    Ok(Some(info))
+}
+
+pub struct Client {
+    id: String,
+    kind: String,
+    binary: PathBuf,
+    build: String,
+    desktop: Mutex<Option<Value>>,
+    startup: Mutex<()>,
+    heartbeat: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+impl Client {
+    pub async fn connect(binary: PathBuf, kind: &str) -> Result<Arc<Self>> {
+        init_crypto();
+        let client = Arc::new(Self {
+            id: id(),
+            kind: kind.into(),
+            build: build_id(&binary)?,
+            binary,
+            desktop: Mutex::new(None),
+            startup: Mutex::new(()),
+            heartbeat: Default::default(),
+        });
+        client.ensure().await?;
+        client.resume();
+        Ok(client)
+    }
+    pub fn resume(self: &Arc<Self>) {
+        let mut heartbeat = self.heartbeat.lock().unwrap();
+        if heartbeat.is_some() {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let Some(client) = weak.upgrade() else {
+                    return;
+                };
+                if let Err(error) = client.ensure().await {
+                    eprintln!("Core heartbeat: {error}");
+                }
+            }
+        });
+        *heartbeat = Some(task);
+    }
+    async fn ensure(&self) -> Result<()> {
+        let _startup = self.startup.lock().await;
+        if owner(&self.build).await?.is_none() {
+            private_dir(&root())?;
+            let log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(root().join("core.log"))
+                .map_err(|e| e.to_string())?;
+            let mut child = std::process::Command::new(&self.binary);
+            child
+                .arg("serve")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(log);
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                child.process_group(0);
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                child.creation_flags(0x08000200);
+            }
+            let mut child = child
+                .spawn()
+                .map_err(|e| format!("Core start failed: {e}"))?;
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while owner(&self.build).await?.is_none() {
+                if Instant::now() >= deadline {
+                    return Err("Core 启动超时；请检查状态目录中的 core.log。".into());
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        crate::transport::forward_request("runtime/lease", "POST", json!({"id":self.id,"kind":self.kind,"pid":std::process::id(),"desktop":self.desktop.lock().await.clone()})).await?;
+        Ok(())
+    }
+    pub async fn attach_desktop(&self, endpoint: Value) -> Result<()> {
+        *self.desktop.lock().await = Some(endpoint);
+        self.ensure().await
+    }
+    pub async fn request(&self, route: &str, method: &str, body: Value) -> Result<Value> {
+        self.ensure().await?;
+        crate::transport::forward_request(route, method, body).await
+    }
+    pub async fn network_proxy(&self) -> Result<crate::proxy::NetworkProxy> {
+        crate::proxy::NetworkProxy::resolve(
+            &load(&root().join("web/preferences.json")).unwrap_or_else(|_| json!({})),
+        )
+        .await
+    }
+    pub async fn subscriptions(&self) -> Result<Value> {
+        self.request("subscriptions", "GET", json!({})).await
+    }
+    pub async fn log(&self, level: &str, message: &str) {
+        crate::logs::record(level, message, None);
+    }
+    pub async fn close(&self) {
+        if let Some(task) = self.heartbeat.lock().unwrap().take() {
+            task.abort();
+        }
+        let _ = crate::transport::forward_request("runtime/release", "POST", json!({"id":self.id}))
+            .await;
+    }
+    pub async fn shutdown(&self) -> Result<()> {
+        self.ensure().await?;
+        crate::transport::forward_request("runtime/shutdown", "POST", json!({"id":self.id}))
+            .await?;
+        if let Some(task) = self.heartbeat.lock().unwrap().take() {
+            task.abort();
+        }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while owner(&self.build).await?.is_some() {
+            if Instant::now() > deadline {
+                return Err("Core shutdown timed out".into());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        Ok(())
+    }
+}
+impl Drop for Client {
+    fn drop(&mut self) {
+        if let Some(task) = self.heartbeat.lock().unwrap().take() {
+            task.abort();
+        }
+    }
+}
+
+pub async fn serve() -> Result<()> {
+    init_crypto();
+    private_dir(&root())?;
+    let lock = File::options()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(root().join("core.lock"))
+        .map_err(|e| e.to_string())?;
+    if lock.try_lock().is_err() {
+        return Ok(());
+    }
+    // A pre-upgrade Desktop may not use the lock. Never overwrite its live owner.
+    if owner(&build_id(
+        &std::env::current_exe().map_err(|e| e.to_string())?,
+    )?)
+    .await?
+    .is_some()
+    {
+        return Ok(());
+    }
+    let service = crate::service::Service::new()?;
+    let listener = crate::transport::listen(service.clone(), None).await?;
+    let started = Instant::now();
+    let mut empty_since = None;
+    loop {
+        tokio::select! {
+            _ = service.runtime.shutdown.notified() => break,
+            _ = tokio::signal::ctrl_c() => break,
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                if service.runtime.active().is_empty() {
+                    let empty = empty_since.get_or_insert_with(Instant::now);
+                    if started.elapsed() > Duration::from_secs(15) && empty.elapsed() > Duration::from_secs(2) { break; }
+                } else { empty_since = None; }
+            }
+        }
+    }
+    let result = service.stop().await;
+    listener.abort();
+    let metadata = root().join("web/native.json");
+    if load(&metadata).is_ok_and(|v| v["pid"] == std::process::id()) {
+        let _ = std::fs::remove_file(metadata);
+    }
+    drop(lock);
+    result
+}

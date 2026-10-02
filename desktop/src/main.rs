@@ -1,10 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use connector_core::service::Service;
+use connector_core::runtime::Client as Service;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::Manager;
 #[cfg(target_os = "macos")]
 mod appearance;
+mod autostart;
 mod desktop_access;
 mod i18n;
 mod session;
@@ -151,13 +152,19 @@ fn main() {
                     handle.exit(0);
                 });
             }
-            let service = Service::new().map_err(std::io::Error::other)?;
-            app.manage(service.clone());
-            tauri::async_runtime::block_on(connector_core::transport::listen(
-                service.clone(),
-                Some(Arc::new(desktop_access::Owner(app.handle().clone()))),
+            let service = tauri::async_runtime::block_on(Service::connect(
+                connector_core::runtime::binary().map_err(std::io::Error::other)?,
+                "desktop",
             ))
             .map_err(std::io::Error::other)?;
+            app.manage(service.clone());
+            let (endpoint, _) =
+                tauri::async_runtime::block_on(connector_core::transport::listen_desktop(
+                    Arc::new(desktop_access::Owner(app.handle().clone())),
+                ))
+                .map_err(std::io::Error::other)?;
+            tauri::async_runtime::block_on(service.attach_desktop(endpoint))
+                .map_err(std::io::Error::other)?;
             let autostart = std::env::args().any(|arg| arg == "--autostart");
             let resume =
                 updates::take_resume().or_else(
@@ -236,14 +243,9 @@ fn main() {
                             if let Err(error) = session::remember(service.inner()).await {
                                 service.log("ERROR", &error).await;
                             }
-                            service.stop().await
-                        })
-                        .ok();
+                            service.close().await;
+                        });
                     }
-                }
-                let metadata = connector_core::root().join("web/native.json");
-                if connector_core::load(&metadata).is_ok_and(|v| v["pid"] == std::process::id()) {
-                    let _ = std::fs::remove_file(metadata);
                 }
             }
             // Tauri sets a static development icon on Ready; let AppKit resolve

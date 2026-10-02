@@ -1,6 +1,6 @@
 {
   "name": "@whzxc/chatgpt-local-connector",
-  "version": "0.8.6",
+  "version": "0.8.9",
   "description": "Personal local MCP connector for ChatGPT and Codex",
   "license": "MIT",
   "type": "module",
@@ -9,9 +9,9 @@
   },
   "scripts": {
     "check": "tsc --noEmit -p ui/tsconfig.json",
-    "build": "vite build --config vite.config.ts",
+    "build": "vite build --config vite.config.ts && node tooling/build-native.mjs",
     "cache:prune": "node tooling/prune-build-cache.mjs",
-    "pretest": "node tooling/prune-build-cache.mjs",
+    "pretest": "node tooling/build-plugin.mjs && node tooling/prune-build-cache.mjs",
     "test": "node --test tests/control-mcp.test.ts",
     "posttest": "node tooling/prune-build-cache.mjs --keep=native/target/contracts",
     "check:package": "node tooling/check-package.mjs",
@@ -19,11 +19,11 @@
     "dev": "node tooling/desktop-dev.mjs",
     "desktop:prepare": "node tooling/prepare-desktop.mjs",
     "desktop:build": "node tooling/desktop-build.mjs",
-    "predesktop:check": "node tooling/prune-build-cache.mjs",
+    "predesktop:check": "node tooling/build-native.mjs && node tooling/prune-build-cache.mjs",
     "desktop:check": "cargo check --manifest-path desktop/Cargo.toml",
     "postdesktop:check": "node tooling/prune-build-cache.mjs --keep=desktop/target/debug",
     "check:format": "cargo fmt --manifest-path native/Cargo.toml -- --check && cargo fmt --manifest-path desktop/Cargo.toml -- --check && cargo fmt --manifest-path tooling/verifier/Cargo.toml -- --check",
-    "precheck:native": "node tooling/prune-build-cache.mjs",
+    "precheck:native": "node tooling/build-native.mjs && node tooling/prune-build-cache.mjs",
     "check:native": "cargo check --manifest-path desktop/Cargo.toml",
     "postcheck:native": "node tooling/prune-build-cache.mjs --keep=desktop/target/debug",
     "release:prepare": "node tooling/release.mjs prepare",
@@ -31,7 +31,10 @@
     "release:sync": "node tooling/release.mjs sync",
     "release:preflight": "npm run check:format && npm run release:check && npm run check && npm test && npm run build && npm run check:native",
     "release:stage": "node tooling/release.mjs stage",
-    "release:finalize": "node tooling/release.mjs finalize"
+    "release:finalize": "node tooling/release.mjs finalize",
+    "plugin:dev": "node tooling/plugin-dev.mjs",
+    "plugin:build": "node tooling/plugin-build.mjs",
+    "plugin:check": "node tooling/check-plugin.mjs"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

@@ -19,12 +19,15 @@ pub mod ingress;
 pub mod kernel;
 pub mod logs;
 pub mod oauth;
+pub mod plugin;
 pub mod projects;
 pub mod proxy;
 pub mod rpc;
+pub mod runtime;
 pub mod service;
 pub mod subscriptions;
 pub mod transport;
+pub mod usage;
 pub mod waiter;
 pub type Result<T> = std::result::Result<T, String>;
 pub fn now() -> String {

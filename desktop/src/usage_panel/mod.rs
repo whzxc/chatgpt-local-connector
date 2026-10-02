@@ -176,14 +176,18 @@ pub fn install(app: &tauri::AppHandle) {
     }
     tauri::async_runtime::spawn(async move {
         let service = app
-            .state::<Arc<connector_core::service::Service>>()
+            .state::<Arc<connector_core::runtime::Client>>()
             .inner()
             .clone();
-        let mut receiver = service.subscriptions.subscribe();
-        apply(&app, service.subscriptions.snapshot().await, &state);
-        while receiver.changed().await.is_ok() {
-            let snapshot = serde_json::to_value(receiver.borrow_and_update().clone()).unwrap();
-            apply(&app, snapshot, &state);
+        let mut previous = serde_json::Value::Null;
+        loop {
+            if let Ok(snapshot) = service.subscriptions().await {
+                if snapshot != previous {
+                    apply(&app, snapshot.clone(), &state);
+                    previous = snapshot;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     });
 }

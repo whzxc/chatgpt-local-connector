@@ -47,7 +47,7 @@ CLC therefore moved from “one Chat controls many Agents” to “many control 
 - **Use one control layer for multiple Agents:** Codex stays native and remains the default, while Pi, OpenCode, built-in ACP Agents, and Custom ACP share the `agent_*` workflow.
 - **Manage each ingress independently:** connection, authentication, tool policy, and lifecycle stay per ingress while the app manages Tunnel Clients, state, and the shared local Core.
 
-CLC itself requires no Node, npm, Rust, or Cargo installation. External Agents still need their own runtimes. Desktop task integration supports **Apple Silicon Mac** and **Windows x64**.
+CLC itself requires no Node, npm, Rust, or Cargo installation. The [ChatGPT Desktop plugin](docs/plugin.md) ships a standalone native Core and can run without Connector Desktop. External Agents still need their own runtimes. Desktop task integration supports **Apple Silicon Mac** and **Windows x64**.
 
 Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. The home view’s More button opens Agents management, which lists brands, installation status and versions, and lets you enable installed Agents. Its settings button opens appearance, quota, and usage preferences. See [Subscription usage](docs/subscriptions.md) for quota monitoring and usage estimates. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Shared task operations use the `agent_*` tools.
 
@@ -103,7 +103,7 @@ Documentation:
 - [Development and builds](docs/development.md)
 - [Desktop lifecycle](docs/desktop.md)
 - [MCP tools and task boundaries](docs/tools.md)
-- [ChatGPT desktop companion plugin](docs/plugin.md)
+- [Standalone ChatGPT desktop plugin](docs/plugin.md)
 - [Architecture](docs/architecture.md)
 
 Local data defaults to `~/.local/state/chatgpt-local-connector` on macOS or `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Override it with `CLC_STATE_DIR`. Keys, receipts, and logs are stored locally; removing the app does not remove Codex history.

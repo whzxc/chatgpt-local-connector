@@ -49,7 +49,7 @@ async fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater
     if cfg!(debug_assertions) {
         return Err("当前应用不支持自动更新，请从下载页获取安装包。".into());
     }
-    let service = app.state::<std::sync::Arc<connector_core::service::Service>>();
+    let service = app.state::<std::sync::Arc<connector_core::runtime::Client>>();
     let proxy = service.network_proxy().await?;
     app.updater_builder()
         .configure_client(move |builder| proxy.client(builder))
@@ -149,7 +149,7 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
     let _reset = Reset(&state);
     let _ = app.emit("update-progress", json!({"phase":"installing"}));
     let service = app
-        .state::<std::sync::Arc<connector_core::service::Service>>()
+        .state::<std::sync::Arc<connector_core::runtime::Client>>()
         .inner()
         .clone();
     // Download and signature verification finish before any connection is stopped.
@@ -166,12 +166,13 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         &json!({"version":version,"ingresses":running}),
     )?;
     // Drain auxiliary work even when the tunnel is already disconnected.
-    if let Err(error) = service.request("ingress/stop-all", "POST", json!({})).await {
+    if let Err(error) = service.shutdown().await {
         let _ = std::fs::remove_file(resume_path());
         return Err(error);
     }
     if let Err(error) = update.install(bytes) {
         let _ = std::fs::remove_file(resume_path());
+        service.resume();
         let restored = async {
             for id in &running {
                 service

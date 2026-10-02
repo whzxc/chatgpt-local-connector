@@ -1,6 +1,6 @@
 # 发布维护
 
-源码与下载仓库：`whzxc/chatgpt-local-connector`。版本以 `package.json` 为准。使用 GitHub Releases 托管安装包、更新包和静态 `latest.json`，不需要自建分发服务。公共 npm 包不在发布范围内。
+源码与下载仓库：`whzxc/chatgpt-local-connector`。版本以 `package.json` 为准。使用 GitHub Releases 托管安装包、更新包、独立插件 ZIP 和静态 `latest.json`，不需要自建分发服务。公共 npm 包不在发布范围内。
 
 ## 发布配置
 
@@ -25,7 +25,7 @@ npm run release:check
 npm run release:preflight
 ```
 
-`release:sync` 以 `package.json` 为版本来源，同步 Tauri、两个 Cargo package 和锁文件；可在 `CHANGELOG.md` 维护该版本条目。它不提交、不打标签、不上传。
+`release:sync` 以 `package.json` 为版本来源，同步 Tauri、两个 Cargo package、npm/Cargo 锁文件和插件 manifest；可在 `CHANGELOG.md` 维护该版本条目。它不提交、不打标签、不上传。
 
 `release:preflight` 首先检查 Core、Desktop 和验签工具的 Rust 格式，再检查版本、类型、契约、前端构建与原生编译。单独检查格式可运行 `npm run check:format`。
 
@@ -46,7 +46,7 @@ macOS DMG 使用 `desktop/assets/dmg-background.png` 提供无文案的拖拽安
 
 原生深浅色图标需要完整 Xcode 26+。构建脚本先用 `actool` 编译 `.icon` 源文件，再将 `target` 下生成的 `Assets.car` 交给 Tauri 打包；开发模式复用相同编译入口。生成资源不进入版本库。
 
-Stage 目录必须为空，每次使用新目录。脚本只挑选指定平台的发行文件，统一文件名，并使用与 Tauri 相同的 Minisign 验签库验证实际更新包与内置公钥匹配。
+Stage 目录必须为空，每次使用新目录。脚本要求同版本的 `dist/plugin-package/CLC.Plugin_<版本>_<平台>.zip`，与指定平台的发行文件一起暂存。`desktop:build` 会从该平台的独立 Core 生成并启动验证插件目录，再解压 ZIP 复验。插件 ZIP 纳入发布哈希及公开字节回读；它不使用 Desktop 的应用内更新 feed。脚本统一文件名，并使用与 Tauri 相同的 Minisign 验签库验证实际更新包与内置公钥匹配。
 
 ## 发布流程
 
@@ -94,9 +94,9 @@ git push origin v<版本>
 
 工作流步骤：
 
-1. 演练并行检查同一提交并构建 macOS Apple Silicon 与 Windows x64 安装包，验证更新签名，生成清单、更新说明与含真实 DMG 哈希的 Cask。
+1. 演练并行检查同一提交并构建 macOS Apple Silicon 与 Windows x64 安装包及独立插件 ZIP，验证更新签名，生成清单、更新说明与含真实 DMG 哈希的 Cask。
 2. 正式发布从最近 100 次成功的 `main` 演练中，选择提交 SHA 与版本标签所指提交完全相同的一次。找不到匹配构建或产物已过期时停止发布，需在该提交重新演练。
-3. 下载该次演练的两端安装包，重新验证签名并生成清单和含真实 DMG 哈希的 Cask；所有文件仅写入产物目录。
+3. 下载该次演练的两端安装包和插件 ZIP，重新验证签名并生成清单和含真实 DMG 哈希的 Cask；所有文件仅写入产物目录。
 4. 上传全部文件到 Draft Release，再一次性公开为 latest；不会提前把不完整更新推给用户。
 5. 从公开地址下载清单及所有产物，逐一比对本地已验签的字节。发布流程不向默认分支写入提交。
 
@@ -121,3 +121,7 @@ gh workflow run release.yml --ref main -f publish=false
 独立 `Check` 与 `Release` 在结束时运行 `Timing summary`；演练中复用的检查统一计入 Release 汇总，不额外启动统计作业。Actions 运行摘要中提供每个作业、每个阶段与各步骤的实际耗时、结果和 Rust 精确缓存命中状态；失败步骤同样计入。`workflow-timing` artifact 提供 `timings.md` 和 `timings.json`，保留 30 天。
 
 总耗时按墙钟时间计算，两端并行构建不能相加；统计覆盖业务作业的调度等待、缓存恢复及保存、依赖安装、检查或打包、验签、上传、发布和公开产物校验。统计作业本身及其上传开销不计入该值，GitHub 页面总时长包含这部分开销。
+
+## 插件分发
+
+正式发布的每个平台 ZIP 包含可安装的本地 marketplace、相对路径 MCP 配置和该平台原生二进制。用户解压后注册 marketplace 并安装；更新时需要更新宿主缓存、旧 MCP 进程和面板资源，见 [插件操作说明](plugin.md)。源码模板本身没有平台二进制，不能替代该产物。向公共插件目录上架是独立发布动作，需要按目标宿主的当前目录规则提交；GitHub Release 成功不等于目录上架。

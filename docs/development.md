@@ -8,21 +8,21 @@ Use Node 24.12+, npm, stable Rust, and the macOS/Windows platform SDK. Node runs
 npm run dev
 ```
 
-This starts Vite at `http://127.0.0.1:5187` and the complete Tauri development application, including its Rust Service, local API, connections, Agents, tray, and usage rail. The desktop WebView and browser use the same development backend. No installed build is required. React/CSS changes hot-reload; Rust changes incrementally compile and restart the development app. Connection sessions restore after an ordinary restart; in-flight tasks are subject to the normal process lifecycle.
+This starts Vite at `http://127.0.0.1:5187` and the complete Tauri development application, including its independently launched shared Rust Core, local API, connections, Agents, tray, and usage rail. The desktop WebView and browser use the same development backend. No installed build is required. React/CSS changes hot-reload; Desktop Rust changes incrementally compile and restart the development app. Core changes require restarting the command so its standalone executable is rebuilt. Connection sessions restore after an ordinary restart; in-flight tasks are subject to the normal process lifecycle.
 
-Development shares the packaged app’s persistent data by default: `~/.local/state/chatgpt-local-connector` on macOS and `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Connections, settings, and records carry over in both directions. Quit the packaged app before starting development; the launcher rejects an already running owner for the selected directory. Do not start the packaged app while development owns that data. `CLC_STATE_DIR` optionally selects another directory for both desktop and Vite. Automatic installation of release updates remains disabled in development.
+Development shares the packaged app’s persistent data by default: `~/.local/state/chatgpt-local-connector` on macOS and `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. Connections, settings, and records carry over in both directions. Close all entrypoints built from other native builds before starting development against that data. Identical builds can share Core; only one Connector Desktop can be active. `CLC_STATE_DIR` optionally selects another directory for both desktop and Vite. Automatic installation of release updates remains disabled in development.
 
 `npm run dev:ui` starts only Vite against the same state directory; it needs an already running desktop backend. The proxy retains loopback, origin, credential, and write-header checks. Initial compilation or a Rust restart can briefly make the API unavailable; Retry reconnects after startup. Stop a standalone Vite instance on port 5187 before starting the full `npm run dev` command.
 
 ## Code layout
 
 - `ui/`: React pages, state types, and interactions.
-- `native/`: Rust core for Desktop IPC, auxiliary Codex RPC, AgentHost and Pi/ACP processes, 42 MCP tools, receipts, events, configuration, and Tunnel lifecycle.
-- `desktop/`: Tauri entry point, tray, windows, OS integration, and updates; calls the in-process Rust core.
+- `native/`: Rust core for Desktop IPC, auxiliary Codex RPC, AgentHost and Pi/ACP processes, the shared MCP catalog, receipts, events, configuration, and Tunnel lifecycle.
+- `desktop/`: Tauri entry point, tray, windows, OS integration, and updates; connects to the shared Rust Core.
 - `tooling/`: development/build scripts, excluded from runtime resources.
 - `tests/`: contract tests against the Rust core with an isolated simulated upstream; the test-only feature is excluded from release builds.
 
-The native executable's `stdio` subcommand forwards MCP requests to the connection-owning main process. It receives a local port and random credential through its parent environment and exposes no public interface. Connection configuration and credentials are not stored in browser storage.
+The Desktop executable's `stdio` subcommand forwards remote-ingress MCP requests to Core. It receives a local port and random credential through its parent environment and exposes no public interface. Connection configuration and credentials are not stored in browser storage.
 
 Its `cli` subcommand provides configuration and diagnostics through the existing authenticated local transport without starting a second service. `cli guide` embeds the English `docs/codex-setup.md` and ships with the app version. See that guide for command conventions.
 
@@ -81,11 +81,11 @@ npm run check:package
 
 `desktop:build` rebuilds the frontend before native packaging; a prior `dist/ui` directory is not reused. macOS installers target Apple Silicon (arm64) and are written to `desktop/target/aarch64-apple-darwin/release/bundle/`. macOS builds need `uv` to run a pinned dmgbuild version for the drag-to-install layout without text; build dependencies are excluded from the app. `check:package` checks for Node, npm, node_modules, and old runtime directories and reports size; it accepts another artifact directory. Windows builds use NSIS `.exe`. The Chinese installer uses `desktop/installer/installer.nsi` and `pages.nsh`: one-click installation, expandable path selection, and a launch action on completion. Existing installations keep their location and connection configuration. The template retains passive/silent updater flags and WebView2 setup; update it alongside the Tauri CLI when its bundler contract changes.
 
-Packages contain the native executable, frontend static resources, icons, and applicable third-party license notices. Build scripts remap local user/repository paths in Rust source to generic build paths, avoiding private paths in binaries. Official Tunnel Client is downloaded and verified separately on first use. Codex uses the binary bundled in the user's Desktop installation rather than packaging another copy. Building does not overwrite the installed app.
+Packages contain the Desktop executable, standalone Core executable, frontend static resources, icons, and applicable third-party license notices. Build scripts remap local user/repository paths in Rust source to generic build paths, avoiding private paths in binaries. Official Tunnel Client is downloaded and verified separately on first use. Codex uses the binary bundled in the user's Desktop installation rather than packaging another copy. Building does not overwrite the installed app.
 
 macOS app packaging requires full Xcode 26 or later, including `actool`; Command Line Tools alone are insufficient. Select Xcode with `DEVELOPER_DIR` or `xcode-select`. Tauri compiles `desktop/icons/LocalConnector.icon` into `Assets.car` and sets `CFBundleIconName` to `Icon`. `CFBundleIconFile` uses the same extensionless name, with `desktop/icons/macos/Icon.icns` as the static fallback; both names must stay aligned so AppKit and Finder resolve the same icon. The Icon Composer document contains a light sage gradient, the system dark background, and a separate opaque character layer. macOS 26 controls the background shape, lighting, and icon appearance across Dock, Finder, and application launchers, independently of the app's UI theme. Older macOS versions use the bundled static ICNS; Windows uses ICO. On macOS, `dev` derives a light blue background from the same Icon Composer document, preserving all other layers and appearance settings. Xcode compiles its catalog and static fallback, and the Cargo runner launches `Local Connector Dev.app` from the build directory with frontend and Rust hot reload intact. Both build commands use `DEVELOPER_DIR` when set, otherwise the standard `/Applications/Xcode.app` installation when available. Edit the native source in Icon Composer; its `Assets/head.png` is copied from `ui/assets/local-connector-head.png` and should be updated together when the artwork changes. `desktop:build` checks the compiler before building and validates the compiled icon catalog before generating the DMG.
 
-Keep versions synchronized across `package.json`, `native/Cargo.toml`, `desktop/Cargo.toml`, and Tauri configuration. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).
+Use `release:sync` and `release:check` to synchronize and validate `package.json`, npm/Cargo locks, native/Desktop crates, Tauri configuration and the plugin manifest. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).
 
 ## Subscription development
 
@@ -170,3 +170,7 @@ the Used/Remaining display mode, and the warning respects countdown/absolute tim
 Expired or stale readings do not produce pace forecasts. Cursor uses reported billing
 cycle dates when available; monthly windows otherwise use the same 30-day convention
 as OpenUsage.
+
+The native plugin resource is built from `ui/usage-insights` by `tooling/build-plugin.mjs` into `dist/plugin/app.html` and embedded by the Rust crate. Run `npm run build` before invoking Cargo directly on a fresh checkout. Standard `npm test`, `desktop:check`, `check:native` and `desktop:build` prepare this asset automatically. No Node process ships with the plugin. Local exporter and lifecycle instructions are in [plugin.md](plugin.md).
+
+Standalone plugin development, HMR boundaries and portable ZIP builds use `plugin:dev`, `plugin:build` and `plugin:check`; see [plugin.md](plugin.md). Desktop packaging also creates and verifies the matching plugin ZIP. Release staging requires that platform ZIP alongside the installers.

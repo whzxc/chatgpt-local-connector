@@ -28,6 +28,23 @@ impl DesktopAccess for Owner {
 }
 
 pub async fn request(app: &tauri::AppHandle, operation: DesktopRequest) -> Result<Value, String> {
+    match &operation {
+        DesktopRequest::ServiceGet => {
+            return Ok(
+                json!({"supported":cfg!(target_os="macos") || cfg!(windows),"enabled":crate::autostart::enabled().await}),
+            )
+        }
+        DesktopRequest::ServiceSet(body) => {
+            check_write(app)?;
+            if !body.is_object() || body.as_object().unwrap().keys().any(|key| key != "enabled") {
+                return Err("invalid service request".into());
+            }
+            let enabled = body["enabled"].as_bool().ok_or("invalid enabled")?;
+            crate::autostart::set(enabled).await?;
+            return Ok(json!({"supported":true,"enabled":enabled}));
+        }
+        _ => {}
+    }
     // Validation reads the existing in-memory registry snapshot, never credentials.
     if let DesktopRequest::SubscriptionsOpen(body) = &operation {
         if !body.is_object() || body.as_object().unwrap().keys().any(|k| k != "providerId") {
@@ -39,10 +56,10 @@ pub async fn request(app: &tauri::AppHandle, operation: DesktopRequest) -> Resul
                 .filter(|id| !id.is_empty())
                 .ok_or("unknown subscription provider")?;
             let service = app
-                .state::<std::sync::Arc<connector_core::service::Service>>()
+                .state::<std::sync::Arc<connector_core::runtime::Client>>()
                 .inner()
                 .clone();
-            let snapshot = service.subscriptions.snapshot().await;
+            let snapshot = service.subscriptions().await?;
             if !snapshot["providers"]
                 .as_array()
                 .is_some_and(|rows| rows.iter().any(|p| p["providerId"] == id))
@@ -63,6 +80,7 @@ pub async fn request(app: &tauri::AppHandle, operation: DesktopRequest) -> Resul
                 check_write(&handle)?;
             }
             match operation {
+                DesktopRequest::ServiceGet | DesktopRequest::ServiceSet(_) => unreachable!(),
                 DesktopRequest::PanelGet => Ok(crate::usage_panel::snapshot()),
                 DesktopRequest::PanelSet(body) => {
                     crate::usage_panel::configure(&handle, body)?;

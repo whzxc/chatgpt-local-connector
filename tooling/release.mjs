@@ -36,6 +36,7 @@ async function validateManifest(manifest, dir) {
 }
 async function check() {
   parts(version);
+  if ((await json('plugins/clc/.codex-plugin/plugin.json')).version !== version) throw new Error('Plugin manifest version mismatch');
   if (config.version !== version) throw new Error('Tauri version mismatch');
   for (const file of ['native/Cargo.toml', 'desktop/Cargo.toml']) {
     if (!(await readFile(file, 'utf8')).includes(`version = "${version}"`)) throw new Error(`${file}: version mismatch`);
@@ -76,7 +77,7 @@ async function cask(dir) {
 end
 `);
 }
-const releaseFiles = ['package.json','package-lock.json','desktop/tauri.conf.json','native/Cargo.toml','desktop/Cargo.toml','native/Cargo.lock','desktop/Cargo.lock','CHANGELOG.md'];
+const releaseFiles = ['package.json','package-lock.json','desktop/tauri.conf.json','native/Cargo.toml','desktop/Cargo.toml','native/Cargo.lock','desktop/Cargo.lock','plugins/clc/.codex-plugin/plugin.json','CHANGELOG.md'];
 const git = (...args) => execFileSync('git', args, {encoding:'utf8'}).trim();
 function parts(value) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) throw new Error(`Invalid stable version: ${value}`);
@@ -110,6 +111,7 @@ async function notes() {
 }
 async function sync() {
   config.version = version; await writeJson('desktop/tauri.conf.json', config);
+  const plugin = await json('plugins/clc/.codex-plugin/plugin.json'); plugin.version = version; await writeJson('plugins/clc/.codex-plugin/plugin.json',plugin);
   const lock = await json('package-lock.json'); lock.version = version; lock.packages[''].version = version; await writeJson('package-lock.json',lock);
   for (const file of ['native/Cargo.toml','desktop/Cargo.toml']) await writeFile(file,(await readFile(file,'utf8')).replace(/^version = "[^"]+"/m,`version = "${version}"`));
   for (const file of ['native/Cargo.lock','desktop/Cargo.lock']) await writeFile(file,(await readFile(file,'utf8')).replace(/(name = "(?:connector-core|local-connector-desktop)"\nversion = ")[^"]+/g,(_, prefix) => prefix + version));
@@ -158,6 +160,8 @@ else if (mode === 'sync') {
     if (target === 'darwin-aarch64' && name.includes('.app.tar.gz')) name = name.replace('.app.tar.gz', `_${version}_aarch64.app.tar.gz`);
     await copyFile(file,path.join(output,name));
   }
+  const plugin = `CLC.Plugin_${version}_${target}.zip`;
+  await copyFile(path.join("dist/plugin-package", plugin), path.join(output, plugin));
   const staged = await files(output);
   const payloads = staged.filter(f => target === 'darwin-aarch64' ? f.endsWith('.app.tar.gz') : /\.exe$/.test(f));
   if (payloads.length !== 1) throw new Error('Missing/duplicate updater bundles');
@@ -175,12 +179,13 @@ else if (mode === 'sync') {
   await check(); const [dir] = args;
   const fragments = await Promise.all(['darwin-aarch64','windows-x86_64'].map(t=>json(path.join(dir,t+'.json'))));
   if (fragments.some(f=>f.version!==version)) throw new Error('Mixed release versions');
+  for (const platform of ["darwin-aarch64","windows-x86_64"]) await readFile(path.join(dir,`CLC.Plugin_${version}_${platform}.zip`));
   const releaseNotes = await notes();
   await writeJson(path.join(dir,'latest.json'),{version,notes:releaseNotes,pub_date:new Date().toISOString(),platforms:Object.assign({},...fragments.map(f=>f.platforms))});
   await validateManifest(await json(path.join(dir,'latest.json')), dir);
   await writeFile(path.join(dir,'release-notes.md'),releaseNotes+'\n');
   await cask(dir);
-  const assets = (await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||path.basename(f)==='local-connector.rb').sort();
+  const assets = (await files(dir)).filter(f=>/\.(dmg|exe|gz|sig|zip)$/.test(f)||path.basename(f)==='local-connector.rb').sort();
   verifySignatures(assets.filter(f=>/\.(exe|gz)$/.test(f)));
   await writeFile(path.join(dir,'SHA256SUMS.txt'),(await Promise.all(assets.map(async f=>`${hash(await readFile(f))}  ${path.basename(f)}`))).join('\n')+'\n');
   console.log('Complete release metadata and Homebrew cask generated. Nothing uploaded.');
@@ -203,7 +208,7 @@ else if (mode === 'verify-published') {
     if (attempt === 11) throw new Error('Published latest.json mismatch');
     await delay(5000);
   }
-  const assets=(await files(dir)).filter(f=>/\.(dmg|exe|gz|sig)$/.test(f)||f.endsWith('SHA256SUMS.txt')||f.endsWith('local-connector.rb'));
+  const assets=(await files(dir)).filter(f=>/\.(dmg|exe|gz|sig|zip)$/.test(f)||f.endsWith('SHA256SUMS.txt')||f.endsWith('local-connector.rb'));
   for(const file of assets) if(hash(await fetchBytes(`${base}/${path.basename(file)}`))!==hash(await readFile(file))) throw new Error(`Published asset mismatch: ${path.basename(file)}`);
   console.log('Published manifest and all artifact bytes match the verified local release.');
 } else throw new Error('Expected prepare, published-check, check, sync, stage, finalize, cask, or verify-published');

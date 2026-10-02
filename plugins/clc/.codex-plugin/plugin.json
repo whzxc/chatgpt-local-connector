@@ -1,18 +1,24 @@
 {
   "name": "clc",
-  "version": "0.1.0",
-  "description": "Read current project facts and coordinate local Agent tasks through ChatGPT Local Connector.",
+  "version": "0.8.9",
+  "description": "Run device-local usage panels, project tools and Agent tasks through the standalone Local Connector Core.",
   "author": {
     "name": "CLC contributors"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Local Connector",
-    "shortDescription": "Current project facts and local Agent tasks.",
-    "longDescription": "Use your connected CLC device to inspect current project facts, create or continue Agent tasks, follow progress, and recover operation receipts.",
+    "shortDescription": "Local usage, projects and Agent tasks.",
+    "longDescription": "Open device-local overview and task usage panels, read projects and manage Agent tasks. The bundled native runtime starts automatically; Connector Desktop is optional.",
     "developerName": "CLC contributors",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg",
+    "logoDark": "./assets/icon.svg",
     "category": "Productivity",
-    "capabilities": ["Read", "Write"],
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
     "defaultPrompt": "Use Local Connector to read my recent Agent tasks and summarize their current progress."
   }
 }

@@ -136,3 +136,6 @@ estimate and observed sample only. Incomplete logs, other devices, account switc
 early resets and changes in model mix can skew the estimate.
 This is an inferred API-price equivalent, not a subscription balance or a promise
 of future capacity.
+
+
+Codex history and the native companion panels share the response-aware local collector. Legacy-only history remains explicitly incomplete. Account-window API-equivalent extrapolation is unavailable for device-local or incomplete history, and for stale quota/history snapshots; matching timestamps do not establish matching account coverage. See [native panel scope](plugin.md#scope-and-interpretation).

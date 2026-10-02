@@ -33,7 +33,7 @@ env.CARGO_ENCODED_RUSTFLAGS = flags.join('\x1f');
 delete env.RUSTFLAGS;
 const prune = fileURLToPath(new URL('tooling/prune-build-cache.mjs', root));
 execFileSync(process.execPath, [prune], { cwd: fileURLToPath(root), env, stdio: 'inherit' });
-execFileSync(process.execPath, [fileURLToPath(new URL('tooling/prepare-desktop.mjs', root))],
+execFileSync(process.execPath, [fileURLToPath(new URL('tooling/prepare-desktop.mjs', root)), ...buildArgs],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 execFileSync(process.execPath, args, { cwd: fileURLToPath(new URL('desktop/', root)), env, stdio: 'inherit' });
 if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
@@ -47,5 +47,12 @@ if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
 const targetAt = buildArgs.findIndex(a => a === '--target' || a.startsWith('--target='));
 const target = targetAt < 0 ? null : buildArgs[targetAt] === '--target' ? buildArgs[targetAt + 1] : buildArgs[targetAt].slice('--target='.length);
 const profile = buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release';
+if (!buildArgs.includes('--no-bundle')) {
+  const native = process.platform === 'darwin'
+    ? `desktop/target/${target}/`+profile+'/bundle/macos/Local Connector.app/Contents/Resources/bin/local-connector'
+    : 'dist/native/local-connector.exe';
+  execFileSync(process.execPath,[fileURLToPath(new URL('tooling/plugin-build.mjs',root)),'--binary',native],
+    {cwd:fileURLToPath(root),env,stdio:'inherit'});
+}
 execFileSync(process.execPath, [prune, `--keep=desktop/target/${target || profile}`],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });

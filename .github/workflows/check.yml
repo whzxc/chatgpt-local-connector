@@ -34,6 +34,7 @@ jobs:
         with:
           shared-key: checks
           workspaces: |
+            native -> target
             desktop -> target
             native -> target/contracts
           cache-bin: false
@@ -48,6 +49,8 @@ jobs:
         run: npm test
       - name: Frontend | Build
         run: npm run build
+      - name: Plugin | Build and verify portable package
+        run: npm run plugin:build -- --debug
       - name: Native check | Desktop
         run: cargo check --manifest-path desktop/Cargo.toml
   timings:

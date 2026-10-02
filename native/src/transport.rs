@@ -7,6 +7,8 @@ use tokio::{
 };
 pub enum DesktopRequest {
     PanelGet,
+    ServiceGet,
+    ServiceSet(Value),
     PanelSet(Value),
     SubscriptionsOpen(Value),
 }
@@ -18,11 +20,94 @@ pub trait DesktopAccess: Send + Sync {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send>>;
 }
 
+/// A Desktop entrypoint exposes only native window operations; Core stays in the shared process.
+pub async fn listen_desktop(
+    owner: Arc<dyn DesktopAccess>,
+) -> Result<(Value, tokio::task::JoinHandle<()>)> {
+    use http_body_util::{BodyExt, Full, Limited};
+    use hyper::{body::Bytes, server::conn::http1, service::service_fn, Request, Response};
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let token = id() + &id();
+    let endpoint = json!({"port":port,"token":token});
+    let job = tokio::spawn(async move {
+        while let Ok((stream, peer)) = listener.accept().await {
+            if !peer.ip().is_loopback() {
+                continue;
+            }
+            let (owner, token) = (owner.clone(), token.clone());
+            tokio::spawn(async move {
+                let service = service_fn(move |request: Request<hyper::body::Incoming>| {
+                    let (owner, token) = (owner.clone(), token.clone());
+                    async move {
+                        let result: Result<Value> = async {
+                            if request.headers().get("host").and_then(|h| h.to_str().ok())
+                                != Some(format!("127.0.0.1:{port}").as_str())
+                                || request
+                                    .headers()
+                                    .get("authorization")
+                                    .and_then(|h| h.to_str().ok())
+                                    != Some(format!("Bearer {token}").as_str())
+                                || request.headers().contains_key("origin")
+                            {
+                                return Err("unauthorized".into());
+                            }
+                            let method = request.method().clone();
+                            let path = request.uri().path().to_owned();
+                            let bytes = Limited::new(request.into_body(), 65536)
+                                .collect()
+                                .await
+                                .map_err(|e| e.to_string())?
+                                .to_bytes();
+                            let body = if bytes.is_empty() {
+                                json!({})
+                            } else {
+                                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?
+                            };
+                            let operation = match (path.as_str(), method.as_str()) {
+                                ("/api/service", "GET") => DesktopRequest::ServiceGet,
+                                ("/api/service", "POST") => DesktopRequest::ServiceSet(body),
+                                ("/api/usage-panel", "GET") => DesktopRequest::PanelGet,
+                                ("/api/usage-panel", "PUT") => DesktopRequest::PanelSet(body),
+                                ("/api/subscriptions/open", "POST") => {
+                                    DesktopRequest::SubscriptionsOpen(body)
+                                }
+                                _ => return Err("UNKNOWN_ROUTE".into()),
+                            };
+                            owner.request(operation).await
+                        }
+                        .await;
+                        let (status, body) = match result {
+                            Ok(value) => (200, value),
+                            Err(error) => (400, json!({"error":error})),
+                        };
+                        Ok::<_, std::convert::Infallible>(
+                            Response::builder()
+                                .status(status)
+                                .header("Content-Type", "application/json")
+                                .header("Cache-Control", "no-store")
+                                .body(Full::new(Bytes::from(body.to_string())))
+                                .unwrap(),
+                        )
+                    }
+                });
+                let _ = http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                    .await;
+            });
+        }
+    });
+    Ok((endpoint, job))
+}
+
 pub async fn listen(
     service: Arc<Service>,
     desktop: Option<Arc<dyn DesktopAccess>>,
 ) -> Result<tokio::task::JoinHandle<()>> {
     service.subscriptions.start();
+    service.start_usage().await;
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| e.to_string())?;
@@ -30,9 +115,10 @@ pub async fn listen(
     service
         .port
         .store(port, std::sync::atomic::Ordering::SeqCst);
+    let build = crate::runtime::build_id(&std::env::current_exe().map_err(|e| e.to_string())?)?;
     save(
         &root().join("web/native.json"),
-        &json!({"port":port,"pid":std::process::id(),"token":service.token,"instance":service.control.session,"runtime":"rust"}),
+        &json!({"port":port,"pid":std::process::id(),"token":service.token,"instance":service.control.session,"runtime":"rust","version":env!("CARGO_PKG_VERSION"),"owner":"core","build":build}),
     )?;
     Ok(tokio::spawn(async move {
         loop {
@@ -174,7 +260,9 @@ async fn handle(
             mcp_ingress(&ingress, body).await
         }
     } else if method == "GET" && path == "/healthz" {
-        Ok(json!({"runtime":"rust","instance":s.control.session,"pid":std::process::id()}))
+        Ok(
+            json!({"runtime":"rust","instance":s.control.session,"pid":std::process::id(),"owner":"core","version":env!("CARGO_PKG_VERSION"),"build":load(&root().join("web/native.json"))?["build"]}),
+        )
     } else if let Some(route) = path.strip_prefix("/api/") {
         async {
             if method != "GET" {
@@ -183,6 +271,8 @@ async fn handle(
                 }
             }
             let operation = match (route, method.as_str()) {
+                ("service", "GET") => Some(DesktopRequest::ServiceGet),
+                ("service", "POST") => Some(DesktopRequest::ServiceSet(body.clone())),
                 ("usage-panel", "GET") => Some(DesktopRequest::PanelGet),
                 ("usage-panel", "PUT") => Some(DesktopRequest::PanelSet(body.clone())),
                 ("subscriptions/open", "POST") => {
@@ -191,13 +281,23 @@ async fn handle(
                 _ => None,
             };
             if let Some(operation) = operation {
-                return desktop
-                    .as_ref()
-                    .ok_or("desktop access unavailable")?
-                    .request(operation)
-                    .await;
+                return if let Some(desktop) = &desktop {
+                    desktop.request(operation).await
+                } else {
+                    s.runtime.desktop_request(operation).await
+                };
             }
-            s.request(route, &method, body).await
+            if route == "plugin/call"
+                && matches!(string(&body, "name"), "agent_wait" | "codex_wait")
+            {
+                let mut disconnected = [0u8; 1];
+                tokio::select! {
+                    result = s.request(route, &method, body) => result,
+                    _ = stream.read(&mut disconnected) => Err("wait disconnected".into()),
+                }
+            } else {
+                s.request(route, &method, body).await
+            }
         }
         .await
     } else {
@@ -389,7 +489,7 @@ pub async fn stdio() -> Result<()> {
 
 pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<Value> {
     crate::init_crypto();
-    let unavailable = "无法连接后台，请先打开 Local Connector 桌面应用。";
+    let unavailable = "无法连接本机 Core，请重新加载插件或打开 Local Connector。";
     let info = load(&root().join("web/native.json")).map_err(|_| unavailable)?;
     let port = info["port"]
         .as_u64()
@@ -414,6 +514,17 @@ pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<V
     if health["instance"] != info["instance"] {
         return Err(unavailable.into());
     }
+    forward_to(&info, route, method, body).await
+}
+pub async fn forward_to(info: &Value, route: &str, method: &str, body: Value) -> Result<Value> {
+    let port = info["port"]
+        .as_u64()
+        .filter(|p| *p > 0 && *p <= 65535)
+        .ok_or("invalid local endpoint")?;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| e.to_string())?;
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
     let mut request = client
         .request(
@@ -422,7 +533,11 @@ pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<V
         )
         .bearer_auth(string(&info, "token"))
         .timeout(Duration::from_secs(
-            if route == "start" || route.ends_with("/start") || route.ends_with("/start-all") {
+            if route == "plugin/call"
+                || route == "start"
+                || route.ends_with("/start")
+                || route.ends_with("/start-all")
+            {
                 360
             } else {
                 120

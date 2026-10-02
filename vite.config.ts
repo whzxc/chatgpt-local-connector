@@ -7,10 +7,24 @@ import path from 'node:path';
 import { devStateDir } from './tooling/dev-state.mjs';
 
 const stateRoot = devStateDir;
+const packageVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 type Endpoint = { port: number; token: string };
 export default defineConfig({
   root: fileURLToPath(new URL('./ui', import.meta.url)),
+  define: { __CONNECTOR_VERSION__: JSON.stringify(packageVersion) },
   plugins: [react(), {
+    name: 'connector-plugin-dev-urls',
+    apply: 'serve',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        if (context.path !== '/plugin.html') return html;
+        // The MCP sandbox can forbid <base>. Every entry script, including
+        // React's inline refresh preamble, must resolve without one.
+        return html.replace(/(src=|from )"\//g, '$1"http://127.0.0.1:5187/');
+      },
+    },
+  }, {
     name: 'connector-native-preview',
     configureServer(server) {
       function ownerIdentity() {
@@ -88,5 +102,5 @@ export default defineConfig({
       },
     },
   },
-  server: { host: '127.0.0.1', port: 5187, strictPort: true },
+  server: { host: '127.0.0.1', port: 5187, strictPort: true, cors: true },
 });

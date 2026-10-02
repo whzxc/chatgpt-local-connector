@@ -5,6 +5,7 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import { compileIcon, requireXcode } from './macos-icons.mjs';
 
 import { devStateDir } from './dev-state.mjs';
+import { buildNative } from './build-native.mjs';
 
 // One development process owns the core and all desktop windows.
 const root = new URL('../', import.meta.url);
@@ -20,7 +21,10 @@ try {
     if (response.ok && (await response.json()).instance === info.instance) owner = info;
   }
 } catch { /* Stale metadata does not prevent starting a new development owner. */ }
-if (owner) throw new Error('这份数据已有 Local Connector 后台运行，请先退出该应用，再运行 npm run dev。');
+if (owner) {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  if (owner.owner !== 'core' || owner.version !== pkg.version) throw new Error('这份数据已有旧版本后台运行，请先退出旧应用，或使用另一 CLC_STATE_DIR。');
+}
 if (spawnSync('cargo', ['--version'], { env, stdio: 'ignore' }).status !== 0) {
   const cargo = spawnSync('rustup', ['which', 'cargo'], { env, encoding: 'utf8' });
   if (cargo.status !== 0) throw new Error('请先安装 Rust stable 工具链，并确保 cargo 或 rustup 在 PATH 中。');
@@ -29,6 +33,11 @@ if (spawnSync('cargo', ['--version'], { env, stdio: 'ignore' }).status !== 0) {
 const prune = spawnSync(process.execPath, [fileURLToPath(new URL('tooling/prune-build-cache.mjs', root))],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 if (prune.status !== 0) throw new Error('无法检查 Rust 构建缓存');
+await import('./build-plugin.mjs');
+await buildNative();
+if (process.platform === 'win32') {
+  cpSync(fileURLToPath(new URL('dist/native/', root)), fileURLToPath(new URL('desktop/target/debug/bin/', root)), { recursive: true });
+}
 if (process.platform === 'darwin') {
   requireXcode(env);
   const output = fileURLToPath(new URL('desktop/target/dev-icon/', root));

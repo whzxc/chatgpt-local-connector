@@ -5,8 +5,9 @@ import {t, locale} from '../i18n';
 export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amount:string;lines:string[]}|null {
   const h=p.history, length=quotaPeriod(w,p), reset=Date.parse(w.resetsAt??'');
   const observed=Date.parse(p.observedAt??''), historyAt=Date.parse(h?.observedAt??'');
-  if(!h?.timeline || h.error || p.state!=='ready' || p.error || !length
+  if(!h?.timeline || h.error || h.incomplete || h.scope!=='account-export' || p.state!=='ready' || p.error || !length
     || !Number.isFinite(reset) || !Number.isFinite(observed) || !Number.isFinite(historyAt)
+    || now-observed>300000 || now-historyAt>300000 || observed>now+30000 || historyAt>now+30000
     || now>=reset || w.usedPercent<1 || w.usedPercent>=100 || !Number.isFinite(w.usedPercent))return null;
   // Account-wide history cannot price a model-specific or separate quota pool.
   if((new Set(p.windows.map(window=>window.poolId)).size>1 && !(p.agentId==='codex' && w.poolId==='codex') && !(p.agentId==='cursor' && w.id==='plan')) || w.label==='weekly_scoped')return null;

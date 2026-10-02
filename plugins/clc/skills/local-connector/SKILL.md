@@ -1,11 +1,11 @@
 ---
 name: local-connector
-description: Read current project facts and coordinate existing or new local Agent tasks through a connected ChatGPT Local Connector (CLC). Use for task progress, continuation, interruption, receipt recovery, and connection diagnosis. Does not install or reconfigure unrelated services.
+description: Read current project facts and coordinate existing or new local Agent tasks through the device-local ChatGPT Local Connector (CLC) plugin. Use for task progress, continuation, interruption, receipt recovery, and connection diagnosis. Does not install or reconfigure unrelated services.
 ---
 
 # Local Connector
 
-Use the CLC tools belonging to the user's selected device/connection. Multiple devices can expose identically named tools: keep the same connection throughout a task. Tool names may have a connection-specific prefix.
+The local plugin starts its bundled Core automatically; Connector Desktop is optional. Use the CLC tools belonging to the user's selected device/connection. Multiple devices can expose identically named tools: keep the same connection throughout a task. Tool names may have a connection-specific prefix.
 
 ## Project facts and task identity
 
@@ -29,6 +29,12 @@ Use `agent_read` to inspect the original task and summarize its current state. D
 
 ## Connection diagnosis
 
-First distinguish missing plugin/App access, disconnected CLC ingress, unavailable Agent, and a failed task. Reuse existing connections. When a verification challenge is available, use `connector_verify`; never invent a verification code.
+First distinguish missing local plugin access, Core startup/build mismatch, unavailable Agent, and a failed task. Remote App ingresses have their own connection and verification. Reuse existing connections. When a verification challenge is available, use `connector_verify`; never invent a verification code.
 
 On a host with local execution, inspect the installed CLC CLI's `help`, `guide`, and `doctor` before changing configuration. Keep keys out of chat and plugin files. Installation and Tunnel ready are not end-to-end evidence: verify inbound access, then an authorized harmless Agent task, its receipt, and completed output. Preserve unknown writes and continue by readback.
+
+## Native usage panels
+
+Open **Connector 总览** from Explore/sidebar for device-local event-time totals and the independently scoped account quota windows. In a task, use New tab → More tools → **任务用量**. These panels use the same Core as local project and Agent tools; the plugin starts it independently. Closing the last local entrypoint stops Core. Refresh and collection never call a model.
+
+A host thread is bound only when its metadata agrees and the local native log identifies that thread. Missing/conflicting metadata requires explicit task selection; never substitute the latest task. Cached input and reasoning output are subsets, not additional tokens. Tool return bytes and durations are observations, not causal charges. Legacy logs, cloud/other-device activity, null credits, resolved model and pure generation speed can remain unknown. Do not infer waste from a large token count or change models, accounts or quotas automatically.

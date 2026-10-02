@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 
 pub struct Service {
+    pub runtime: crate::runtime::State,
+    usage_job: Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub subscriptions: Arc<crate::subscriptions::SubscriptionService>,
     pub control: Arc<Control>,
     pub agents: Arc<crate::agents::AgentHost>,
@@ -216,6 +218,8 @@ impl Service {
         let subscriptions =
             crate::subscriptions::SubscriptionService::new(control.clone(), agents.clone())?;
         Ok(Arc::new(Self {
+            runtime: Default::default(),
+            usage_job: Mutex::new(None),
             subscriptions,
             execution,
             control,
@@ -329,10 +333,21 @@ impl Service {
         status["core"]["registered"] = json!(running > 0);
         Ok(status)
     }
+    pub async fn start_usage(&self) {
+        let mut job = self.usage_job.lock().await;
+        if job.is_none() {
+            *job = Some(crate::usage::start());
+        }
+    }
     pub async fn stop(&self) -> Result<()> {
         let _configuration = self.configuration.lock().await;
         self.closing.store(true, Ordering::SeqCst);
         crate::logs::record("INFO", "Service stopping", None);
+        crate::usage::stop();
+        if let Some(job) = self.usage_job.lock().await.take() {
+            job.abort();
+            let _ = job.await;
+        }
         self.subscriptions.stop().await;
         let entries = self.entries().await;
         for ingress in &entries {
@@ -429,6 +444,59 @@ impl Service {
     ) -> Result<Value> {
         if self.closing.load(Ordering::SeqCst) {
             return Err("core shutting down".into());
+        }
+        if route == "runtime/clients" && method == "GET" {
+            return Ok(self.runtime.clients());
+        }
+        if route.starts_with("runtime/") && method == "POST" {
+            return self.runtime.request(route, body);
+        }
+        if route == "plugin/call" && method == "POST" {
+            let name = string(&body, "name");
+            if name == "connector_verify"
+                || !catalog()["tools"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|tool| tool["name"] == name)
+            {
+                return Err("tool not available".into());
+            }
+            let origin = json!({"ingressId":"local-plugin","controlSource":"chatgpt-desktop","authType":"local-owner"});
+            return crate::kernel::origin::ORIGIN
+                .scope(origin, async {
+                    let result = self
+                        .execution
+                        .call(name, body["arguments"].clone(), json!("all"))
+                        .await;
+                    let (value, error) = match result {
+                        Ok(value) => (crate::kernel::results::page_output(value)?, false),
+                        Err(error) => (json!({"error":crate::egress::failure(&error)}), true),
+                    };
+                    Ok(crate::egress::tool(value, error))
+                })
+                .await;
+        }
+        if route == "usage/query" && method == "POST" {
+            if body["schemaVersion"] != 1 || body["pluginVersion"] != env!("CARGO_PKG_VERSION") {
+                return Err("PLUGIN_VERSION_MISMATCH".into());
+            }
+            let scope = if body["scope"] == "global" {
+                "global"
+            } else {
+                "thread"
+            };
+            let mut data = crate::usage::query(
+                body["arguments"].clone(),
+                body["metadata"].clone(),
+                scope.into(),
+            )
+            .await?;
+            let snapshots = self.subscriptions.subscribe();
+            let snapshots = snapshots.borrow();
+            data["quota"] = snapshots.providers.iter().find(|p| p.provider_id == "codex").map(|p| json!({"state":p.state,"observedAt":p.observed_at,"refreshing":p.refreshing,"windows":p.windows,"selected":p.selected,"source":p.source,"errorCode":p.error.as_ref().map(|e|e.code)})).unwrap_or(Value::Null);
+            data["collectorOwner"] = json!("connector-core");
+            return Ok(data);
         }
         if route == "agents/activity" && method == "GET" {
             let selected = self

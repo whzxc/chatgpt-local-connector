@@ -11,6 +11,7 @@ const resources = path.join(contents, 'Resources');
 mkdirSync(path.join(contents, 'MacOS'), { recursive: true });
 mkdirSync(resources, { recursive: true });
 cpSync(path.join(root, 'desktop/target/dev-icon/Resources'), resources, { recursive: true });
+cpSync(path.join(root, 'dist/native'), path.join(resources, 'bin'), { recursive: true });
 const executable = path.join(contents, 'MacOS', path.basename(binary));
 cpSync(binary, executable);
 const config = JSON.parse(readFileSync(path.join(root, 'desktop/tauri.dev.conf.json'), 'utf8'));

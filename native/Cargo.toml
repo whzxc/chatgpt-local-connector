@@ -1,8 +1,12 @@
 [package]
 name = "connector-core"
-version = "0.8.6"
+version = "0.8.9"
 edition = "2021"
 license = "MIT"
+
+[[bin]]
+name = "local-connector"
+path = "src/main.rs"
 
 [features]
 # Compiled only by the existing isolated contract fixture, never desktop builds.
@@ -31,6 +35,11 @@ http-body-util = "0.1"
 [profile.dev]
 debug = 1
 incremental = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Pipes", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

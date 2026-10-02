@@ -17,3 +17,6 @@ release-artifacts/
 *.p12
 *.pfx
 tooling/verifier/target/
+
+# Local working material
+/tmp/

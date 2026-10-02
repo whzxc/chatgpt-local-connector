@@ -1,6 +1,5 @@
 // Source formats and pricing snapshot adapted from OpenUsage (MIT); see shared/pricing/LICENSE.OpenUsage.
 mod antigravity;
-mod codex;
 mod csv;
 mod pricing;
 use chrono::{DateTime, Local, Utc};
@@ -36,6 +35,46 @@ pub(super) struct Scan {
 type Cache = HashMap<PathBuf, (u64, std::time::SystemTime, Scan)>;
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 pub async fn local(provider: &str) -> Value {
+    if provider == "codex" {
+        let _ = crate::usage::refresh().await;
+        let (rows, incomplete) = crate::usage::shared()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .responses();
+        let mut missing = incomplete;
+        let events = rows
+            .into_iter()
+            .filter_map(|r| {
+                if !r.reliable {
+                    missing = true;
+                    return None;
+                }
+                let (Some(input), Some(cached), Some(output)) =
+                    (r.tokens.input, r.tokens.cached, r.tokens.output)
+                else {
+                    missing = true;
+                    return None;
+                };
+                let Some(input) = input.checked_sub(cached) else {
+                    missing = true;
+                    return None;
+                };
+                Some(Event {
+                    at: r.at,
+                    model: r.model.unwrap_or_default(),
+                    input,
+                    cached,
+                    output,
+                    write: 0,
+                    fast: r
+                        .service_tier
+                        .as_deref()
+                        .is_some_and(|s| ["fast", "priority"].contains(&s)),
+                })
+            })
+            .collect();
+        return summarize(events, provider, missing, &pricing::current());
+    }
     let prices = pricing::current();
     let provider = provider.to_string();
     tokio::task::spawn_blocking(move || {
@@ -104,11 +143,7 @@ pub async fn local(provider: &str) -> Value {
                 .get(path)
                 .is_none_or(|(l, t, _)| *l != len || *t != stamp);
             if refresh {
-                let scan = if provider == "codex" {
-                    codex::scan(path)
-                } else {
-                    antigravity::scan(path)
-                };
+                let scan = antigravity::scan(path);
                 cache.insert(path.clone(), (len, stamp, scan));
             }
             let scan = &cache[path].2;
@@ -270,18 +305,12 @@ fn summarize(
             .map(|s| (s, (0, 0., 0, BTreeSet::new())))
             .collect();
     let mut models: BTreeMap<&str, BTreeMap<String, (u64, f64, u64)>> = BTreeMap::new();
-    let mut seen = HashSet::new();
     for e in events {
         let Some(at) = DateTime::from_timestamp_millis(e.at) else {
             continue;
         };
         let day = at.with_timezone(&Local).date_naive();
         if at < coverage_start || at > observed || e.tokens() == 0 {
-            continue;
-        }
-        if provider == "codex"
-            && !seen.insert((e.at, e.model.clone(), e.input, e.cached, e.output, e.write))
-        {
             continue;
         }
         let dollars = cost(&e, provider, prices);
