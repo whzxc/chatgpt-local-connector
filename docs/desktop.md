@@ -41,7 +41,7 @@ The local management HTTP server binds only to a random `127.0.0.1` port and val
 
 Development builds use a separate identifier and icon and forward reads/writes to the running built app. If it is unavailable, they report an unavailable backend instead of starting an independent business connection. See [development](development.md).
 
-First use requires Codex Desktop installation/sign-in, official Tunnel or HTTPS configuration, and adding/enabling the connection in ChatGPT. The app prepares the selected connection components. Existing Codex sign-in can be reused but does not replace provider credentials or web connection setup. See the [README](../README.md#let-codex-set-it-up-recommended) and [connection guide](tunnel.md).
+Remote Codex access requires Codex Desktop installation/sign-in, official Tunnel or HTTPS configuration, and adding/enabling the connection in the remote client. Local ChatGPT plugin use follows the [standalone plugin guide](plugin.md) and requires no Tunnel. The app prepares the selected connection components. Existing Codex sign-in can be reused but does not replace provider credentials or web connection setup. See the [README](../README.md#let-codex-configure-remote-access) and [connection guide](tunnel.md).
 
 Available subscriptions are monitored by default by the shared core independently
 of connections and Agent execution permissions. Enabling the quota panel enables

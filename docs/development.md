@@ -173,4 +173,4 @@ as OpenUsage.
 
 The native plugin resource is built from `ui/usage-insights` by `tooling/build-plugin.mjs` into `dist/plugin/app.html` and embedded by the Rust crate. Run `npm run build` before invoking Cargo directly on a fresh checkout. Standard `npm test`, `desktop:check`, `check:native` and `desktop:build` prepare this asset automatically. No Node process ships with the plugin. Local exporter and lifecycle instructions are in [plugin.md](plugin.md).
 
-Standalone plugin development, automatic panel reload and portable ZIP builds use `plugin:dev`, `plugin:build` and `plugin:check`; see [plugin.md](plugin.md). Desktop packaging also creates and verifies the matching plugin ZIP. Release staging requires that platform ZIP alongside the installers.
+Standalone plugin development, automatic panel reload and portable ZIP builds use `plugin:dev`, `plugin:build` and `plugin:check`; see [plugin development](plugin-development.md). Desktop packaging also creates and verifies the matching plugin ZIP. Release staging requires that platform ZIP alongside the installers.

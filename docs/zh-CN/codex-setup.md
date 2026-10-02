@@ -2,6 +2,8 @@
 
 [English](../codex-setup.md) | **简体中文**
 
+本文用于配置**远程入口**。本机 ChatGPT Desktop 插件请使用[插件安装指南](plugin.md)，该路径无需申请 Tunnel 凭据或执行远程入口验证码流程。
+
 在目标电脑使用应用自带 CLI，先读 `cli help`、`cli status`、`cli ingress list`。ChatGPT 默认推荐 OpenAI Secure Tunnel；保留已有入口，新增入口不覆盖默认连接。完整配置任务包含真实控制源入站与无害任务终态验证。
 
 macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop cli help`；Windows 使用安装目录中的 `local-connector-desktop.exe cli help`。无需 Node/npm。help、guide、ingress presets 离线可用，其余命令需要同版本应用正在运行。成功输出 `{schemaVersion:1,ok:true,result:...}`，失败输出 `{schemaVersion:1,ok:false,error:{code,message}}`；退出码分别为 0、1。诊断成功不等于每个入口已经 ready。

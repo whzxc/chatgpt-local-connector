@@ -2,6 +2,8 @@
 
 **English** | [简体中文](zh-CN/installation.md)
 
+This guide covers **Connector Desktop**. For use only inside local ChatGPT Desktop, follow the [standalone plugin guide](plugin.md); a Tunnel and the desktop application are not required. Configure [remote ingress](tunnel.md) only for access from another client/device.
+
 ## Download
 
 Download the installer and `SHA256SUMS.txt` from [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest). The release page is the source of truth for available versions and files.

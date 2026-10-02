@@ -13,6 +13,7 @@ import {
   Info,
   Link,
   ChartColumn,
+  CircleHelp,
 } from "lucide-react";
 import {
   Button,
@@ -28,7 +29,13 @@ import {
   Popover,
 } from "../components/ui";
 import { locale } from "../i18n";
-import { initialize, onResult, refresh, type Snapshot } from "./bridge";
+import {
+  initialize,
+  onResult,
+  refresh,
+  type ReadySnapshot,
+  type Snapshot,
+} from "./bridge";
 import {
   Empty,
   Heading,
@@ -38,6 +45,7 @@ import {
   Value,
 } from "./components";
 import { Details, type DetailView } from "./details";
+import { Guide, type GuideSection } from "./guide";
 import {
   text,
   number,
@@ -61,6 +69,7 @@ export default function App() {
     [selected, setSelected] = useState(""),
     [turnPage, setTurnPage] = useState(0);
   const [displayTurnPage, setDisplayTurnPage] = useState(0);
+  const [guide, setGuide] = useState<GuideSection | null>(null);
   const [view, setView] = useState<DetailView | null>(null);
   const entryScope = useRef<"global" | "thread">("thread"),
     receivedInitial = useRef(false),
@@ -79,12 +88,16 @@ export default function App() {
     }
   };
   const update = async (mode: "auto" | "filter" | "manual" = "manual") => {
-    if (!initialized.current || (inFlight.current && mode !== "filter")) return;
+    if (inFlight.current && mode !== "filter") return;
     inFlight.current = true;
     const serial = ++request.current;
     setBusy(mode !== "auto");
     const f = filter.current;
     try {
+      if (!initialized.current) {
+        await initialize();
+        initialized.current = true;
+      }
       const next = await refresh({
         scope: f.selected ? "thread" : entryScope.current,
         days: Number(f.days),
@@ -92,8 +105,16 @@ export default function App() {
         turnOffset: f.turnPage * 4,
       });
       if (serial === request.current) {
-        accept(next);
-        setDisplayTurnPage(f.turnPage);
+        // Index collection can temporarily return no rows during a background refresh.
+        // Keep the last visible result until the same selection has a new snapshot.
+        if (!(
+          mode === "auto" &&
+          next.state === "collecting" &&
+          current.current?.state === "ready"
+        )) {
+          accept(next);
+          setDisplayTurnPage(f.turnPage);
+        }
       }
     } catch (e) {
       if (alive.current && serial === request.current)
@@ -113,7 +134,7 @@ export default function App() {
       if (!receivedInitial.current) {
         entryScope.current = next.scope;
         receivedInitial.current = true;
-        setDays(String(next.range?.days ?? 7));
+        setDays(String(next.state === "ready" ? next.range.days : 7));
       }
       accept(next);
     });
@@ -142,16 +163,19 @@ export default function App() {
     setTurnPage(0);
     setSelected(id);
     setData((previous) =>
-      previous ? { ...previous, thread: null, binding: "unknown" } : previous,
+      previous?.state === "ready"
+        ? { ...previous, thread: null, binding: "unknown" }
+        : previous,
     );
   };
   const global = data?.scope === "global" && !selected;
-  const detail = data?.thread;
+  const ready = data?.state === "ready" ? data : undefined;
+  const detail = ready?.thread;
   const label =
-    data?.tasks.find((task) => task.id === detail?.id)?.label ??
+    ready?.tasks.find((task) => task.id === detail?.id)?.label ??
     (detail ? short(detail.id) : text("unbound"));
   const sourceIssues = [
-    ...new Set([...(data?.issues ?? []), ...(detail?.issues ?? [])]),
+    ...new Set([...(ready?.issues ?? []), ...(detail?.issues ?? [])]),
   ];
   return (
     <MotionConfig
@@ -176,19 +200,26 @@ export default function App() {
               <span className="insight-divider" />
               <h1>{text(global ? "overview" : "task")}</h1>
             </div>
-            {global && (
-              <div className="insight-range">
-                <SingleChoice
-                  label={text("range")}
-                  value={days}
-                  onChange={setDays}
-                  options={["day", "week", "month"].map((key, i) => ({
-                    value: ["1", "7", "30"][i]!,
-                    label: text(key),
-                  }))}
-                />
-              </div>
-            )}
+            <div className="insight-header-actions">
+              {global && (
+                <div className="insight-range">
+                  <SingleChoice
+                    label={text("range")}
+                    value={days}
+                    onChange={setDays}
+                    options={["day", "week", "month"].map((key, i) => ({
+                      value: ["1", "7", "30"][i]!,
+                      label: text(key),
+                    }))}
+                  />
+                </div>
+              )}
+              <IconButton
+                icon={CircleHelp}
+                label={text("guide")}
+                onClick={() => setGuide("start")}
+              />
+            </div>
           </header>
           {error && (
             <Notice>
@@ -219,7 +250,8 @@ export default function App() {
                         : "unavailable",
                 )}
               </h2>
-              {data?.message && <Help name="source">{data.message}</Help>}
+              <Help name="guide">{text(`guide.${data?.state === "collecting" ? "empty" : data?.state === "incompatible" ? "version" : "connection"}.body`)}</Help>
+              <Button variant="ghost" onClick={() => setGuide(data?.state === "collecting" ? "start" : "recovery")}>{text(data?.state === "collecting" ? "guide.start" : "guide.recovery")}</Button>
               <IconButton
                 icon={RefreshCw}
                 label={text("retry")}
@@ -238,7 +270,7 @@ export default function App() {
                   exit={{ opacity: 0, y: -3 }}
                 >
                   {global ? (
-                    <Overview data={data} choose={choose} open={setView} />
+                    <Overview data={data} choose={choose} open={setView} guide={setGuide} />
                   ) : (
                     <>
                       <div className="insight-task-heading">
@@ -249,10 +281,11 @@ export default function App() {
                             trigger={
                               <Button
                                 variant="ghost"
-                                className="icon-button"
+                                className={detail ? "icon-button" : undefined}
                                 aria-label={text("choose")}
                               >
                                 <Icon icon={Link} />
+                                {!detail && text("choose")}
                               </Button>
                             }
                           >
@@ -411,6 +444,7 @@ export default function App() {
                       ) : (
                         <Empty>
                           {busy ? text("loading") : text("unbound")}
+                          {!busy && <Button variant="ghost" onClick={() => setGuide("start")}>{text("guide")}</Button>}
                         </Empty>
                       )}
                     </>
@@ -459,11 +493,12 @@ export default function App() {
               </footer>
             </>
           )}
-          {view && data && (
+          {guide && <Guide section={guide} close={() => setGuide(null)} />}
+          {view && ready && (
             <Details
               key={`${view.kind}-${view.turn?.id ?? ""}`}
               view={view}
-              data={data}
+              data={ready}
               close={() => setView(null)}
               choose={choose}
             />
@@ -478,10 +513,12 @@ function Overview({
   data,
   choose,
   open,
+  guide,
 }: {
-  data: Snapshot;
+  data: ReadySnapshot;
   choose: (id: string) => void;
   open: (view: DetailView) => void;
+  guide: (section: GuideSection) => void;
 }) {
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
@@ -504,7 +541,7 @@ function Overview({
     ),
     modelComplete = models.every((model) => model.usage.total != null);
   const byDay = new Map(data.daily.map((day) => [day.day, day]));
-  const daily: Snapshot["daily"] = [];
+  const daily: ReadySnapshot["daily"] = [];
   const startDay = Math.floor(data.range.start / 86400000) * 86400000;
   for (
     let at = startDay;
@@ -573,7 +610,7 @@ function Overview({
             ))}
           </div>
         ) : (
-          <span className="insight-muted">{text("noQuota")}</span>
+          <Button variant="ghost" onClick={() => guide("start")}>{text("noQuota")}<Icon icon={CircleHelp} /></Button>
         )}
         <Popover
           label={text("quota")}
@@ -844,7 +881,14 @@ function Overview({
             ))}
           </HoverScope>
         </motion.div>
-        {!tasks.length && <Empty>{text(query ? "noMatch" : "empty")}</Empty>}
+        {!tasks.length && (
+          <Empty>
+            {text(query || filter !== "all" ? "noMatch" : "empty")}
+            {query || filter !== "all" ? (
+              <Button variant="ghost" onClick={() => { setQuery(""); setFilter("all"); setPage(0); }}>{text("clearFilters")}</Button>
+            ) : <Button variant="ghost" onClick={() => guide("start")}>{text("guide.start")}</Button>}
+          </Empty>
+        )}
         <Pager page={safePage} count={tasks.length} size={5} change={setPage} />
       </section>
     </>

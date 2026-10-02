@@ -7,7 +7,7 @@ import {
   Button,
   HoverScope,
 } from "../components/ui";
-import { refresh, type Snapshot, type Turn } from "./bridge";
+import { refresh, type ReadySnapshot, type Turn } from "./bridge";
 import {
   Coverage,
   Empty,
@@ -36,7 +36,7 @@ export function Details({
   choose,
 }: {
   view: DetailView;
-  data: Snapshot;
+  data: ReadySnapshot;
   close: () => void;
   choose: (id: string) => void;
 }) {

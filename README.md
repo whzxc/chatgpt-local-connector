@@ -51,11 +51,19 @@ CLC itself requires no Node, npm, Rust, or Cargo installation. The [ChatGPT Desk
 
 Codex remains the default, with its native capabilities preserved. External Agents use their own configuration and sign-in. The home view’s More button opens Agents management, which lists brands, installation status and versions, and lets you enable installed Agents. Its settings button opens appearance, quota, and usage preferences. See [Subscription usage](docs/subscriptions.md) for quota monitoring and usage estimates. Native/adapter distinctions and capabilities are documented in [Local Agents](docs/agents.md). Shared task operations use the `agent_*` tools.
 
-## Installation
+## Installation: choose an entry point
 
-See [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) for available versions and installers. The [installation guide](docs/installation.md) covers direct installation, Homebrew, operating system security prompts, updates, and removal.
+| How you want to use CLC | Start here |
+| --- | --- |
+| Inside ChatGPT Desktop on this computer | [Standalone plugin](docs/plugin.md); no Tunnel or Connector Desktop required |
+| Tray, floating panels and connection settings | [Desktop installation](docs/installation.md) |
+| Access this computer from Web, mobile or another device | [Remote ingress](docs/tunnel.md); separate authentication and connection setup required |
 
-## Let Codex set it up (recommended)
+Available downloads are the actual assets on [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases). Plugin and desktop updates are separate; use the same native build when sharing state.
+
+## Let Codex configure remote access
+
+For local plugin use, follow the plugin guide above. The following workflow is for remote access from Web, mobile or another device.
 
 Send the following message to Codex on the target computer. It checks existing progress and handles installation, configuration, troubleshooting, and verification. You can provide a signed-in ChatGPT browser session for it to operate. You only need to handle steps that require your identity or confirmation, or that its tools cannot reliably complete. The default connection uses the official OpenAI Secure MCP Tunnel.
 
@@ -74,13 +82,13 @@ The [Codex setup and CLI guide](docs/codex-setup.md) covers configuration and di
 
 Choose Auto / English / 简体中文 in **Settings → General → Language**. Auto follows your system or browser language, falling back to English for unsupported languages. A manual selection takes priority, is saved, and takes effect immediately. Like the theme, this preference belongs to the current WebView/browser; it does not affect MCP tools, task content, or protocols.
 
-After setup, keep the computer online, Desktop available, and Connector connected. Connecting at sign-in is optional. Closing the window leaves the connection running; quitting the app disconnects it. On macOS, **Settings → General → Show app in** offers All, Menu bar only, or Dock only. Changes apply immediately and are saved automatically.
+After setup, keep the computer online, Desktop available, and Connector connected. Connecting at sign-in is optional. Closing the window leaves the connection running; the shared backend stops after its last plugin or desktop client exits. Quitting Desktop alone may leave it running while a plugin is connected. On macOS, **Settings → General → Show app in** offers All, Menu bar only, or Dock only. Changes apply immediately and are saved automatically.
 
 `agent_wait` supports Codex, Pi, all built-in ACP Agents, and Custom ACP while the local connection is running; `codex_wait` preserves native semantics. Use the corresponding read/events tools for history and events. An ordinary Chat response does not keep waiting after it ends; these tools provide neither scheduled wakeups nor proactive push notifications. See [task waiting](docs/tools.md#任务等待).
 
 ### Responsibilities and boundaries
 
-**Automatically open Codex tasks** is enabled by default: Desktop owns and runs new tasks. When disabled, Connector runs new tasks in the background without opening Desktop, and Desktop control of those tasks is not guaranteed. The setting affects only new tasks; existing tasks retain their execution owner. Closing Connector stops its background execution but does not actively interrupt Desktop-owned tasks. Unknown states are not shown as idle.
+**Automatically open Codex tasks** is enabled by default: Desktop owns and runs new tasks. When disabled, Connector runs new tasks in the background without opening Desktop, and Desktop control of those tasks is not guaranteed. The setting affects only new tasks; existing tasks retain their execution owner. Closing the last Core client stops Connector-owned execution but does not actively interrupt Desktop-owned tasks. Unknown states are not shown as idle.
 
 Connections are not restricted by Codex Desktop version numbers. Availability depends on the actual IPC handshake and support for each operation. Private protocols can change with Desktop updates; a successful connection does not guarantee compatibility with every operation.
 

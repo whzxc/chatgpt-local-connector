@@ -85,12 +85,19 @@ export type Detail = {
   parentId: string | null;
   forkedFromId: string | null;
 };
-export type Snapshot = {
+type SnapshotBase = {
   schemaVersion: number;
   scope: "global" | "thread";
-  state: string;
+  connectorVersion: string | null;
   message?: string;
-  connectorVersion: string;
+};
+export type Snapshot =
+  | ReadySnapshot
+  | (SnapshotBase & {
+      state: "collecting" | "incompatible" | "unavailable";
+    });
+export type ReadySnapshot = SnapshotBase & {
+  state: "ready";
   observedAt: string;
   binding: string;
   thread: Detail | null;

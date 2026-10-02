@@ -1,7 +1,7 @@
 .insight-app {
-  max-width: 1160px;
-  margin: auto;
-  padding: 20px 24px 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 20px clamp(12px, 2.5vw, 32px) 12px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -385,9 +385,6 @@
   min-width: 85px;
   text-align: center;
 }
-.insight-task {
-  max-width: 660px;
-}
 .insight-task-heading {
   padding: 2px 4px;
 }
@@ -678,7 +675,7 @@
 }
 @media (max-width: 760px) {
   .insight-app {
-    padding: 16px;
+    padding-block: 16px;
     gap: 12px;
   }
   .insight-content {
@@ -732,7 +729,7 @@
 }
 @media (max-width: 480px) {
   .insight-app {
-    padding: 12px;
+    padding-block: 12px;
   }
   .insight-header {
     flex-wrap: wrap;
@@ -870,5 +867,38 @@
   }
   .insight-model-meter > span {
     width: 46px;
+  }
+}
+
+.insight-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.insight-guide {
+  display: grid;
+  gap: 16px;
+}
+.insight-guide p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.insight-empty > .button {
+  display: flex;
+  margin: 8px auto 0;
+}
+@media (max-width: 480px) {
+  .insight-header-actions:has(.insight-range) {
+    width: 100%;
+  }
+  .insight-header-actions .insight-range {
+    flex: 1;
+    min-width: 0;
   }
 }

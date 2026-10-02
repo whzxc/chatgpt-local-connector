@@ -51,11 +51,19 @@ CLC 本身运行无需安装 Node、npm、Rust 或 Cargo；外部 Agent 仍使�
 
 Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身配置和登录；首页右侧的“更多”入口打开 Agents 管理面板，按品牌显示安装状态和版本，并支持启用已安装的 Agent；标题旁的设置按钮打开外观、额度和用量设置。额度监控和用量估算见[订阅用量](docs/subscriptions.md)。native/adapter 类型与能力见[本地 Agents](docs/agents.md)，公共任务操作统一使用 `agent_*` 工具。
 
-## 安装
+## 安装：先选择入口
 
-安装包与可用版本以 [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases/latest) 为准。直接安装、Homebrew、系统拦截、更新与卸载见 [安装指南](docs/zh-CN/installation.md)。
+| 使用方式 | 从这里开始 |
+| --- | --- |
+| 在本机 ChatGPT Desktop 内使用 | [独立插件安装与使用](docs/zh-CN/plugin.md)，无需 Tunnel 或 Connector 桌面应用 |
+| 菜单栏、浮窗和连接设置 | [桌面应用安装](docs/zh-CN/installation.md) |
+| 从网页、手机或另一台设备访问本机 | [远程接入](docs/zh-CN/tunnel.md)，需要另行配置认证与连接 |
 
-## 让 Codex 帮你配置（推荐）
+下载文件以 [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases) 的实际附件为准。插件与桌面应用分别安装和更新；共享数据目录时需使用同一原生构建。
+
+## 让 Codex 帮你配置远程接入
+
+仅使用本机插件时，按上面的插件指南安装即可。下面的流程用于网页、手机或其他设备远程接入。
 
 在这台电脑的 Codex 中发送下面的消息。Codex 会检查已有进度，完成安装、配置、排障和验收；可提供已登录的 ChatGPT 网页让它继续代操作；只有本人确认或工具无法可靠完成的步骤再由你操作。默认使用官方 OpenAI Secure MCP Tunnel。
 
@@ -74,13 +82,13 @@ Codex 保持默认，原生能力完整保留。所有外部 Agent 沿用自身�
 
 在「设置 → 通用 → 语言」选择 Auto / English / 简体中文。Auto 跟随系统或浏览器语言，不支持的语言回退为 English；手动选择优先并自动保存，切换立即生效。语言偏好与主题一样保存在当前 WebView/浏览器中，不影响 MCP 工具、任务内容或协议。
 
-首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口后连接继续运行，退出应用则关闭连接。macOS 可在「设置 → 通用 → 显示位置」选择「全部」「仅菜单栏」或「仅 Dock 栏」，修改立即生效并自动保存。
+首次配置后，日常使用保持本机联网、Desktop 可用且 Connector 连接开启即可；登录时启动为可选设置。关闭窗口后连接继续运行，最后一个插件或桌面客户端退出后，共享后台才会停止；有插件连接时，退出桌面应用不一定停止后台。macOS 可在「设置 → 通用 → 显示位置」选择「全部」「仅菜单栏」或「仅 Dock 栏」，修改立即生效并自动保存。
 
 `agent_wait` 支持 Codex、Pi、全部内置 ACP 与 Custom ACP，在本机连接期间等待；`codex_wait` 保留原生语义。历史读取和事件查询继续使用相应的 read/events 工具。普通 Chat 回复结束后不会继续后台等待；它不提供定时唤醒或主动推送。详见[等待工具](docs/tools.md#任务等待)。
 
 ### 分工与边界
 
-设置中的「自动打开 Codex 任务」默认开启，新任务由 Desktop 接管执行；关闭后，新任务由 Connector 后台执行，不自动打开 Desktop，也不保证可在 Desktop 中操作。开关仅影响新任务，已有任务仍由原执行方管理。关闭 Connector 会停止其后台执行，但不会主动中断 Desktop 所有的任务；未知状态不显示为空闲。
+设置中的「自动打开 Codex 任务」默认开启，新任务由 Desktop 接管执行；关闭后，新任务由 Connector 后台执行，不自动打开 Desktop，也不保证可在 Desktop 中操作。开关仅影响新任务，已有任务仍由原执行方管理。最后一个 Core 客户端退出会停止 Connector 所有的后台执行，但不会主动中断 Desktop 所有的任务；未知状态不显示为空闲。
 
 不按 Codex Desktop 应用版本号限制连接；可用性取决于实际 IPC 握手和所需操作是否受支持。私有协议可能随 Desktop 更新变化，连接成功不代表所有操作均兼容。
 
@@ -103,7 +111,7 @@ npm run dev:ui
 - [开发与构建](docs/development.md)
 - [桌面生命周期](docs/desktop.md)
 - [MCP 工具与任务边界](docs/tools.md)
-- [ChatGPT 桌面配套插件](docs/plugin.md)
+- [ChatGPT 独立插件](docs/zh-CN/plugin.md)
 - [架构说明](docs/architecture.md)
 
 本机数据默认位于 macOS 的 `~/.local/state/chatgpt-local-connector` 或 Windows 的 `%LOCALAPPDATA%/chatgpt-local-connector`，可通过 `CLC_STATE_DIR` 指定。密钥、回执和日志只保存在本机；卸载应用不会删除 Codex 历史。

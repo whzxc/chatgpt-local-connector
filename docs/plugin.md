@@ -1,58 +1,98 @@
-# ChatGPT Desktop local plugin
+# Local Connector for ChatGPT Desktop
 
-Local Connector's plugin ships its own Rust executable. ChatGPT Desktop starts it directly; installing or opening Connector Desktop is optional. Project tools and Agent operations use the same Core, receipts, task ownership and statistics as Connector Desktop. External Agents still require their own installation and native login.
+**English** | [简体中文](zh-CN/plugin.md)
 
-- **Connector 总览** opens device-local event-time usage, task rankings and model dimensions, with independently scoped account quota readings when configured.
-- **任务用量** opens from a local task's New tab → More tools menu. Missing or conflicting thread metadata requires explicit local task selection. Some cloud-task hosts fail before loading a local MCP App; select a local task from the overview in that case. Those statistics do not describe the cloud task.
-- The workflow skill uses the plugin's local project and Agent tools. Remote MCP App connections remain separately authenticated ingresses for Web, mobile and other devices.
+## Choose how to use CLC
 
-## Install and update
+| Your goal | Install/configure | Needed for this route |
+| --- | --- | --- |
+| Use local projects, Agent tools and usage panels inside ChatGPT Desktop | This standalone plugin | A host that supports local plugins; external Agents only when you use them |
+| Use the tray, floating panels or manage connections and Agents | [Connector Desktop](installation.md) | The desktop installer |
+| Reach this computer from ChatGPT Web, mobile or another device | [Remote ingress](tunnel.md) | A running local Core, an authenticated Tunnel/HTTPS ingress and client-side connection |
 
-Download the matching `CLC.Plugin_<version>_darwin-aarch64.zip` or `CLC.Plugin_<version>_windows-x86_64.zip` from the project's GitHub release. Check it against `SHA256SUMS.txt`, then extract it into a permanent directory. Keep hidden files. The archive contains `.agents/plugins/marketplace.json`, `plugins/clc`, the native executable, embedded panel resources, the workflow skill, icon and LICENSE. No Node runtime is required.
+The local plugin includes its native backend. It does not require Connector Desktop, Node, npm, Rust, a Tunnel or a Tunnel API key. It does not include external Agents or their accounts. Local usage panels read Codex logs; support for other Agents' task tools does not mean their token usage is included.
 
-Register that extracted marketplace root using the host's local marketplace flow, then install **Local Connector**. A compatible host CLI also supports:
+## Install
 
-```sh
-codex plugin marketplace add <extracted-marketplace-root>
-codex plugin add clc@local-connector
-```
+1. From [GitHub Releases](https://github.com/whzxc/chatgpt-local-connector/releases), choose a release containing your platform's plugin ZIP and `SHA256SUMS.txt`. Available files on that release are authoritative. If it has no plugin ZIP, use another release that includes one or follow [source development](plugin-development.md); a desktop installer is not a plugin package.
 
-Use the CLI shipped with the same host when an older global CLI lacks plugin commands. Host menus and plugin availability depend on its version and workspace policy. Installation may copy the source into a host cache; editing an exported source does not modify an already running MCP process.
+   | Platform | Plugin file |
+   | --- | --- |
+   | Apple Silicon macOS | `CLC.Plugin_<version>_darwin-aarch64.zip` |
+   | Windows x64 | `CLC.Plugin_<version>_windows-x86_64.zip` |
 
-For an update, close this plugin's panels and MCP processes and any Connector Desktop using the same state directory. Extract the new archive, update the marketplace source and install it again, then reload the host plugin and reopen panels. If the host offers no plugin reload, restart it only after its work can safely be interrupted. Reinstallation updates the cache; panel reopening refreshes the versioned resource. Desktop and plugin must use the same native build when sharing data. A mismatch is reported before starting another Core; an old owner is never silently replaced.
+2. Compare its SHA-256 with the matching line in `SHA256SUMS.txt`. On macOS use `shasum -a 256 <zip-file>`; in PowerShell use `Get-FileHash <zip-file> -Algorithm SHA256`. Extract to a permanent folder, preserving hidden files and executable permissions. The root must contain `.agents/plugins/marketplace.json` and `plugins/clc`. Select this root, not the ZIP or its `plugins/clc` subfolder.
+3. Use the host's local marketplace installation flow if available. With a compatible host CLI, run:
 
-A built standalone executable can also export a plugin folder:
+   ```sh
+   codex plugin --help
+   codex plugin marketplace add "<extracted-marketplace-root>"
+   codex plugin add clc@local-connector
+   codex plugin list --marketplace local-connector --json
+   ```
 
-```sh
-local-connector export <new-plugin-directory>
-```
+   Replace the path placeholder. On PowerShell the same commands work when `codex` is on PATH. Confirm the list reports `installed: true` and `enabled: true`. Disable an existing CLC development variant in the host before using the installed variant.
+4. Reload the host's plugins, or restart ChatGPT when active work can safely be interrupted, then open the panels below. Installation and backend startup alone do not confirm the panel loaded successfully.
 
-The export copies the executable into `bin`, writes a relative `.mcp.json` command, and can replace a recognized CLC export. It rejects unrelated directories. Exporting does not register a marketplace or install the plugin. The source repository's template does not contain a platform executable and cannot be used as a complete installed plugin.
-
-## Development on macOS or Windows
-
-Install Node 24.12+, npm and stable Rust, then run on the development device:
-
-```sh
-npm ci
-npm run plugin:dev
-```
-
-This builds the native entrypoint and self-contained panel, starts a local Core lease, exports a repeatable `clc-dev` marketplace, and installs it with the host CLI. Keep this command running, then open the plugin in ChatGPT Desktop. Reload the host plugin after the initial installation; restart the host if it offers no plugin reload.
-
-Saving React, CSS or shared UI source rebuilds the embedded HTML atomically. Visible development panels poll their own resource through the existing MCP channel and reload after a successful rebuild. A reload resets the panel's temporary selection and scroll position. A compilation failure keeps the last working panel; fix the error and save to retry. This is automatic full-panel reload, not React Fast Refresh. No HTTP server, certificate, browser security override or public tunnel is needed. The current desktop sandbox blocks loopback network requests even with HTTPS and a trusted certificate, so direct Vite HMR cannot run inside that host. The standalone desktop UI continues to use its ordinary Vite development server.
-
-Rust, the development reload helper, manifest and skill changes require restarting this command and reloading the host plugin. They are not in-process hot replacement. Production panels always use embedded build resources and do not poll for source changes.
-
-Development uses an isolated persistent data directory ending in `chatgpt-local-connector-dev` and a generated marketplace under the Codex home. `CLC_STATE_DIR` and `CLC_PLUGIN_DEV_DIR` override those locations. The development manifest points to an absolute debug executable and generated HTML file outside the plugin cache. To share Core with desktop development, give both commands the same `CLC_STATE_DIR` and use the same native build. Disable other installed CLC variants while verifying one variant so identical tool names do not select the wrong installation. Stopping the command stops rebuilding and closes its lease; an active host plugin can retain its own Core lease and the last built panel. If the generated file is removed, reopening uses the binary's embedded panel. Development and release resources use different URIs.
+If `plugin` is an unknown command, use the CLI bundled with the same host or a host version that supports local plugins. A global CLI may be older than the app. For ChatGPT installed at the standard macOS location, the bundled CLI can be called as:
 
 ```sh
-npm run plugin:build                 # native release ZIP and checksum
-npm run plugin:build -- --debug      # debug artifact, embedded UI
-npm run plugin:check -- <plugin-directory>
+"/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex" plugin --help
 ```
 
-Build output is under `dist/plugin-package`. Packaging checks the version, executable, MCP config, tools, embedded UI, standalone Core and last-client shutdown, then extracts and checks the ZIP again. These checks do not establish acceptance of ChatGPT's real panel sandbox, automatic reload or Windows host behavior; exercise those in the target host separately.
+Use that executable in place of `codex` in the commands above. App names, installation paths and menu labels can differ. On Windows, use the bundled executable from the installed host's directory rather than guessing a Store package path. Workspace policy may disable local plugins; a CLI cannot override that policy.
+
+If macOS or Windows blocks the downloaded executable, first verify its origin and hash, then follow the operating system's per-file authorization or your administrator's policy. The plugin archive is not a notarized macOS application or an Authenticode-signed Windows installer; do not disable system-wide protections.
+
+## First use
+
+- Open **Connector 总览** from the host's Explore/sidebar. First indexing displays a collecting state and then refreshes automatically. Existing readable Codex logs are sufficient; there is no need to run a new task solely to populate them.
+- Open **任务用量** through a local task's **New tab → More tools**, or select a task in the overview. If the host cannot bind a task, use **Select task** beside the title. Cloud-task hosts can reject a local panel before it loads; a task selected in the overview still represents local logs only.
+- With no local history, complete a local turn in a signed-in Codex client and refresh. The panel does not create tasks for you. Clear search and filters if they exclude your records. Search covers at most the 500 loaded tasks.
+- To use task controls, install/sign in to the intended Agent first. Ask CLC to list local projects, available Agents and existing tasks; explicitly specify which task to create or continue. A usage panel opening is not verification of Agent execution.
+- The header's **Help** opens Get started, Scope and Troubleshooting. Module information icons explain their metrics; the data-source details show coverage issues. Help is bundled and works without a documentation website.
+
+Account quota is separate from local log statistics. Check the relevant native client's sign-in if quota is missing. If a subscription source was disabled, enable it in Connector Desktop's usage settings. Missing quota does not block local history and does not mean a full remaining allowance.
+
+## Update or roll back
+
+The desktop application's updater does not reinstall the ChatGPT plugin. Keep the old extracted package until the new one works. Use a complete plugin artifact; do not edit the host cache by hand.
+
+1. Let active Connector-owned work finish, then close old plugin clients/panels and any Connector Desktop sharing the same state. Matching version numbers are insufficient if the native builds differ. Do not force-stop unrelated tasks or delete state to bypass a mismatch.
+2. Extract the desired package to a new permanent folder. If you are changing the source folder, replace the marketplace registration:
+
+   ```sh
+   codex plugin marketplace remove local-connector
+   codex plugin marketplace add "<new-extracted-marketplace-root>"
+   codex plugin add clc@local-connector
+   codex plugin list --marketplace local-connector --json
+   ```
+
+   Removal here changes the marketplace registration, not your projects or original history. If keeping the same source path, replace its package only after old clients close and run `plugin add` again. Merely replacing extracted files does not refresh the installed cache.
+3. Reload/restart the host and reopen both panels. Confirm data loads and manual refresh works. For rollback, repeat using the preserved previous package; any Desktop sharing state must match that build. Older releases are not guaranteed to read newer persistent formats, so preserve state backups and consult that release's documented support before downgrading. Never restore over a live state directory.
+
+## Troubleshooting
+
+| Symptom | Next action |
+| --- | --- |
+| No plugin ZIP on the release | That release does not provide this installation route; do not register the source template or a DMG |
+| `plugin` command not found | Check the CLI bundled with the host; use a host supporting local plugins |
+| Marketplace already added from another source | Use the remove → add → install sequence above |
+| No panel entry or duplicate tools | Confirm the plugin is enabled, disable the other CLC variant, reload the host |
+| Still seeing an old UI | Reinstall the package into the host cache, reload and reopen the panel |
+| Collecting on first opening | Allow local indexing to finish; hidden panels pause UI refresh |
+| No records or unbound task | Check readable local Codex history, clear filters or explicitly select a task |
+| Connection timeout | Retry; it reconnects after failed initialization. Then check enablement and reload the host |
+| Build/version mismatch | Close old clients when their work can stop and use matching plugin/Desktop builds |
+| Missing quota | Check native sign-in and subscription-source settings; do not interpret missing data as 100% |
+
+When asking for help, include OS/architecture, host version, plugin version, panel name and the displayed error. The source-details panel provides backend version, observation time and coverage when data is available. Share only the necessary error excerpt; credentials and private task content are not needed for installation diagnosis.
+
+## Uninstall
+
+Disable or remove Local Connector in the host and close its panels. Remove the `local-connector` marketplace registration if no other plugin uses it, then delete its extracted package. Existing projects, external Agent installations and original Codex history are separate.
+
+Connector state is retained by default: `~/.local/state/chatgpt-local-connector` on macOS or `%LOCALAPPDATA%/chatgpt-local-connector` on Windows. `CLC_STATE_DIR` can select another directory. Do not remove shared state while another plugin/Desktop uses it. Removing a plugin does not require clearing configuration, receipts or log checkpoints.
 
 ## Runtime and ownership
 
@@ -66,7 +106,7 @@ The collector polls complete local log lines every five seconds. A visible panel
 
 ## Scope and interpretation
 
-Only readable local `sessions` and `archived_sessions` JSONL files under the native Codex home are indexed. This does not cover all cloud or other-device activity and does not establish account attribution. Account quota is a separate cached native reading, refreshed by the main app's existing subscription settings. Unknown/stale quota is not 100% remaining.
+Only readable local `sessions` and `archived_sessions` JSONL files under the native Codex home are indexed. This does not cover all cloud or other-device activity and does not establish account attribution. Account quota is a separate cached native reading, refreshed using Core's subscription settings. Unknown/stale quota is not 100% remaining.
 
 Current-thread binding requires consistent `threadId` / `thread_id` request metadata and an exact native log identity. Missing, conflicting, helper-thread or unavailable identities show unknown and offer explicit selection. An anonymous session or widget ID is not a task ID. Selection is local to each panel; there is no latest-task fallback.
 
@@ -75,7 +115,3 @@ Modern `token_usage_record` rows use thread plus response identity. Thread/turn 
 Cached input is part of input; reasoning output is part of output. Total is input plus output. Missing fields remain unknown. The overview uses event timestamps inside the selected rolling interval; a task's lifetime is separately labeled. Whole-turn average output includes tools and waiting. TTFT/duration are shown only when recorded; resolved model, pure generation speed, task credits and exact tool charges can remain unknown. Tool return size and structured status are observations, not causal billing or proof of waste. Completion is not business acceptance.
 
 Malformed/oversized lines, legacy boundaries and conflicting records are shown as coverage issues. The collector detects append, truncated/replaced files and same-size changes with a changed modification timestamp; head/tail anchors guard checkpoint recovery. Arbitrary in-place rewrites preserving size, timestamp and boundary anchors cannot be detected. Removed source history cannot be reconstructed as complete history. Statistics checkpoints contain counters, IDs and event metadata, never prompts, tool arguments or outputs.
-
-## Uninstall
-
-Remove Local Connector from the host's installed plugins and close its panels. Remove the marketplace entry only if no other plugin uses it. Its extracted source directory can then be deleted. Connector Desktop, external Agent installations, original logs and task records remain separate. Remove generated checkpoints under the state's `usage/files` directory only when every local entrypoint is closed; the next start rebuilds them from readable logs.

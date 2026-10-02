@@ -2,6 +2,8 @@
 
 [English](../installation.md) | **简体中文**
 
+本文介绍 **Connector 桌面应用**。只在本机 ChatGPT Desktop 中使用时，请按[独立插件指南](plugin.md)安装，无需 Tunnel 或桌面应用。网页、手机或其他设备访问才需要配置[远程入口](tunnel.md)。
+
 > 本文对应英文版本；若有差异，以[英文版本](../installation.md)为准。
 
 ## 下载

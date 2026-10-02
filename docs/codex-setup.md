@@ -2,6 +2,8 @@
 
 **English** | [简体中文](zh-CN/codex-setup.md)
 
+This guide configures **remote ingresses**. For local ChatGPT Desktop plugin installation, use the [plugin guide](plugin.md) instead; do not request Tunnel credentials or run ingress verification for that route.
+
 Use the CLI on the target computer. Start by reading `<app executable> cli help`, `cli status` and `cli ingress list`. Help, guide and ingress presets work offline; other commands require the matching running app. Do not overwrite another ingress or install over a running version without authorization. OpenAI Secure Tunnel remains the default ChatGPT onboarding path.
 
 On macOS the usual executable is `/Applications/Local Connector.app/Contents/MacOS/local-connector-desktop`; on Windows use the installed `local-connector-desktop.exe`. Do not require Node/npm on users' machines. Every CLI response is JSON: `{schemaVersion:1,ok:true,result:...}` or `{schemaVersion:1,ok:false,error:{code,message}}`, with exit status 0 or 1. Read operation results and per-ingress state, not just the exit code of a diagnostic command.
