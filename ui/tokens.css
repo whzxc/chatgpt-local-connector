@@ -116,3 +116,15 @@
   --text-md: var(--font-text-md-size, 14px);
   --text-sm: var(--font-text-sm-size, 13px);
 }
+
+/* Usage composition: input and output are disjoint; subsets retain their color. */
+:root {
+  --usage-input: #77998c;
+  --usage-output: #aaa0e5;
+  --usage-other: #a9aeb9;
+}
+:root[data-theme="dark"] {
+  --usage-input: #91b6a6;
+  --usage-output: #b9aaf0;
+  --usage-other: #9099ac;
+}

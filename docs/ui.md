@@ -67,3 +67,11 @@ Narrow layouts reduce topology geometry while retaining the graph, stack setting
 Validate real loading, empty, connected, unavailable, stale, and error states; keyboard traversal, nested Escape, focus restoration, form errors, theme changes, long localized text, and narrow layouts. Verify native WebView, tray, and rail behavior separately from previews. Use existing checks and real interaction acceptance without adding test cases.
 
 The native rail uses a stable screen-sized canvas while expanded and crops the window only while collapsing. Painted primary and secondary surfaces define mouse input regions independently of the larger hover-retention area and corridors; transparent space passes clicks and scrolling to underlying applications.
+
+## Plugin usage panels
+
+The MCP Apps overview uses a compact account-quota strip, a UTC daily input/output chart, a bounded model summary, and a searchable task list with five rows per page. The time selector uses rolling 24-hour, 7-day, and 30-day windows. Empty UTC days retain their position on the chart. Quota and local token measurements retain separate scopes.
+
+The task panel shows token composition, four turns per page, and entry rows for responses, tools, and task relationships. Turn details and record lists open in the shared elastic Dialog; record lists display six items per page and expand individual records in place. Cached input and reasoning output remain subsets, and missing values remain unknown. Task selection affects only the current panel.
+
+Primary surfaces use short labels and data. Explanations and provenance live behind information controls, tooltips, and secondary panels. HoverScope provides continuous row feedback; Motion animates transitions, bars, and record expansion, with reduced-motion support. Shared controls, semantic colors, host appearance and locale, keyboard dismissal, and focus restoration apply to both panels.
