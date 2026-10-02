@@ -24,12 +24,16 @@ pub fn tools() -> Value {
 }
 fn uri() -> String {
     let dev = cfg!(debug_assertions)
-        && std::env::var("CLC_PLUGIN_DEV_URL").is_ok_and(|url| !url.is_empty());
+        && std::env::var("CLC_PLUGIN_DEV_HTML").is_ok_and(|path| !path.is_empty());
     format!(
         "ui://clc/usage-{}-{}{}.html",
         env!("CARGO_PKG_VERSION"),
-        &hash(HTML)[..12],
-        if dev { "-dev" } else { "" }
+        &hash(&if dev {
+            format!("{HTML}{}", include_str!("../../ui/plugin-dev.js"))
+        } else {
+            HTML.to_owned()
+        })[..12],
+        if dev { "-dev-reload" } else { "" }
     )
 }
 fn tool(name: &str, title: &str, entry: Option<&str>) -> Value {
@@ -95,46 +99,32 @@ pub async fn dispatch(core: &crate::runtime::Client, request: Value) -> Value {
 }
 async fn resource() -> Result<Value> {
     let mut html = HTML.to_owned();
-    let mut csp = json!({"connectDomains":[],"resourceDomains":[]});
+    let mut meta =
+        json!({"ui":{"prefersBorder":false,"csp":{"connectDomains":[],"resourceDomains":[]}}});
     if cfg!(debug_assertions) {
-        if let Some(url) = std::env::var("CLC_PLUGIN_DEV_URL")
+        if let Some(path) = std::env::var("CLC_PLUGIN_DEV_HTML")
             .ok()
-            .filter(|url| !url.is_empty())
+            .filter(|path| !path.is_empty())
         {
-            let parsed = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
-            if parsed.scheme() != "http"
-                || parsed.host_str() != Some("127.0.0.1")
-                || parsed.path() != "/"
-                || parsed.query().is_some()
-                || parsed.fragment().is_some()
-                || !parsed.username().is_empty()
-                || parsed.password().is_some()
-            {
-                return Err("开发资源只允许显式的本机 Vite origin。".into());
+            // The explicit dev manifest owns this path. Release builds never read it.
+            if let Ok(current) = std::fs::read_to_string(&path) {
+                html = current;
             }
-            let origin = parsed.origin().ascii_serialization();
-            let response = reqwest::Client::builder()
-                .no_proxy()
-                .build()
-                .map_err(|e| e.to_string())?
-                .get(format!("{origin}/plugin.html"))
-                .timeout(std::time::Duration::from_secs(1))
-                .send()
-                .await;
-            let dev_html = match response {
-                Ok(response) if response.status().is_success() => response.text().await.ok(),
-                _ => None,
-            };
-            if let Some(dev_html) = dev_html {
-                html = dev_html;
-                csp = json!({"connectDomains":[origin,origin.replacen("http:","ws:",1)],"resourceDomains":[origin]});
-            } else {
-                html = html.replace("<body>", "<body><p role=\"status\">开发服务未运行，当前使用内嵌界面。启动 npm run plugin:dev 后重新打开面板可恢复热更新。</p>");
-            }
+            let revision = hash(&html);
+            meta["clc/devRevision"] = json!(revision);
+            meta["ui"]["csp"]["frameDomains"] = json!(["blob:"]);
+            let config = json!({"uri":uri(),"revision":revision})
+                .to_string()
+                .replace('<', "\\u003c");
+            let loader = include_str!("../../ui/plugin-dev.js");
+            html = html.replace(
+                "</body>",
+                &format!("<script>window.__CLC_DEV__={config};{loader}</script></body>"),
+            );
         }
     }
     Ok(
-        json!({"contents":[{"uri":uri(),"mimeType":"text/html;profile=mcp-app","text":html,"_meta":{"ui":{"prefersBorder":false,"csp":csp}}}]}),
+        json!({"contents":[{"uri":uri(),"mimeType":"text/html;profile=mcp-app","text":html,"_meta":meta}]}),
     )
 }
 pub async fn stdio() -> Result<()> {

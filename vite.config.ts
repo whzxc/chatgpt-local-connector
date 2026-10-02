@@ -13,18 +13,6 @@ export default defineConfig({
   root: fileURLToPath(new URL('./ui', import.meta.url)),
   define: { __CONNECTOR_VERSION__: JSON.stringify(packageVersion) },
   plugins: [react(), {
-    name: 'connector-plugin-dev-urls',
-    apply: 'serve',
-    transformIndexHtml: {
-      order: 'post',
-      handler(html, context) {
-        if (context.path !== '/plugin.html') return html;
-        // The MCP sandbox can forbid <base>. Every entry script, including
-        // React's inline refresh preamble, must resolve without one.
-        return html.replace(/(src=|from )"\//g, '$1"http://127.0.0.1:5187/');
-      },
-    },
-  }, {
     name: 'connector-native-preview',
     configureServer(server) {
       function ownerIdentity() {
@@ -102,5 +90,5 @@ export default defineConfig({
       },
     },
   },
-  server: { host: '127.0.0.1', port: 5187, strictPort: true, cors: true },
+  server: { host: '127.0.0.1', port: 5187, strictPort: true },
 });

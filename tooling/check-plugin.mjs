@@ -22,7 +22,7 @@ if (execFileSync(binary, ['--version'], { encoding:'utf8' }).trim() !== pkg.vers
 const state = await mkdtemp(path.join(tmpdir(), 'clc-plugin-check-'));
 const client = new Client({ name:'clc-artifact-check', version:pkg.version });
 try {
-  await client.connect(new StdioClientTransport({ command:binary, args:['mcp'], cwd:directory, env:{ ...process.env, CLC_STATE_DIR:state, CODEX_HOME:path.join(state,"codex"), CLC_PLUGIN_DEV_URL:'' }, stderr:'inherit' }));
+  await client.connect(new StdioClientTransport({ command:binary, args:['mcp'], cwd:directory, env:{ ...process.env, CLC_STATE_DIR:state, CODEX_HOME:path.join(state,"codex"), CLC_PLUGIN_DEV_HTML:'' }, stderr:'inherit' }));
   const tools = await client.listTools();
   for (const name of ['connector_overview','connector_task_usage','connector_usage_refresh','projects','agents','agent_create','agent_read','agent_wait']) {
     if (!tools.tools.some(tool => tool.name === name)) throw new Error(`Missing plugin tool: ${name}`);
