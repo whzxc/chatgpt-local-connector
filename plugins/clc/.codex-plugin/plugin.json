@@ -1,6 +1,6 @@
 {
   "name": "clc",
-  "version": "0.8.9",
+  "version": "0.8.10",
   "description": "Run device-local usage panels, project tools and Agent tasks through the standalone Local Connector Core.",
   "author": {
     "name": "CLC contributors"
