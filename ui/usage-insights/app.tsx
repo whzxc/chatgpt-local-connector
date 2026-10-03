@@ -147,9 +147,9 @@ export default function App() {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible" && current.current)
         void updateRef.current("auto");
-    }, data?.state === "collecting" || (data?.state === "ready" && data.quota?.refreshing) ? 500 : 10000);
+    }, data?.state === "collecting" || (data?.state === "ready" && (data.refreshing || data.quota?.refreshing)) ? 500 : 10000);
     return () => clearInterval(timer);
-  }, [data?.state, data?.state === "ready" && data.quota?.refreshing]);
+  }, [data?.state, data?.state === "ready" && data.refreshing, data?.state === "ready" && data.quota?.refreshing]);
   useEffect(() => {
     if (current.current) void updateRef.current("filter");
   }, [days, selected, taskSelection, routeVersion]);
@@ -184,7 +184,6 @@ export default function App() {
         <main
           className={`insight-app ${global ? "insight-overview" : "insight-task"}`}
         >
-          <PluginUpdates />
           <header className="insight-header">
             <div className="insight-title">
               {selected && (
@@ -210,18 +209,18 @@ export default function App() {
                   <Tooltip
                     text={
                       <>
-                        {text("freshHelp")}
+                        {text(ready.refreshing ? "restoringHelp" : "freshHelp")}
                         <br />
                         {date(ready.observedAt)}
                       </>
                     }
                   >
-                    <span tabIndex={0}>{date(ready.observedAt)}</span>
+                    <span tabIndex={0}>{ready.refreshing ? text("restoring") : date(ready.observedAt)}</span>
                   </Tooltip>
                   <span
-                    className={`insight-status ${error ? "interrupted" : "completed"}`}
+                    className={`insight-status ${error || ready.refreshing ? "interrupted" : "completed"}`}
                     role="img"
-                    aria-label={text(error ? "stale" : "connected")}
+                    aria-label={text(error || ready.refreshing ? "stale" : "connected")}
                   />
                 </div>
               )}
@@ -239,6 +238,7 @@ export default function App() {
                   />
                 </div>
               )}
+              <PluginUpdates />
             </div>
           </header>
           {failure && (

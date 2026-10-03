@@ -16,7 +16,7 @@ pub fn tools() -> Value {
         .cloned()
         .collect();
     tools.extend([
-        tool("connector_overview", "Connector 总览", Some("global")),
+        tool("connector_overview", "Usage overview", Some("global")),
         tool("connector_task_usage", "任务用量", Some("thread")),
         tool("connector_usage_refresh", "刷新用量", None),
     ]);
@@ -109,7 +109,7 @@ async fn dispatch(core: &Session, request: Value) -> Value {
                     Ok(v)=>v,
                     Err(e)=> {
                         let incompatible = e == "UNKNOWN_ROUTE" || e == "PLUGIN_VERSION_MISMATCH" || e.starts_with("CORE_BUILD_MISMATCH");
-                        json!({"schemaVersion":1,"scope":scope,"state":if incompatible {"incompatible"}else{"unavailable"},"message":if incompatible {"请将 Local Connector 和插件更新到同一发布构建，关闭旧入口后重载宿主。上方插件更新入口仍可使用。"}else{"本机 Core 暂不可用。请重新加载插件后刷新。"},"connectorVersion":null})
+                        json!({"schemaVersion":1,"scope":scope,"state":if incompatible {"incompatible"}else{"unavailable"},"message":if incompatible {"请将 Local Connector 和插件更新到同一发布构建，关闭旧入口后重载宿主。可通过标题栏的插件更新按钮检查更新。"}else{"本机 Core 暂不可用。请重新加载插件后刷新。"},"connectorVersion":null})
                     },
                 };
                 Ok(

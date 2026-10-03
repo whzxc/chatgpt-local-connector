@@ -664,6 +664,7 @@ struct Collector {
     issues: BTreeSet<String>,
     bytes_read: u64,
     scan_ms: u64,
+    overview_saved: Option<Instant>,
 }
 static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub fn stop() {
@@ -712,9 +713,7 @@ impl Collector {
         let start = Instant::now();
         self.issues.clear();
         self.bytes_read = 0;
-        let home = std::env::var_os("CODEX_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"));
+        let home = codex_home();
         self.titles.clear();
         if let Ok(file) = std::fs::File::open(home.join("session_index.jsonl")) {
             for line in BufReader::new(file)
@@ -811,46 +810,6 @@ impl Collector {
                 }
             }
         }
-        // Checkpoints are reproducible projections, not unique task history.
-        // Eviction affects the next cold scan, never the current in-memory totals.
-        if self.issues.is_empty() {
-            let live: BTreeSet<_> = self
-                .files
-                .keys()
-                .map(|p| format!("{}.json.gz", hash(p.to_string_lossy().as_bytes())))
-                .collect();
-            if let Ok(entries) = std::fs::read_dir(root().join("usage/files")) {
-                let mut files = Vec::new();
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().into_owned();
-                    if !((name.len() == 72 && name.ends_with(".json.gz"))
-                        || (name.len() == 69 && name.ends_with(".json")))
-                        || !name[..64].bytes().all(|b| b.is_ascii_hexdigit())
-                    {
-                        continue;
-                    }
-                    let Ok(meta) = entry.metadata() else { continue };
-                    if !meta.is_file() {
-                        continue;
-                    }
-                    if !live.contains(&name) {
-                        let _ = std::fs::remove_file(entry.path());
-                    } else {
-                        files.push((meta.modified().ok(), entry.path(), meta.len()));
-                    }
-                }
-                files.sort_by_key(|f| f.0);
-                let mut total: u64 = files.iter().map(|f| f.2).sum();
-                for (_, path, size) in files {
-                    if total <= 40 * 1024 * 1024 {
-                        break;
-                    }
-                    if std::fs::remove_file(path).is_ok() {
-                        total = total.saturating_sub(size);
-                    }
-                }
-            }
-        }
         self.observed_at = Some(now());
         self.checked = Some(Instant::now());
         self.scan_ms = start.elapsed().as_millis() as u64;
@@ -896,6 +855,69 @@ impl Collector {
         }
         for days in [1, 7, 30] {
             index.overviews.insert(days, index.overview(days));
+        }
+        if self
+            .overview_saved
+            .is_none_or(|at| at.elapsed() >= Duration::from_secs(60))
+        {
+            if save_overviews(&index.overviews).is_ok() {
+                self.overview_saved = Some(Instant::now());
+            }
+        }
+        // Checkpoints are reproducible projections, not unique task history.
+        // Eviction affects the next cold scan, never the current in-memory totals.
+        if self.issues.is_empty() {
+            let live: BTreeMap<_, _> = self
+                .files
+                .iter()
+                .map(|(path, state)| {
+                    (
+                        format!("{}.json.gz", hash(path.to_string_lossy().as_bytes())),
+                        state.length,
+                    )
+                })
+                .collect();
+            if let Ok(entries) = std::fs::read_dir(root().join("usage/files")) {
+                let mut files = Vec::new();
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if !((name.len() == 72 && name.ends_with(".json.gz"))
+                        || (name.len() == 69 && name.ends_with(".json")))
+                        || !name[..64].bytes().all(|b| b.is_ascii_hexdigit())
+                    {
+                        continue;
+                    }
+                    let Ok(meta) = entry.metadata() else { continue };
+                    if !meta.is_file() {
+                        continue;
+                    }
+                    if !live.contains_key(&name) {
+                        let _ = std::fs::remove_file(entry.path());
+                    } else {
+                        files.push((meta.modified().ok(), entry.path(), meta.len(), live[&name]));
+                    }
+                }
+                // Keep checkpoints that avoid the most source I/O per cache byte.
+                // Oldest-first eviction repeatedly discarded unchanged large logs.
+                files.sort_by(|a, b| {
+                    (u128::from(a.3) * u128::from(b.2.max(1)))
+                        .cmp(&(u128::from(b.3) * u128::from(a.2.max(1))))
+                        .then_with(|| a.0.cmp(&b.0))
+                });
+                let budget = 40 * 1024 * 1024
+                    - std::fs::metadata(overview_cache_path())
+                        .map(|meta| meta.len().min(OVERVIEW_CACHE_LIMIT))
+                        .unwrap_or(0);
+                let mut total: u64 = files.iter().map(|f| f.2).sum();
+                for (_, path, size, _) in files {
+                    if total <= budget {
+                        break;
+                    }
+                    if std::fs::remove_file(path).is_ok() {
+                        total = total.saturating_sub(size);
+                    }
+                }
+            }
         }
         // Publish only the completed generation. Queries never contend with file scanning.
         let previous = published()
@@ -1045,6 +1067,131 @@ struct UsageIndex {
     files: usize,
     bytes_read: u64,
     scan_ms: u64,
+}
+// Keep only completed overview statistics for a fast restart, within the existing
+// total cache budget. Task details continue to require the live full index.
+const OVERVIEW_CACHE_LIMIT: u64 = 2 * 1024 * 1024;
+fn codex_home() -> PathBuf {
+    std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"))
+}
+fn overview_cache_path() -> PathBuf {
+    root().join("usage/overview.json.gz")
+}
+fn save_overviews(overviews: &BTreeMap<i64, Value>) -> Result<()> {
+    // Only the first task page is needed for the initial view. Persisting the
+    // full task list duplicates the file index and defeats the small cache.
+    let overviews: BTreeMap<_, _> = overviews
+        .iter()
+        .map(|(days, overview)| (*days, overview_page(overview, &json!({}))))
+        .collect();
+    let value = json!({"schema":CACHE_SCHEMA,"source":hash(codex_home().to_string_lossy().as_bytes()),"overviews":overviews});
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    serde_json::to_writer(&mut encoder, &value).map_err(|e| e.to_string())?;
+    let bytes = encoder.finish().map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > OVERVIEW_CACHE_LIMIT {
+        let _ = std::fs::remove_file(overview_cache_path());
+        return Ok(());
+    }
+    save_bytes(&overview_cache_path(), &bytes)
+}
+fn restored_overview(args: &Value) -> Option<Value> {
+    if args["taskPage"].as_u64().is_some_and(|page| page > 1)
+        || args["taskSearch"]
+            .as_str()
+            .is_some_and(|search| !search.trim().is_empty())
+    {
+        return None;
+    }
+    static RESTORED: OnceLock<Option<Value>> = OnceLock::new();
+    let saved = RESTORED
+        .get_or_init(|| {
+            let file = std::fs::File::open(overview_cache_path()).ok()?;
+            if file.metadata().ok()?.len() > OVERVIEW_CACHE_LIMIT {
+                return None;
+            }
+            let value: Value =
+                serde_json::from_reader(flate2::read::GzDecoder::new(file).take(16 * 1024 * 1024))
+                    .ok()?;
+            if value["schema"] != CACHE_SCHEMA
+                || value["source"] != hash(codex_home().to_string_lossy().as_bytes())
+            {
+                return None;
+            }
+            Some(value)
+        })
+        .as_ref()?;
+    let days = args["days"]
+        .as_i64()
+        .filter(|days| [1, 7, 30].contains(days))
+        .unwrap_or(7);
+    let overview = &saved["overviews"][days.to_string()];
+    let observed = chrono::DateTime::parse_from_rfc3339(overview["observedAt"].as_str()?).ok()?;
+    let age = chrono::Utc::now()
+        .signed_duration_since(observed)
+        .num_seconds();
+    if !(0..86400).contains(&age)
+        || overview["schemaVersion"] != SCHEMA
+        || overview["state"] != "ready"
+        || !overview["tasks"].is_array()
+        || (days == 1
+            && observed.with_timezone(&chrono::Local).date_naive()
+                != chrono::Local::now().date_naive())
+    {
+        return None;
+    }
+    let mut data = overview.clone();
+    data["connectorVersion"] = json!(env!("CARGO_PKG_VERSION"));
+    data["refreshing"] = json!(true);
+    Some(data)
+}
+fn overview_page(overview: &Value, args: &Value) -> Value {
+    let mut data = Value::Object(
+        overview
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(key, _)| key.as_str() != "tasks")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    );
+    let search = args["taskSearch"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+    let tasks: Vec<_> = overview["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|task| {
+            search.is_empty()
+                || task["label"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&search)
+                || task["id"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&search)
+        })
+        .collect();
+    let page = args["taskPage"]
+        .as_u64()
+        .unwrap_or(1)
+        .max(1)
+        .min(tasks.len().div_ceil(10).max(1) as u64);
+    data["taskMatchCount"] = json!(tasks.len());
+    data["taskPage"] = json!(page);
+    data["tasks"] = json!(tasks
+        .into_iter()
+        .skip((page as usize - 1) * 10)
+        .take(10)
+        .collect::<Vec<_>>());
+    data
 }
 static INDEX: OnceLock<RwLock<Option<Arc<UsageIndex>>>> = OnceLock::new();
 fn published() -> &'static RwLock<Option<Arc<UsageIndex>>> {
@@ -1403,50 +1550,7 @@ impl UsageIndex {
             .filter(|days| [1, 7, 30].contains(days))
             .unwrap_or(7);
         let overview = &self.overviews[&days];
-        let mut data = Value::Object(
-            overview
-                .as_object()
-                .unwrap()
-                .iter()
-                .filter(|(key, _)| key.as_str() != "tasks")
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-        );
-        let search = args["taskSearch"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_lowercase();
-        let tasks: Vec<_> = overview["tasks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|task| {
-                search.is_empty()
-                    || task["label"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_lowercase()
-                        .contains(&search)
-                    || task["id"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_lowercase()
-                        .contains(&search)
-            })
-            .collect();
-        let page = args["taskPage"]
-            .as_u64()
-            .unwrap_or(1)
-            .max(1)
-            .min(tasks.len().div_ceil(10).max(1) as u64);
-        data["taskMatchCount"] = json!(tasks.len());
-        data["taskPage"] = json!(page);
-        data["tasks"] = json!(tasks
-            .into_iter()
-            .skip((page as usize - 1) * 10)
-            .take(10)
-            .collect::<Vec<_>>());
+        let mut data = overview_page(overview, args);
         let threads = &self.threads;
         let mut binding = "unknown";
         let selected = text(args, "threadId");
@@ -1575,6 +1679,9 @@ pub async fn query(args: Value, meta: Value, scope: String) -> Result<Value> {
                 };
             }
             return index.snapshot(&args, &meta, &scope);
+        }
+        if scope == "global" {
+            if let Some(data) = restored_overview(&args) { return data; }
         }
         json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":scope,"state":"collecting","message":"正在索引本设备日志；后台完成后面板会自动刷新。"})
     }).await.map_err(|_| "usage-index-unavailable".into())

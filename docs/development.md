@@ -187,10 +187,15 @@ existing tails. Unique Agent output, request receipts and task associations are
 not subject to cache eviction.
 
 Usage checkpoints contain compressed statistics and source positions, with a
-40 MiB budget. Prompts are read from native files on demand and checked against
+40 MiB total budget shared by file checkpoints and the last complete overview
+(with a 2 MiB upper limit for that overview). The overview is saved at most once per minute; a restart can
+display it with its original observation time while the full index rebuilds.
+Prompts are read from native files on demand and checked against
 the indexed content hash; unavailable or changed source text is reported, not
-substituted. Orphaned and oldest checkpoints are evicted after a successful scan;
-statistics rebuild from native sources after cache eviction. Temporary large-result
+substituted. Orphaned checkpoints are removed after a successful scan; budget
+eviction retains the most source bytes per compressed checkpoint byte, using age
+to break ties, so unchanged large logs do not repeatedly lose their checkpoints.
+Statistics rebuild from native sources after cache eviction. Temporary large-result
 snapshots retain up to 64 MiB for one hour and may be evicted earlier by newer
 results. Startup and snapshot writes prune expired files. Diagnostic logs rotate
 at 2 MiB and retain up to seven days and approximately 16 MiB.

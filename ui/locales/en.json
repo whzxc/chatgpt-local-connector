@@ -694,6 +694,8 @@
   "insights.noMatch": "No matching tasks",
   "insights.loading": "Connecting",
   "insights.collecting": "Indexing",
+  "insights.restoring": "Refreshing saved overview…",
+  "insights.restoringHelp": "Showing the last complete overview while local logs are indexed. Totals and the selected period reflect the time below; task details become available when indexing finishes.",
   "insights.unavailable": "Waiting for connection",
   "insights.incompatible": "Version mismatch",
   "insights.choose": "Choose task",

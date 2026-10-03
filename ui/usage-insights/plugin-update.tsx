@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Notice } from "../components/ui";
+import { Download, Settings } from "lucide-react";
+import { Button, Dialog, IconButton, Notice } from "../components/ui";
 import { t } from "../i18n";
 import { pluginUpdate, type PluginUpdate } from "./bridge";
 
 export function PluginUpdates() {
   const [state, setState] = useState<PluginUpdate>(),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [open, setOpen] = useState(false);
   const running = useRef(false);
   async function run(action: "check" | "update", manual = true) {
     if (running.current) return;
@@ -31,7 +33,12 @@ export function PluginUpdates() {
     }, 3600000);
     return () => clearInterval(timer);
   }, []);
-  return <div className="insight-plugin-update">
+  return <>
+    <IconButton icon={state?.available || state?.reloadRequired ? Download : Settings}
+      label={state?.available ? t("newVersionValue", { version: state.version }) : t("pluginUpdates")}
+      onClick={() => setOpen(true)} />
+    {open && <Dialog title={t("pluginUpdates")} onClose={() => setOpen(false)} width={480}>
+    <div className="insight-plugin-update">
     <div className="insight-header-actions">
       <span>{state?.reloadRequired ? t("pluginUpdateInstalled", { version: state.installedVersion || state.version })
         : state?.available ? t("newVersionValue", { version: state.version })
@@ -43,5 +50,7 @@ export function PluginUpdates() {
     {state?.available && state.installable && !state.reloadRequired && <Notice>{t("pluginUpdateReloadNotice")}</Notice>}
     {state?.available && !state.installable && !state.reloadRequired && <Notice>{t("pluginUpdateManual")}</Notice>}
     {error && <Notice>{error}</Notice>}
-  </div>;
+    </div>
+    </Dialog>}
+  </>;
 }

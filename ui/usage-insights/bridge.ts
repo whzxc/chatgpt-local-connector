@@ -118,6 +118,7 @@ export type Snapshot =
 export type Metrics = Counts & { estimatedUsd: number | null; unpricedRecords: number; requests: number };
 export type ToolDetail = { id: string; input: unknown; output: unknown };
 export type ReadySnapshot = SnapshotBase & {
+  refreshing?: boolean;
   toolDetail?: ToolDetail;
   state: "ready";
   observedAt: string;

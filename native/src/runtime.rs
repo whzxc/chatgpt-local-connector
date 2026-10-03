@@ -238,7 +238,20 @@ impl Client {
     }
     async fn ensure_core(&self) -> Result<()> {
         let _startup = self.startup.lock().await;
-        if owner(&self.build).await?.is_none() {
+        // A restarted host can reconnect before the previous Core's 10-second
+        // lease and idle grace expire. Allow that owner to finish naturally.
+        let deadline = Instant::now() + Duration::from_secs(18);
+        let current = loop {
+            match owner(&self.build).await {
+                Err(error)
+                    if error.starts_with("CORE_BUILD_MISMATCH") && Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+                result => break result?,
+            }
+        };
+        if current.is_none() {
             private_dir(&root())?;
             let log = std::fs::OpenOptions::new()
                 .create(true)

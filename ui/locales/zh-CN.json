@@ -694,6 +694,8 @@
   "insights.noMatch": "无匹配任务",
   "insights.loading": "正在连接",
   "insights.collecting": "正在索引",
+  "insights.restoring": "正在刷新上次总览…",
+  "insights.restoringHelp": "本地日志正在索引，暂时显示上次完整总览。统计及所选时间范围截至下方时间；索引完成后可查看任务详情。",
   "insights.unavailable": "等待连接",
   "insights.incompatible": "版本不匹配",
   "insights.choose": "选择任务",
