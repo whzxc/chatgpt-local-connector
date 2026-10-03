@@ -223,6 +223,29 @@ async fn install_source(binary: &Path, target_version: &str, plugin: &Value) -> 
         &["export", target.to_str().ok_or("插件目录不是 UTF-8")?],
     )
     .await?;
+    // Preserve explicitly configured, supported environment values (notably an
+    // isolated CLC_STATE_DIR) when replacing the generated package.
+    let original = load(&PathBuf::from(string(&current["source"], "path")).join(".mcp.json"))?;
+    let mcp_path = target.join(".mcp.json");
+    let mut mcp = load(&mcp_path)?;
+    let mut environment = serde_json::Map::new();
+    for key in mcp["mcpServers"]["clc"]["env_vars"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        if let Some(value) = original["mcpServers"]["clc"]["env"]
+            .get(key)
+            .filter(|v| v.is_string())
+        {
+            environment.insert(key.into(), value.clone());
+        }
+    }
+    if !environment.is_empty() {
+        mcp["mcpServers"]["clc"]["env"] = Value::Object(environment);
+        save(&mcp_path, &mcp)?;
+    }
     let mut next = previous.clone();
     let entry = next["plugins"]
         .as_array_mut()
