@@ -1,0 +1,19 @@
+.ui-feedback-theme {
+  min-height: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  --default-font-family: var(--font-ui);
+}
+.ui-error-callout {
+  align-items: center;
+  grid-template-columns: 20px minmax(0, 1fr);
+  justify-content: stretch;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--radius-control);
+}
+.ui-error-callout > .rt-CalloutIcon { grid-column: 1; }
+.ui-error-callout > .ui-error-content { grid-column: 2; min-width: 0; width: 100%; }
+.ui-error-message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ui-error-action { flex: none; }
+.ui-error-action .button { color: inherit; }

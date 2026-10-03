@@ -33,11 +33,13 @@
     "release:stage": "node tooling/release.mjs stage",
     "release:finalize": "node tooling/release.mjs finalize",
     "plugin:dev": "node tooling/plugin-dev.mjs",
+    "plugin:web": "node tooling/plugin-web-dev.mjs",
     "plugin:build": "node tooling/plugin-build.mjs",
     "plugin:check": "node tooling/check-plugin.mjs"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@radix-ui/themes": "^3.3.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/cli": "^2.11.4",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.3",
@@ -45,16 +47,17 @@
     "@tauri-apps/plugin-notification": "^2.4.0",
     "@tauri-apps/plugin-opener": "^2.5.5",
     "@types/node": "26.1.1",
-    "typescript": "6.0.3",
-    "vite": "8.3.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "radix-ui": "^1.6.7",
     "lucide-react": "^1.48.0",
-    "motion": "^13.4.4"
+    "motion": "^13.4.4",
+    "radix-ui": "^1.6.7",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "recharts": "^3.10.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.0"
   },
   "repository": {
     "type": "git",

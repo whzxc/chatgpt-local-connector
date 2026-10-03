@@ -4,6 +4,21 @@ For installation and everyday use, see the [plugin guide](plugin.md).
 
 ## Development on macOS or Windows
 
+### Browser UI development
+
+```sh
+npm ci
+npm run plugin:web
+```
+
+Open [Connector overview](http://127.0.0.1:5187/plugin.html?scope=global) or [Task usage](http://127.0.0.1:5187/plugin.html?scope=thread). The command builds and starts the native MCP entrypoint and shared Core, then runs Vite on loopback. No ChatGPT or Connector Desktop installation is needed. It uses the same isolated development state directory as `plugin:dev`; `CLC_STATE_DIR` overrides it. Stop any other Vite instance using port 5187 first.
+
+Both browser views load the same React entrypoint, components, styles and MCP bridge as the packaged plugin. A development-only parent frame provides host initialization and forwards the three read-only usage tools to the real MCP process. React/CSS edits hot-reload in the browser; Rust edits require restarting the command. Stopping it closes its Core lease. No native credentials are sent to the browser, and no browser preview assets are included in plugin packaging.
+
+Selecting a task updates the browser URL to `scope=thread&threadId=<local-task-id>`. Reloading or opening that link restores the selected task; returning to the overview clears `threadId`. Browser back/forward restores these views while preserving locale and theme parameters. You can also add `&threadId=<local-task-id>` to bind an explicit task. There is no inferred current chat in a browser. Add `&theme=light` or `&theme=dark` to override the system theme and `&locale=zh-CN` or `&locale=en` to override the browser language. The host owns the iframe dimensions, so resizing the browser also exercises narrow panel layouts. After browser debugging, verify both entrypoints, automatic task binding, host theme/font variables and sandbox behavior in the real target Desktop before publishing.
+
+### ChatGPT Desktop development
+
 Install Node 24.12+, npm and stable Rust, then run on the development device:
 
 ```sh

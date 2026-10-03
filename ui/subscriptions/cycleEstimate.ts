@@ -5,7 +5,8 @@ import {t, locale} from '../i18n';
 export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amount:string;lines:string[]}|null {
   const h=p.history, length=quotaPeriod(w,p), reset=Date.parse(w.resetsAt??'');
   const observed=Date.parse(p.observedAt??''), historyAt=Date.parse(h?.observedAt??'');
-  if(!h?.timeline || h.error || h.incomplete || h.scope!=='account-export' || p.state!=='ready' || p.error || !length
+  const local = p.agentId==='codex' && h?.scope==='local-device';
+  if(!h?.timeline || h.error || (!local && (h.incomplete || h.scope!=='account-export')) || p.state!=='ready' || p.error || !length
     || !Number.isFinite(reset) || !Number.isFinite(observed) || !Number.isFinite(historyAt)
     || now-observed>300000 || now-historyAt>300000 || observed>now+30000 || historyAt>now+30000
     || now>=reset || w.usedPercent<1 || w.usedPercent>=100 || !Number.isFinite(w.usedPercent))return null;
@@ -18,10 +19,14 @@ export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amou
   for(const [at,count,cost,known] of h.timeline) {
     if(at>=start && at<=end){tokens+=count;usd+=cost;priced+=known;}
   }
-  if(tokens<=0 || priced!==tokens || usd<=0 || !Number.isFinite(usd))return null;
-  const money=new Intl.NumberFormat(locale.get(),{style:'currency',currency:'USD',maximumFractionDigits:2});
+  if(tokens<=0 || priced<=0 || (!local && priced!==tokens) || usd<=0 || !Number.isFinite(usd))return null;
+  const money=new Intl.NumberFormat(locale.get(),{style:'currency',currency:'USD',currencyDisplay:'narrowSymbol',maximumFractionDigits:2});
   const compact=new Intl.NumberFormat(locale.get(),{notation:'compact',maximumFractionDigits:1});
   const amount=money.format(usd*100/w.usedPercent);
+  const date=new Intl.DateTimeFormat(locale.get(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   return {amount,lines:[t('usageCycleEstimate',{amount}),
-    t('usageCycleSample',{tokens:compact.format(tokens),amount:money.format(usd),percent:w.usedPercent})]};
+    t('usageCycleRange',{start:date.format(start),end:date.format(end)}),
+    t('usageCycleSample',{tokens:compact.format(priced),amount:money.format(usd),percent:w.usedPercent}),
+    ...(local ? [t('usageCycleLocal')] : []),
+    ...(h.incomplete || priced!==tokens ? [t('usageCycleIncomplete')] : [])]};
 }

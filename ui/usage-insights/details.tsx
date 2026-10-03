@@ -4,30 +4,29 @@ import {
   Dialog,
   SingleChoice,
   Notice,
+  ErrorCallout,
   Button,
   HoverScope,
 } from "../components/ui";
-import { refresh, type ReadySnapshot, type Turn } from "./bridge";
+import { refresh, type ReadySnapshot } from "./bridge";
 import {
   Coverage,
   Empty,
   Expandable,
   Help,
   Pager,
-  TokenBreakdown,
+  TokenStats,
   Value,
 } from "./components";
-import { text, number, date, duration, short, status } from "./format";
+import { text, number, date, duration, short } from "./format";
 export type DetailView = {
   kind:
     | "responses"
     | "tools"
-    | "turn"
     | "source"
     | "relations"
     | "models"
     | "usage";
-  turn?: Turn;
 };
 export function Details({
   view,
@@ -45,11 +44,9 @@ export function Details({
   const [page, setPage] = useState(0),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const [detail, setDetail] = useState(
-    view.kind === "turn" ? null : data.thread,
-  );
+  const [detail, setDetail] = useState(data.thread);
   const threadId = data.thread?.id;
-  const records = ["turn", "responses", "tools"].includes(view.kind);
+  const records = ["responses", "tools"].includes(view.kind);
   useEffect(() => {
     if (!records || !threadId) return;
     let alive = true;
@@ -58,7 +55,6 @@ export function Details({
     void refresh({
       scope: "thread",
       threadId,
-      ...(view.turn ? { turnId: view.turn.id } : {}),
       responseOffset: page * 6,
       toolOffset: page * 6,
     })
@@ -79,15 +75,12 @@ export function Details({
     return () => {
       alive = false;
     };
-  }, [threadId, view.turn?.id, page, tab, records, data.observedAt]);
-  const title =
-    view.kind === "turn"
-      ? `${text("turns")} · ${short(view.turn!.id)}`
-      : text(view.kind);
+  }, [threadId, page, tab, records, data.observedAt]);
+  const title = text(view.kind);
   return (
     <Dialog title={title} onClose={close} width={620}>
       <div className="insight-detail" aria-busy={busy}>
-        {error && <Notice>{error}</Notice>}
+        {error && <ErrorCallout>{error}</ErrorCallout>}
         {view.kind === "source" && (
           <>
             <p>{text("sourceHelp")}</p>
@@ -116,7 +109,7 @@ export function Details({
         )}
         {view.kind === "usage" && (
           <>
-            <TokenBreakdown value={data.usage} />
+            <TokenStats value={data.usage} />
             <p>{text("usageHelp")}</p>
             <small>
               {date(data.range.start)} — {date(data.range.end)}
@@ -173,26 +166,6 @@ export function Details({
             ))}
           </>
         )}
-        {view.turn && (
-          <>
-            <TokenBreakdown value={view.turn.usage} />
-            <dl>
-              <dt>{text("status")}</dt>
-              <dd>{status(view.turn.status)}</dd>
-              <dt>{text("model")}</dt>
-              <dd>{view.turn.model ?? "—"}</dd>
-              <dt>{text("effort")}</dt>
-              <dd>{view.turn.effort ?? "—"}</dd>
-              <dt>{text("duration")}</dt>
-              <dd>{duration(view.turn.durationMs)}</dd>
-              <dt>{text("ttft")}</dt>
-              <dd>{duration(view.turn.ttftMs)}</dd>
-              <dt>{text("speed")}</dt>
-              <dd>{number(view.turn.wholeTurnOutputTps)} tok/s</dd>
-            </dl>
-            <Help name="turn" />
-          </>
-        )}
         {records && (
           <>
             <div className="insight-section-heading">
@@ -241,7 +214,7 @@ export function Details({
                       </>
                     }
                   >
-                    <TokenBreakdown value={r.tokens} />
+                    <TokenStats value={r.tokens} />
                     <dl>
                       <dt>{text("effort")}</dt>
                       <dd>{r.effort ?? "—"}</dd>

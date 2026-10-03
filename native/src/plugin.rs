@@ -41,7 +41,7 @@ fn tool(name: &str, title: &str, entry: Option<&str>) -> Value {
     if let Some(entry) = entry {
         meta["openai/ui"] = json!({"entrypoints":[{"type":entry}]});
     }
-    json!({"name":name,"title":title,"icons":icons(),"description":"Read device-local usage from the running Local Connector. No model turn or account changes.","inputSchema":{"type":"object","properties":{"scope":{"enum":["global","thread"]},"threadId":{"type":"string","maxLength":128},"days":{"enum":[1,7,30]},"turnId":{"type":"string","maxLength":128},"turnOffset":{"type":"integer","minimum":0},"responseOffset":{"type":"integer","minimum":0},"toolOffset":{"type":"integer","minimum":0}},"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false},"_meta":meta})
+    json!({"name":name,"title":title,"icons":icons(),"description":"Read device-local usage from the running Local Connector. No model turn or account changes.","inputSchema":{"type":"object","properties":{"taskPage":{"type":"integer","minimum":1},"taskSearch":{"type":"string","maxLength":200},"refreshQuota":{"type":"boolean"},"scope":{"enum":["global","thread"]},"threadId":{"type":"string","maxLength":128},"days":{"enum":[1,7,30]},"turnId":{"type":"string","maxLength":128},"toolId":{"type":"string","maxLength":256},"responseOffset":{"type":"integer","minimum":0},"toolOffset":{"type":"integer","minimum":0}},"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false},"_meta":meta})
 }
 pub async fn dispatch(core: &crate::runtime::Client, request: Value) -> Value {
     let id = request["id"].clone();

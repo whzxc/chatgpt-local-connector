@@ -486,6 +486,15 @@ impl Service {
             } else {
                 "thread"
             };
+            if body["arguments"]["refreshQuota"] == true {
+                self.subscriptions
+                    .request(
+                        "subscriptions/refresh",
+                        "POST",
+                        json!({"providerId":"codex"}),
+                    )
+                    .await?;
+            }
             let mut data = crate::usage::query(
                 body["arguments"].clone(),
                 body["metadata"].clone(),
@@ -494,7 +503,28 @@ impl Service {
             .await?;
             let snapshots = self.subscriptions.subscribe();
             let snapshots = snapshots.borrow();
-            data["quota"] = snapshots.providers.iter().find(|p| p.provider_id == "codex").map(|p| json!({"state":p.state,"observedAt":p.observed_at,"refreshing":p.refreshing,"windows":p.windows,"selected":p.selected,"source":p.source,"errorCode":p.error.as_ref().map(|e|e.code)})).unwrap_or(Value::Null);
+            data["quota"] = snapshots.providers.iter().find(|p| p.provider_id == "codex").map(|p| {
+                // Only the current quota cycle is needed for the estimate. Keep the
+                // full local history out of the frequently polled overview payload.
+                let start = p.windows.iter()
+                    .filter(|w| w.pool_id != "base_model_inference" && w.scope.as_deref() != Some("gpt-reserve"))
+                    .filter_map(|w| {
+                        let (amount, unit) = w.label.split_once(' ')?;
+                        let duration = amount.parse::<i64>().ok()?.checked_mul(match unit {
+                            "min" => 60_000,
+                            "s" => 1_000,
+                            _ => return None,
+                        })?;
+                        chrono::DateTime::parse_from_rfc3339(w.resets_at.as_deref()?).ok()?
+                            .timestamp_millis().checked_sub(duration)
+                    }).min();
+                let source = &p.raw_usage["history"];
+                let timeline: Vec<_> = source["timeline"].as_array().into_iter().flatten()
+                    .filter(|row| start.zip(row[0].as_i64()).is_some_and(|(start, at)| at >= start))
+                    .collect();
+                let history = json!({"timeline":timeline,"coverageStart":source["coverageStart"],"scope":source["scope"],"incomplete":source["incomplete"],"error":source["error"],"observedAt":source["observedAt"]});
+                json!({"providerId":p.provider_id,"agentId":p.agent_id,"name":p.name,"eligible":p.eligible,"selected":p.selected,"state":p.state,"refreshing":p.refreshing,"observedAt":p.observed_at,"windows":p.windows,"displayWindowId":p.display_window_id,"accountBlocked":p.account_blocked,"blockedPoolIds":p.blocked_pool_ids,"error":p.error,"pinUnavailable":p.pin_unavailable,"hasCredential":p.has_credential,"acceptsKey":p.accepts_key,"credentialSource":p.credential_source,"source":p.source,"lastAttemptAt":p.last_attempt_at,"rawUsage":{"history":history,"rateLimits":p.raw_usage["rateLimits"],"rateLimitsByLimitId":p.raw_usage["rateLimitsByLimitId"],"rateLimitResetCredits":p.raw_usage["rateLimitResetCredits"]}})
+            }).unwrap_or(Value::Null);
             data["collectorOwner"] = json!("connector-core");
             return Ok(data);
         }

@@ -1,3 +1,4 @@
+import type { ProviderSnapshot } from "../subscriptions/types";
 import { text } from "./format";
 import { locale, resolveLocale } from "../i18n";
 function applyHostContext(context: unknown) {
@@ -22,19 +23,27 @@ export type Counts = {
   uncertainRecords?: number;
   records: number;
 };
+export type TaskSelection = { page: number; search: string };
 export type Task = {
   id: string;
-  label: string;
+  label: string | null;
   lastEventAt: number | null;
-  period: Counts;
+  period: Metrics & { turns: number | null };
   lifetime: Counts;
   family: string;
   issues: string[];
   parentId: string | null;
   forkedFromId: string | null;
 };
+export type ContextObservation = { id: string; at: number; input: number | null; model: string | null; contextWindow: number | null };
+export type Compaction = { durationMs?: number | null; responseId: string; turnId: string | null; at: number; before: ContextObservation | null; after: ContextObservation | null };
 export type Turn = {
+  contextWindow: number | null;
+  contextStart: ContextObservation | null;
+  contextEnd: ContextObservation | null;
   id: string;
+  prompt: string | null;
+  promptImages: number;
   startedAt: number | null;
   completedAt: number | null;
   durationMs: number | null;
@@ -42,12 +51,15 @@ export type Turn = {
   status: string;
   model: string | null;
   effort: string | null;
-  usage: Counts;
+  usage: Metrics;
   wholeTurnOutputTps: number | null;
   toolCount: number;
 };
 export type Response = {
+  context: ContextObservation;
+  previousContext: ContextObservation | null;
   id: string;
+  estimatedUsd: number | null;
   turnId: string | null;
   at: number;
   model: string | null;
@@ -67,9 +79,16 @@ export type Tool = {
   completedAt: number | null;
   status: string | null;
 };
+export type AssistantMessage = { id: string; turnId: string; at: number; text: string };
+export type Reasoning = { id: string; turnId: string; at: number; text: string; durationMs?: number };
 export type Detail = {
+  reasoning: Reasoning[];
+  messages: AssistantMessage[];
+  toolPreviews: Record<string, string>;
+  contentError: string | null;
   id: string;
-  usage: Counts;
+  label: string | null;
+  usage: Metrics;
   issues: string[];
   family: string;
   cliVersion: string | null;
@@ -80,7 +99,7 @@ export type Detail = {
   responseCount: number;
   tools: Tool[];
   toolCount: number;
-  compactions: { responseId: string; turnId: string | null; at: number }[];
+  compactions: Compaction[];
   children: string[];
   parentId: string | null;
   forkedFromId: string | null;
@@ -96,30 +115,25 @@ export type Snapshot =
   | (SnapshotBase & {
       state: "collecting" | "incompatible" | "unavailable";
     });
+export type Metrics = Counts & { estimatedUsd: number | null; unpricedRecords: number; requests: number };
+export type ToolDetail = { id: string; input: unknown; output: unknown };
 export type ReadySnapshot = SnapshotBase & {
+  toolDetail?: ToolDetail;
   state: "ready";
   observedAt: string;
   binding: string;
   thread: Detail | null;
   tasks: Task[];
   taskCount: number;
-  usage: Counts;
-  models: { name: string; usage: Counts }[];
-  daily: { day: string; usage: Counts }[];
+  taskMatchCount: number;
+  taskPage: number;
+  usage: Metrics;
+  models: { name: string; usage: Metrics }[];
+  daily: { day: string; usage: Metrics }[];
+  series: { at: string; models: { name: string; usage: Metrics }[] }[];
   issues: string[];
-  range: { start: number; end: number; days: number };
-  quota: {
-    state: string;
-    observedAt: string | null;
-    selected: boolean;
-    windows: {
-      id: string;
-      poolId: string;
-      label: string;
-      usedPercent: number;
-      resetsAt: string | null;
-    }[];
-  } | null;
+  range: { start: number; end: number; days: number; startDay: string; endDay: string; timezone: string };
+  quota: ProviderSnapshot | null;
 };
 let sequence = 0;
 const pending = new Map<
@@ -136,6 +150,16 @@ export function onResult(listener: (data: Snapshot) => void) {
   return () => {
     listeners.delete(listener);
   };
+}
+export type UsageRoute = { scope: "global" | "thread"; threadId: string };
+let browserNavigation = false;
+const routeListeners = new Set<(route: UsageRoute) => void>();
+export function onRoute(listener: (route: UsageRoute) => void) {
+  routeListeners.add(listener);
+  return () => { routeListeners.delete(listener); };
+}
+export function navigate(threadId: string) {
+  if (browserNavigation) window.parent.postMessage({ jsonrpc: "2.0", method: "clc/notifications/navigate", params: { scope: threadId ? "thread" : "global", threadId } }, "*");
 }
 function rpc(method: string, params: unknown): Promise<RpcResult> {
   return new Promise((resolve, reject) => {
@@ -164,6 +188,10 @@ window.addEventListener("message", (event) => {
     else call.resolve(message.result);
     return;
   }
+  if (browserNavigation && message.method === "clc/notifications/route-changed") {
+    const route = message.params;
+    if ((route?.scope === "global" || route?.scope === "thread") && typeof route.threadId === "string") routeListeners.forEach(listener => listener(route));
+  }
   if (message.method === "ui/notifications/tool-result") accept(message.params);
   if (message.method === "ui/notifications/host-context-changed")
     applyHostContext(message.params);
@@ -188,6 +216,7 @@ export function initialize() {
       protocolVersion: "2026-01-26",
     }).then(
       (result) => {
+        browserNavigation = !!(result as { hostCapabilities?: { experimental?: { usageNavigation?: boolean } } }).hostCapabilities?.experimental?.usageNavigation;
         applyHostContext((result as { hostContext?: unknown }).hostContext);
         window.parent.postMessage(
           { jsonrpc: "2.0", method: "ui/notifications/initialized" },

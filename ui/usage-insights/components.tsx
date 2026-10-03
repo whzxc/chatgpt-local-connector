@@ -2,15 +2,14 @@ import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Info,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
+  ChevronRight,
   AlertCircle,
 } from "lucide-react";
-import { Button, Icon, IconButton, Tooltip, Popover } from "../components/ui";
+import { Button, Icon, Tooltip, Popover, Pagination } from "../components/ui";
 import { t } from "../i18n";
-import { text, number, percent } from "./format";
-import type { Counts } from "./bridge";
+import { text, number, percent, money } from "./format";
+import type { Counts, Detail } from "./bridge";
 
 export function Help({
   name,
@@ -42,23 +41,6 @@ export function Help({
     </Popover>
   );
 }
-export function Heading({
-  name,
-  children,
-}: {
-  name: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="insight-section-heading">
-      <div className="insight-title">
-        <h2>{text(name)}</h2>
-        <Help name={name} />
-      </div>
-      {children}
-    </div>
-  );
-}
 export function Value({
   value,
   compact = true,
@@ -74,71 +56,40 @@ export function Value({
     </Tooltip>
   );
 }
-export function TokenBreakdown({ value }: { value: Counts }) {
-  const input = value.input,
-    output = value.output;
-  const total = input != null && output != null ? input + output : null;
-  const ratio = total && input != null ? (input / total) * 100 : null;
-  return (
-    <div className="insight-token">
-      <div className="insight-section-heading">
-        <div className="insight-title">
-          <h2>{text("total")}</h2>
-          <Help name="token" />
-        </div>
-        <div className="insight-token-total">
-          <Value value={value.total ?? value.knownTotal} />
-          {value.total == null && value.knownTotal != null && (
-            <small>{text("known")}</small>
-          )}
-        </div>
-      </div>
-      <div
-        className="insight-token-track"
-        role="img"
-        aria-label={`${text("input")} ${number(input)}, ${text("output")} ${number(output)}`}
-      >
-        {ratio != null && (
-          <>
-            <motion.div
-              className="insight-input"
-              initial={false}
-              animate={{ width: `${ratio}%` }}
-            />
-            <motion.div
-              className="insight-output"
-              initial={false}
-              animate={{ width: `${100 - ratio}%` }}
-            />
-          </>
-        )}
-      </div>
-      <div className="insight-ratios">
-        <span>{ratio == null ? "—" : percent(ratio)}</span>
-        <span>{ratio == null ? "—" : percent(100 - ratio)}</span>
-      </div>
-      {(["input", "output"] as const).map((kind) => (
-        <div className="insight-token-group" key={kind}>
-          <div className="insight-between">
-            <span className="insight-title">
-              <i className={`insight-swatch insight-${kind}`} />
-              {text(kind)}
-            </span>
-            <strong>
-              <Value value={value[kind]} />
-            </strong>
-          </div>
-          <div className="insight-between insight-subset">
-            <span className="insight-title">
-              ↳ {text(kind === "input" ? "cached" : "reasoning")}
-              <Help name={kind === "input" ? "cached" : "reasoning"} />
-            </span>
-            <Value value={value[kind === "input" ? "cached" : "reasoning"]} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+type StatItem = {label: string; value: ReactNode; onClick?: () => void};
+function StatsGrid({items}: {items: StatItem[]}) {
+  return <div className="insight-metric-grid">{items.map(item => item.onClick
+    ? <Button variant="ghost" className="insight-metric insight-metric-action" key={item.label} onClick={item.onClick}>
+        <span>{item.label}<Icon icon={ChevronRight} /></span><strong>{item.value}</strong>
+      </Button>
+    : <div className="insight-metric" key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>
+  )}</div>;
+}
+const cacheHit = (value: Counts) => value.input && value.cached != null ? percent(value.cached / value.input * 100) : "—";
+export function UsageStats({detail, open}: {detail: Detail; open: (kind: "responses" | "tools" | "relations") => void}) {
+  const value = detail.usage, turns = detail.turnCount;
+  const relations = detail.children.length + detail.compactions.length + Number(!!detail.parentId) + Number(!!detail.forkedFromId);
+  return <StatsGrid items={[
+    {label:text("turns"),value:number(turns)},
+    {label:text("requests"),value:number(value.requests)},
+    {label:text("estimatedCost"),value:<span className="insight-cost">{money(value.estimatedUsd)}</span>},
+    {label:text("total"),value:<Value value={value.total ?? value.knownTotal} />},
+    {label:text("inputOutput"),value:<span className="insight-io"><Value value={value.input} /><span>/</span><Value value={value.output} /></span>},
+    {label:text("cacheHit"),value:cacheHit(value)},
+    {label:text("responses"),value:number(detail.responseCount),onClick:() => open("responses")},
+    {label:text("tools"),value:number(detail.toolCount),onClick:() => open("tools")},
+    {label:text("relations"),value:number(relations),onClick:() => open("relations")},
+  ]} />;
+}
+export function TokenStats({value}: {value: Counts}) {
+  return <StatsGrid items={[
+    {label:text("total"),value:<Value value={value.total ?? value.knownTotal ?? (value.input != null && value.output != null ? value.input + value.output : null)} />},
+    {label:text("input"),value:<Value value={value.input} />},
+    {label:text("output"),value:<Value value={value.output} />},
+    {label:text("cached"),value:<Value value={value.cached} />},
+    {label:text("reasoning"),value:<Value value={value.reasoning} />},
+    {label:text("cacheHit"),value:cacheHit(value)},
+  ]} />;
 }
 export function Pager({
   page,
@@ -155,22 +106,12 @@ export function Pager({
 }) {
   return (
     <div className="insight-pager">
-      <IconButton
-        icon={ChevronLeft}
-        label={text("previous")}
-        disabled={busy || page === 0}
-        onClick={() => change(page - 1)}
-      />
-      <span aria-live="polite">
-        {count
-          ? `${page * size + 1}–${Math.min((page + 1) * size, count)} / ${number(count)}`
-          : "0 / 0"}
-      </span>
-      <IconButton
-        icon={ChevronRight}
-        label={text("next")}
-        disabled={busy || (page + 1) * size >= count}
-        onClick={() => change(page + 1)}
+      <Pagination
+        current={page + 1}
+        total={count}
+        pageSize={size}
+        disabled={busy}
+        onChange={(next) => change(next - 1)}
       />
     </div>
   );

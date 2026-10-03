@@ -151,6 +151,8 @@
   width: 100%;
 }
 .usage-history > .history-period {
+  min-height: 28px;
+  align-items: center;
   padding: 0;
 }
 .history-toggle.button {
@@ -200,13 +202,6 @@
   font-size: 10.5px;
   white-space: nowrap;
   color: var(--text-secondary);
-}
-.reading-title i {
-  flex: none;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--text-secondary);
 }
 .quota-bubble .history-period:first-child {
   padding-top: 0;

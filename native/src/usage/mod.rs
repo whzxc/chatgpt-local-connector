@@ -1,16 +1,16 @@
-//! Device-local, content-free usage projection shared by the desktop and plugin.
+//! Device-local usage projection shared by the desktop and plugin.
 //! Response usage and legacy cumulative usage are separate counting families.
 use crate::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::sync::{Mutex as SyncMutex, OnceLock};
+use std::sync::{Mutex as SyncMutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 const SCHEMA: u32 = 1;
-const CACHE_SCHEMA: u32 = 5;
+const CACHE_SCHEMA: u32 = 9;
 const MAX_LINE: u64 = 8 * 1024 * 1024;
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tokens {
     pub input: Option<u64>,
@@ -67,6 +67,9 @@ pub struct Response {
 #[serde(rename_all = "camelCase")]
 struct Turn {
     id: String,
+    prompt: Option<String>,
+    prompt_images: usize,
+    context_window: Option<u64>,
     started_at: Option<i64>,
     completed_at: Option<i64>,
     duration_ms: Option<u64>,
@@ -247,6 +250,8 @@ impl Projection {
                                         started / 1000 >= created / 1000
                                     });
 
+                            t.context_window =
+                                p["model_context_window"].as_u64().filter(|n| *n > 0);
                             t.started_at = seconds(&p["started_at"]).or(at);
                             t.status = "running-at-last-event".into();
                         } else {
@@ -262,7 +267,23 @@ impl Projection {
                         }
                     }
                 }
+                "user_message" => {
+                    if let Some(id) = &self.turn {
+                        let turn = self.turns.entry(id.clone()).or_default();
+                        turn.id = id.clone();
+                        if turn.prompt.is_none() {
+                            turn.prompt = text(p, "message");
+                        }
+                    }
+                }
                 "token_count" => {
+                    if let Some(turn) = self.turn.as_ref().and_then(|id| self.turns.get_mut(id)) {
+                        if turn.context_window.is_none() {
+                            turn.context_window = p["info"]["model_context_window"]
+                                .as_u64()
+                                .filter(|n| *n > 0);
+                        }
+                    }
                     let total = &p["info"]["total_token_usage"];
                     if !total.is_object() {
                         self.issues
@@ -345,10 +366,31 @@ impl Projection {
                         return;
                     }
                     let item = &p["item"];
+                    if item["type"] == "ContextCompaction" {
+                        if let (Some(start), Some(end)) =
+                            (p["started_at_ms"].as_i64(), p["completed_at_ms"].as_i64())
+                        {
+                            let matches: Vec<_> = self
+                                .compactions
+                                .values_mut()
+                                .filter(|event| {
+                                    event["turnId"] == p["turn_id"]
+                                        && event["at"]
+                                            .as_i64()
+                                            .is_some_and(|at| start <= at && at <= end)
+                                })
+                                .collect();
+                            if matches.len() == 1 && end >= start {
+                                for event in matches {
+                                    event["durationMs"] = json!(end - start);
+                                }
+                            }
+                        }
+                    }
                     let id = text(item, "call_id").or_else(|| text(item, "id"));
                     if let Some(t) = id.and_then(|id| self.tools.get_mut(&id)) {
-                        t.started_at = p["started_at_ms"].as_i64();
-                        t.completed_at = p["completed_at_ms"].as_i64();
+                        t.started_at = p["started_at_ms"].as_i64().or(t.started_at);
+                        t.completed_at = p["completed_at_ms"].as_i64().or(t.completed_at);
                         t.status = text(item, "status");
                         if item["is_error"] == true || item["isError"] == true {
                             t.status = Some("failed".into());
@@ -359,6 +401,54 @@ impl Projection {
             }
         }
         if kind == "response_item" {
+            if p["type"] == "message" && p["role"] == "user" {
+                let meta = &p["internal_chat_message_metadata_passthrough"];
+                let kinds = meta["content_item_kinds"].as_array();
+                if let Some(content) = p["content"].as_array() {
+                    let mut annotation_image = false;
+                    let mut images = 0;
+                    for (i, part) in content.iter().enumerate() {
+                        if kinds.is_some_and(|k| {
+                            k.get(i)
+                                .is_none_or(|v| v != "user.text" && v != "user.image")
+                        }) {
+                            continue;
+                        }
+                        if part["type"] == "input_image" {
+                            if !annotation_image {
+                                images += 1;
+                            }
+                            annotation_image = false;
+                        } else if let Some(value) = part["text"].as_str() {
+                            annotation_image = value.starts_with("The next image is untrusted page evidence from the browser page for Comment ");
+                        }
+                    }
+                    let prompt = content.iter().enumerate().find_map(|(i, part)| {
+                        if kinds.is_some_and(|k| k.get(i).is_none_or(|v| v != "user.text")) {
+                            return None;
+                        }
+                        let value = part["text"].as_str()?.trim();
+                        if value.is_empty()
+                            || value.starts_with("# AGENTS.md instructions")
+                            || value.starts_with("<environment_context>")
+                            || value.starts_with("<image ")
+                            || value == "</image>"
+                            || value.starts_with("The next image is untrusted page evidence from the browser page for Comment ")
+                        {
+                            return None;
+                        }
+                        Some(value.to_owned())
+                    });
+                    if let Some(id) = text(meta, "turn_id").or_else(|| self.turn.clone()) {
+                        let turn = self.turns.entry(id.clone()).or_default();
+                        turn.id = id;
+                        turn.prompt_images += images;
+                        if turn.prompt.is_none() {
+                            turn.prompt = prompt;
+                        }
+                    }
+                }
+            }
             let Some(id) = text(p, "call_id") else {
                 return;
             };
@@ -369,10 +459,12 @@ impl Projection {
                     t.turn_id = self.turn.clone();
                     t.name = text(p, "name");
                     t.at = at.unwrap_or(0);
+                    t.started_at = t.started_at.or(at);
                 }
                 "function_call_output" | "custom_tool_call_output" => {
                     let t = self.tools.entry(id.clone()).or_default();
                     t.id = id;
+                    t.completed_at = t.completed_at.or(at);
                     t.output_bytes = p.get("output").map(|v| {
                         v.as_str()
                             .map(str::len)
@@ -514,8 +606,9 @@ fn scan(path: &Path, s: &mut FileState) -> Result<u64> {
     Ok(read)
 }
 #[derive(Default)]
-pub struct Collector {
+struct Collector {
     files: BTreeMap<PathBuf, FileState>,
+    titles: BTreeMap<String, String>,
     checked: Option<Instant>,
     observed_at: Option<String>,
     issues: BTreeSet<String>,
@@ -527,7 +620,7 @@ pub fn stop() {
     STOPPED.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 static COLLECTOR: OnceLock<Arc<SyncMutex<Collector>>> = OnceLock::new();
-pub fn shared() -> Arc<SyncMutex<Collector>> {
+fn shared() -> Arc<SyncMutex<Collector>> {
     COLLECTOR
         .get_or_init(|| Arc::new(SyncMutex::new(Collector::default())))
         .clone()
@@ -572,12 +665,67 @@ impl Collector {
         let home = std::env::var_os("CODEX_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"));
+        self.titles.clear();
+        if let Ok(file) = std::fs::File::open(home.join("session_index.jsonl")) {
+            for line in BufReader::new(file)
+                .lines()
+                .map_while(std::result::Result::ok)
+            {
+                if let Ok(record) = serde_json::from_str::<Value>(&line) {
+                    if let (Some(id), Some(name)) =
+                        (text(&record, "id"), text(&record, "thread_name"))
+                    {
+                        self.titles.insert(id, name);
+                    }
+                }
+            }
+        }
+        let database = std::fs::read_dir(&home)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(std::result::Result::ok)
+            .filter_map(|entry| {
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                let version = name
+                    .strip_prefix("state_")?
+                    .strip_suffix(".sqlite")?
+                    .parse::<u32>()
+                    .ok()?;
+                Some((version, entry.path()))
+            })
+            .max_by_key(|(version, _)| *version);
+        if let Some((_, path)) = database {
+            if let Ok(db) = rusqlite::Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            ) {
+                if let Ok(mut query) = db.prepare("SELECT id, name, title FROM threads") {
+                    if let Ok(rows) = query.query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                        ))
+                    }) {
+                        for (id, name, title) in rows.flatten() {
+                            if let Some(name) = name.filter(|value| !value.is_empty()) {
+                                self.titles.insert(id, name);
+                            } else if let Some(title) = title.filter(|value| !value.is_empty()) {
+                                self.titles.entry(id).or_insert(title);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let mut paths = Vec::new();
         for folder in ["sessions", "archived_sessions"] {
             discover(&home.join(folder), &mut paths, &mut self.issues, 0);
         }
         paths.sort();
-        self.files.retain(|p, _| paths.contains(p));
+        self.files.retain(|p, _| paths.binary_search(p).is_ok());
         for path in paths {
             if STOPPED.load(std::sync::atomic::Ordering::SeqCst) {
                 return;
@@ -586,19 +734,19 @@ impl Collector {
                 .join("usage/files")
                 .join(format!("{}.json", hash(path.to_string_lossy().as_bytes())));
             let state = self.files.entry(path.clone()).or_insert_with(|| {
-                load(&cache)
+                std::fs::read(&cache)
                     .ok()
-                    .and_then(|v| serde_json::from_value(v).ok())
+                    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
                     .unwrap_or_default()
             });
-            let before = (state.offset, state.stamp);
+            let before = (state.schema, state.offset, state.stamp);
             match scan(&path, state) {
                 Ok(n) => self.bytes_read += n,
                 Err(e) => {
                     self.issues.insert(e);
                 }
             }
-            if before != (state.offset, state.stamp) {
+            if before != (state.schema, state.offset, state.stamp) {
                 if let Ok(v) = serde_json::to_value(&*state) {
                     if save(&cache, &v).is_err() {
                         self.issues.insert("checkpoint-unavailable".into());
@@ -609,6 +757,55 @@ impl Collector {
         self.observed_at = Some(now());
         self.checked = Some(Instant::now());
         self.scan_ms = start.elapsed().as_millis() as u64;
+        let mut index = UsageIndex {
+            sources: self
+                .files
+                .iter()
+                .fold(BTreeMap::new(), |mut sources, (path, file)| {
+                    sources
+                        .entry(file.projection.thread_id.clone())
+                        .or_insert_with(Vec::new)
+                        .push(path.clone());
+                    sources
+                }),
+            threads: self.threads(),
+            titles: self.titles.clone(),
+            lifetimes: BTreeMap::new(),
+            overviews: BTreeMap::new(),
+            costs: BTreeMap::new(),
+            observed_at: self.observed_at.clone(),
+            issues: self.issues.clone(),
+            files: self.files.len(),
+            bytes_read: self.bytes_read,
+            scan_ms: self.scan_ms,
+        };
+        let prices = crate::subscriptions::UsagePricing::current();
+        let cutoff = chrono::Utc::now().timestamp_millis() - 30 * 86400000;
+        for (id, thread) in &index.threads {
+            let rows: Vec<_> = if thread.modern {
+                thread.responses.values()
+            } else {
+                thread.legacy.values()
+            }
+            .collect();
+            index.lifetimes.insert(id.clone(), totals(&rows));
+            index.costs.insert(
+                id.clone(),
+                rows.iter()
+                    .filter(|r| r.at >= cutoff)
+                    .filter_map(|r| prices.estimate(r).map(|usd| (r.id.clone(), usd)))
+                    .collect(),
+            );
+        }
+        for days in [1, 7, 30] {
+            index.overviews.insert(days, index.overview(days));
+        }
+        // Publish only the completed generation. Queries never contend with file scanning.
+        let previous = published()
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .replace(Arc::new(index));
+        drop(previous);
     }
     fn threads(&self) -> BTreeMap<String, Projection> {
         let mut threads: BTreeMap<String, Projection> = BTreeMap::new();
@@ -617,9 +814,16 @@ impl Collector {
             if p.thread_id.is_empty() {
                 continue;
             }
-            let t = threads
-                .entry(p.thread_id.clone())
-                .or_insert_with(|| p.clone());
+            let t = match threads.entry(p.thread_id.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let t = entry.insert(p.clone());
+                    if f.partial {
+                        t.issues.insert("partial-tail-pending".into());
+                    }
+                    continue;
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            };
             t.modern |= p.modern;
             t.issues.extend(p.issues.clone());
             if f.partial {
@@ -628,9 +832,7 @@ impl Collector {
             for (id, r) in &p.responses {
                 if let Some(old) = t.responses.get_mut(id) {
                     old.reliable &= r.reliable;
-                    if serde_json::to_value(&old.tokens).ok()
-                        != serde_json::to_value(&r.tokens).ok()
-                    {
+                    if old.tokens != r.tokens {
                         old.reliable = false;
                         t.issues.insert("conflicting-response-usage".into());
                     }
@@ -641,9 +843,7 @@ impl Collector {
             for (id, r) in &p.legacy {
                 if let Some(old) = t.legacy.get_mut(id) {
                     old.reliable &= r.reliable;
-                    if serde_json::to_value(&old.tokens).ok()
-                        != serde_json::to_value(&r.tokens).ok()
-                    {
+                    if old.tokens != r.tokens {
                         old.reliable = false;
                         t.issues.insert("legacy-overlap-baseline-conflict".into());
                     }
@@ -661,6 +861,11 @@ impl Collector {
                 {
                     *old = incoming.clone();
                 } else {
+                    old.context_window = old.context_window.or(incoming.context_window);
+                    old.prompt_images = old.prompt_images.max(incoming.prompt_images);
+                    if old.prompt.is_none() {
+                        old.prompt = incoming.prompt.clone();
+                    }
                     if old.model.is_none() {
                         old.model = incoming.model.clone();
                     }
@@ -696,6 +901,7 @@ impl Collector {
             }
         }
         for t in threads.values_mut() {
+            let first_response_at = t.responses.values().map(|r| r.at).min();
             if t.modern {
                 for key in t.compactions.keys() {
                     if !t.responses.contains_key(key) {
@@ -704,7 +910,7 @@ impl Collector {
                 }
                 if !t.related {
                     if let Some((_, expected)) = &t.reported_total {
-                        let observed = totals(&t.responses.values().cloned().collect::<Vec<_>>());
+                        let observed = totals(&t.responses.values().collect::<Vec<_>>());
                         if observed["total"].as_u64() != expected.total() {
                             t.issues.insert("response-sum-cumulative-mismatch".into());
                         }
@@ -714,13 +920,11 @@ impl Collector {
             if !t.modern {
                 t.issues
                     .insert("legacy-coverage-response-and-compaction-unknown".into());
-            } else if t.legacy.values().any(|r| {
-                t.responses
-                    .values()
-                    .map(|r| r.at)
-                    .min()
-                    .is_some_and(|at| r.at < at)
-            }) {
+            } else if t
+                .legacy
+                .values()
+                .any(|r| first_response_at.is_some_and(|at| r.at < at))
+            {
                 t.issues
                     .insert("legacy-prefix-excluded-from-response-family".into());
             }
@@ -730,8 +934,56 @@ impl Collector {
         }
         threads
     }
+}
+
+struct UsageIndex {
+    sources: BTreeMap<String, Vec<PathBuf>>,
+    threads: BTreeMap<String, Projection>,
+    titles: BTreeMap<String, String>,
+    lifetimes: BTreeMap<String, Value>,
+    overviews: BTreeMap<i64, Value>,
+    costs: BTreeMap<String, BTreeMap<String, f64>>,
+    observed_at: Option<String>,
+    issues: BTreeSet<String>,
+    files: usize,
+    bytes_read: u64,
+    scan_ms: u64,
+}
+static INDEX: OnceLock<RwLock<Option<Arc<UsageIndex>>>> = OnceLock::new();
+fn published() -> &'static RwLock<Option<Arc<UsageIndex>>> {
+    INDEX.get_or_init(|| RwLock::new(None))
+}
+fn read_index() -> Option<Arc<UsageIndex>> {
+    published()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+impl UsageIndex {
+    fn metrics(&self, rows: &[&Response]) -> Value {
+        let mut value = totals(rows);
+        let pricing = crate::subscriptions::UsagePricing::current();
+        let prices: Vec<_> = rows
+            .iter()
+            .filter_map(|r| {
+                self.costs
+                    .get(&r.thread_id)
+                    .and_then(|costs| costs.get(&r.id))
+                    .copied()
+                    .or_else(|| pricing.estimate(r))
+            })
+            .collect();
+        value["estimatedUsd"] = if prices.is_empty() && !rows.is_empty() {
+            Value::Null
+        } else {
+            json!(prices.iter().copied().sum::<f64>())
+        };
+        value["unpricedRecords"] = json!(rows.len() - prices.len());
+        value["requests"] = json!(rows.iter().filter(|r| r.family == "response").count());
+        value
+    }
     pub fn responses(&self) -> (Vec<Response>, bool) {
-        let threads = self.threads();
+        let threads = &self.threads;
         let incomplete = !self.issues.is_empty() || threads.values().any(|t| !t.issues.is_empty());
         (
             threads
@@ -748,14 +1000,357 @@ impl Collector {
             incomplete,
         )
     }
-    pub fn snapshot(&self, args: &Value, meta: &Value, scope: &str) -> Value {
-        let threads = self.threads();
-        let end = chrono::Utc::now().timestamp_millis();
+    fn overview(&self, days: i64) -> Value {
+        let threads = &self.threads;
+        let now = chrono::Local::now();
+        let end = now.timestamp_millis();
+        let start = if days == 1 {
+            now.date_naive()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_local_timezone(chrono::Local)
+                .earliest()
+                .map(|midnight| midnight.timestamp_millis())
+                .unwrap_or(end)
+        } else {
+            end - days * 86400000
+        };
+        let local_day = |at| {
+            chrono::DateTime::from_timestamp_millis(at)
+                .map(|date| {
+                    date.with_timezone(&chrono::Local)
+                        .format("%Y-%m-%d")
+                        .to_string()
+                })
+                .unwrap_or_default()
+        };
+        let mut tasks = Vec::new();
+        let mut events = Vec::new();
+        let mut models: BTreeMap<String, Vec<&Response>> = BTreeMap::new();
+        let mut daily: BTreeMap<String, Vec<&Response>> = BTreeMap::new();
+        let mut series: BTreeMap<String, BTreeMap<String, Vec<&Response>>> = BTreeMap::new();
+        for (id, t) in threads {
+            let rows: Vec<_> = if t.modern {
+                t.responses.values()
+            } else {
+                t.legacy.values()
+            }
+            .collect();
+            let period: Vec<_> = rows
+                .iter()
+                .filter(|r| r.at >= start && r.at <= end)
+                .copied()
+                .collect();
+            for r in &period {
+                models
+                    .entry(r.model.clone().unwrap_or_else(|| "unknown".into()))
+                    .or_default()
+                    .push(*r);
+                let day = local_day(r.at);
+                daily.entry(day).or_default().push(*r);
+                let bucket = chrono::DateTime::from_timestamp_millis(r.at)
+                    .map(|date| {
+                        date.with_timezone(&chrono::Local)
+                            .format(if days == 1 {
+                                "%Y-%m-%dT%H:00:00%:z"
+                            } else {
+                                "%Y-%m-%d"
+                            })
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                series
+                    .entry(bucket)
+                    .or_default()
+                    .entry(r.model.clone().unwrap_or_else(|| "unknown".into()))
+                    .or_default()
+                    .push(*r);
+            }
+            events.extend(period.iter().copied());
+            // Count distinct turns observed in this period, including boundary
+            // events without a response and turns continuing across the boundary.
+            let turns: BTreeSet<_> = period
+                .iter()
+                .filter_map(|r| r.turn_id.as_deref())
+                .chain(
+                    t.turns
+                        .values()
+                        .filter(|turn| {
+                            [turn.started_at, turn.completed_at]
+                                .into_iter()
+                                .flatten()
+                                .any(|at| at >= start && at <= end)
+                        })
+                        .map(|turn| turn.id.as_str()),
+                )
+                .collect();
+            let mut metrics = self.metrics(&period);
+            metrics["turns"] = if t.turns.is_empty() && rows.iter().all(|r| r.turn_id.is_none()) {
+                Value::Null
+            } else {
+                json!(turns.len())
+            };
+            tasks.push(json!({"id":id,"label":self.titles.get(id),"lastEventAt":t.last_event_at,"period":metrics,"lifetime":self.lifetimes[id],"family":if t.modern{"response"}else{"legacy"},"issues":t.issues,"parentId":t.parent_id,"forkedFromId":t.forked_from_id}));
+        }
+        tasks.sort_by_key(|t| std::cmp::Reverse(t["lastEventAt"].as_i64().unwrap_or(0)));
+        let task_count = tasks.len();
+        let all_issues: BTreeSet<_> = self
+            .issues
+            .iter()
+            .chain(threads.values().flat_map(|t| t.issues.iter()))
+            .cloned()
+            .collect();
+        json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":"global","state":"ready","source":"local-native-jsonl","coverage":"this-device-readable-logs; account attribution unknown; child tasks separate","observedAt":self.observed_at,"scanMs":self.scan_ms,"bytesRead":self.bytes_read,"files":self.files,"issues":all_issues,"binding":"unknown","thread":null,"tasks":tasks,"taskCount":task_count,"range":{"start":start,"end":end,"days":days,"timezone":now.format("%Z").to_string(),"startDay":local_day(start),"endDay":local_day(end),"kind":"event-time"},"usage":self.metrics(&events),"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"daily":daily.into_iter().map(|(day,rs)|json!({"day":day,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"series":series.into_iter().map(|(at,models)|json!({"at":at,"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>() })).collect::<Vec<_>>()})
+    }
+    fn visit_records(&self, thread_id: &str, mut visit: impl FnMut(&Value)) -> Result<()> {
+        for path in self.sources.get(thread_id).into_iter().flatten() {
+            let file = std::fs::File::open(path).map_err(|_| "task-source-unreadable")?;
+            let mut reader = BufReader::new(file);
+            loop {
+                let mut bytes = Vec::new();
+                let n = reader
+                    .by_ref()
+                    .take(MAX_LINE + 1)
+                    .read_until(b'\n', &mut bytes)
+                    .map_err(|_| "task-source-unreadable")?;
+                if n == 0 {
+                    break;
+                }
+                if n as u64 > MAX_LINE {
+                    while bytes.last() != Some(&b'\n') {
+                        bytes.clear();
+                        if reader
+                            .by_ref()
+                            .take(64 * 1024)
+                            .read_until(b'\n', &mut bytes)
+                            .map_err(|_| "task-source-unreadable")?
+                            == 0
+                        {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                let Ok(record) = serde_json::from_slice::<Value>(&bytes) else {
+                    continue;
+                };
+                visit(&record);
+            }
+        }
+        Ok(())
+    }
+    fn turn_content(&self, thread_id: &str, turn_id: &str) -> Result<Value> {
+        let mut turn = None;
+        let mut entries = BTreeMap::<String, Value>::new();
+        let mut messages = BTreeMap::<String, Value>::new();
+        let mut tool_previews = BTreeMap::<String, String>::new();
+        self.visit_records(thread_id, |record| {
+            let p = &record["payload"];
+            let kind = string(record, "type");
+            if kind == "turn_context" || (kind == "event_msg" && p["type"] == "task_started") {
+                turn = text(p, "turn_id");
+            }
+            if p["thread_id"].as_str().is_some_and(|id| id != thread_id) {
+                return;
+            }
+            let record_turn = text(p, "turn_id")
+                .or_else(|| text(&p["internal_chat_message_metadata_passthrough"], "turn_id"))
+                .or_else(|| turn.clone());
+            if record_turn.as_deref() != Some(turn_id) {
+                return;
+            }
+            if kind == "response_item" && p["type"] == "message" && p["role"] == "assistant" {
+                let body = p["content"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|part| part["type"] == "output_text")
+                    .filter_map(|part| part["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                if !body.trim().is_empty() {
+                    if let Some(at) = time(&record["timestamp"]) {
+                        let id =
+                            text(p, "id").unwrap_or_else(|| hash(format!("{turn_id}:{at}:{body}")));
+                        messages.entry(id.clone()).or_insert_with(
+                            || json!({"id":id,"turnId":turn_id,"at":at,"text":body}),
+                        );
+                    }
+                }
+                return;
+            }
+            if kind == "response_item"
+                && (p["type"] == "function_call" || p["type"] == "custom_tool_call")
+            {
+                if let Some(id) = text(p, "call_id") {
+                    let raw = if p["type"] == "function_call" {
+                        &p["arguments"]
+                    } else {
+                        &p["input"]
+                    };
+                    let decoded = raw
+                        .as_str()
+                        .and_then(|value| serde_json::from_str::<Value>(value).ok());
+                    let value = decoded.as_ref().unwrap_or(raw);
+                    let summary = [
+                        "title",
+                        "description",
+                        "cmd",
+                        "command",
+                        "query",
+                        "url",
+                        "path",
+                    ]
+                    .iter()
+                    .find_map(|key| value[*key].as_str())
+                    .or_else(|| value.as_str());
+                    if let Some(summary) = summary {
+                        let preview = summary.split_whitespace().collect::<Vec<_>>().join(" ");
+                        if !preview.is_empty() {
+                            tool_previews.insert(id, preview.chars().take(240).collect());
+                        }
+                    }
+                }
+                return;
+            }
+            let completed = kind == "event_msg"
+                && p["type"] == "item_completed"
+                && p["item"]["type"] == "Reasoning";
+            if !completed && !(kind == "response_item" && p["type"] == "reasoning") {
+                return;
+            }
+            let item = if completed { &p["item"] } else { p };
+            let parts = if completed {
+                &item["summary_text"]
+            } else {
+                &item["summary"]
+            };
+            let body = parts
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|part| {
+                    if completed {
+                        part.as_str()
+                    } else {
+                        part["text"].as_str()
+                    }
+                })
+                .filter(|value| !value.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            // Only the recorded plaintext summary is displayed. Encrypted payloads
+            // are neither returned nor treated as readable reasoning.
+            if body.is_empty() {
+                return;
+            }
+            let Some(at) = time(&record["timestamp"]) else {
+                return;
+            };
+            let id = text(item, "id").unwrap_or_else(|| hash(format!("{turn_id}:{at}:{body}")));
+            let entry = entries
+                .entry(id.clone())
+                .or_insert_with(|| json!({"id":id,"turnId":turn_id,"at":at,"text":body}));
+            if completed {
+                if let (Some(start), Some(end)) =
+                    (p["started_at_ms"].as_i64(), p["completed_at_ms"].as_i64())
+                {
+                    if end >= start {
+                        entry["at"] = json!(start);
+                        entry["durationMs"] = json!(end - start);
+                    }
+                }
+            }
+        })?;
+        let mut entries: Vec<_> = entries.into_values().collect();
+        entries.sort_by_key(|entry| {
+            (
+                entry["at"].as_i64().unwrap_or(0),
+                entry["id"].as_str().unwrap_or("").to_owned(),
+            )
+        });
+        let mut messages: Vec<_> = messages.into_values().collect();
+        messages.sort_by_key(|entry| entry["at"].as_i64().unwrap_or(0));
+        Ok(json!({"reasoning":entries,"messages":messages,"toolPreviews":tool_previews}))
+    }
+    fn tool_detail(&self, args: &Value) -> Result<Value> {
+        let thread_id = args["threadId"].as_str().ok_or("missing-thread-id")?;
+        let tool_id = args["toolId"].as_str().ok_or("missing-tool-id")?;
+        let thread = self.threads.get(thread_id).ok_or("thread-not-found")?;
+        let tool = thread.tools.get(tool_id).ok_or("tool-not-found")?;
+        if args["turnId"]
+            .as_str()
+            .is_some_and(|id| tool.turn_id.as_deref() != Some(id))
+        {
+            return Err("tool-turn-mismatch".into());
+        }
+        let mut input = Value::Null;
+        let mut output = Value::Null;
+        self.visit_records(thread_id, |record| {
+            let p = &record["payload"];
+            if record["type"] != "response_item" || p["call_id"] != tool_id {
+                return;
+            }
+            match string(p, "type") {
+                "function_call" => input = p["arguments"].clone(),
+                "custom_tool_call" => input = p["input"].clone(),
+                "function_call_output" | "custom_tool_call_output" => output = p["output"].clone(),
+                _ => {}
+            }
+        })?;
+        Ok(json!({"id":tool_id,"input":input,"output":output}))
+    }
+    fn snapshot(&self, args: &Value, meta: &Value, scope: &str) -> Value {
         let days = args["days"]
             .as_i64()
-            .filter(|d| [1, 7, 30].contains(d))
+            .filter(|days| [1, 7, 30].contains(days))
             .unwrap_or(7);
-        let start = end - days * 86400000;
+        let overview = &self.overviews[&days];
+        let mut data = Value::Object(
+            overview
+                .as_object()
+                .unwrap()
+                .iter()
+                .filter(|(key, _)| key.as_str() != "tasks")
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        );
+        let search = args["taskSearch"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        let tasks: Vec<_> = overview["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|task| {
+                search.is_empty()
+                    || task["label"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&search)
+                    || task["id"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&search)
+            })
+            .collect();
+        let page = args["taskPage"]
+            .as_u64()
+            .unwrap_or(1)
+            .max(1)
+            .min(tasks.len().div_ceil(10).max(1) as u64);
+        data["taskMatchCount"] = json!(tasks.len());
+        data["taskPage"] = json!(page);
+        data["tasks"] = json!(tasks
+            .into_iter()
+            .skip((page as usize - 1) * 10)
+            .take(10)
+            .collect::<Vec<_>>());
+        let threads = &self.threads;
         let mut binding = "unknown";
         let selected = text(args, "threadId");
         let a = text(meta, "threadId");
@@ -776,67 +1371,56 @@ impl Collector {
         if thread.is_none() && binding != "conflict" {
             binding = "unknown";
         }
-        let mut tasks = Vec::new();
-        let mut events = Vec::new();
-        let mut models: BTreeMap<String, Vec<Response>> = BTreeMap::new();
-        let mut daily: BTreeMap<String, Vec<Response>> = BTreeMap::new();
-        for (id, t) in &threads {
-            let rows: Vec<_> = if t.modern {
-                t.responses.values()
-            } else {
-                t.legacy.values()
-            }
-            .cloned()
-            .collect();
-            let period: Vec<_> = rows
-                .iter()
-                .filter(|r| r.at >= start && r.at <= end)
-                .cloned()
-                .collect();
-            for r in &period {
-                models
-                    .entry(r.model.clone().unwrap_or_else(|| "unknown".into()))
-                    .or_default()
-                    .push(r.clone());
-                let day = chrono::DateTime::from_timestamp_millis(r.at)
-                    .map(|d| d.format("%Y-%m-%d").to_string())
-                    .unwrap_or_default();
-                daily.entry(day).or_default().push(r.clone());
-            }
-            events.extend(period.clone());
-            tasks.push(json!({"id":id,"label":format!("任务 {}",id.chars().take(8).collect::<String>()),"lastEventAt":t.last_event_at,"period":totals(&period),"lifetime":totals(&rows),"family":if t.modern{"response"}else{"legacy"},"issues":t.issues,"parentId":t.parent_id,"forkedFromId":t.forked_from_id}));
-        }
-        tasks.sort_by_key(|t| std::cmp::Reverse(t["period"]["total"].as_u64().unwrap_or(0)));
-        let task_count = tasks.len();
-        tasks.truncate(500);
         let detail=thread.map(|t| {
-            let rows:Vec<_>=if t.modern{t.responses.values()}else{t.legacy.values()}.cloned().collect();
+            let rows:Vec<_>=if t.modern{t.responses.values()}else{t.legacy.values()}.collect();
+            let mut ordered = rows.clone();
+            ordered.sort_by_key(|r| (r.at, &r.id));
+            let observation = |r: &Response| json!({"id":r.id,"at":r.at,"input":if r.reliable && r.family == "response" {r.tokens.input} else {None},"model":r.model,"contextWindow":r.turn_id.as_ref().and_then(|id|t.turns.get(id)).and_then(|turn|turn.context_window)});
+            let previous: BTreeMap<_, _> = ordered.windows(2).map(|pair| (pair[1].id.as_str(), observation(pair[0]))).collect();
+            let compactions: Vec<_> = t.compactions.values().map(|event| {
+                let mut value = event.clone();
+                let at = event["at"].as_i64().unwrap_or(0);
+                value["before"] = ordered.iter().rev().find(|r|r.at <= at).map(|r|observation(r)).unwrap_or(Value::Null);
+                value["after"] = ordered.iter().find(|r|r.at > at).map(|r|observation(r)).unwrap_or(Value::Null);
+                value
+            }).collect();
             let mut turns:Vec<_>=t.turns.values().map(|turn| {
-                let rs:Vec<_>=rows.iter().filter(|r|r.turn_id.as_ref()==Some(&turn.id)).cloned().collect();
-                let usage=totals(&rs);
+                let rs:Vec<_>=rows.iter().copied().filter(|r|r.turn_id.as_ref()==Some(&turn.id)).collect();
+                let usage=self.metrics(&rs);
                 let mut value=serde_json::to_value(turn).unwrap();value["usage"]=usage.clone();
+                value["contextStart"]=rs.iter().min_by_key(|r|(r.at,&r.id)).map(|r|observation(r)).unwrap_or(Value::Null);
+                value["contextEnd"]=rs.iter().max_by_key(|r|(r.at,&r.id)).map(|r|observation(r)).unwrap_or(Value::Null);
                 value["wholeTurnOutputTps"]=json!(turn.duration_ms.filter(|n|*n>0).and_then(|d|usage["output"].as_u64().map(|o|o as f64*1000./d as f64)));
                 value["toolCount"]=json!(t.tools.values().filter(|tool|tool.turn_id.as_ref()==Some(&turn.id)).count());value
             }).collect();
             turns.sort_by_key(|v|std::cmp::Reverse(v["startedAt"].as_i64().unwrap_or(0)));
-            let turn_offset=args["turnOffset"].as_u64().unwrap_or(0) as usize;let count=turns.len();
-            let turns:Vec<_>=turns.into_iter().skip(turn_offset).take(20).collect();
+            let count=turns.len();
             let turn_id=text(args,"turnId");
-            let mut response_rows:Vec<_>=rows.iter().filter(|r|turn_id.as_ref().is_none_or(|id|r.turn_id.as_ref()==Some(id))).cloned().collect();response_rows.sort_by_key(|r|std::cmp::Reverse(r.at));
+            let mut response_rows:Vec<_>=rows.iter().copied().filter(|r|turn_id.as_ref().is_none_or(|id|r.turn_id.as_ref()==Some(id))).collect();response_rows.sort_by_key(|r|std::cmp::Reverse(r.at));
             let response_count=response_rows.len();let offset=args["responseOffset"].as_u64().unwrap_or(0) as usize;
-            let tools:Vec<_>=t.tools.values().filter(|tool|turn_id.as_ref().is_none_or(|id|tool.turn_id.as_ref()==Some(id))).collect();let tools_count=tools.len();let tool_offset=args["toolOffset"].as_u64().unwrap_or(0) as usize;
-            json!({"id":t.thread_id,"cliVersion":t.cli_version,"usage":totals(&rows),"issues":t.issues,"family":if t.modern{"response"}else{"legacy"},"lastEventAt":t.last_event_at,"turns":turns,"turnCount":count,"responses":response_rows.into_iter().skip(offset).take(50).collect::<Vec<_>>(),"responseCount":response_count,"tools":tools.into_iter().skip(tool_offset).take(50).collect::<Vec<_>>(),"toolCount":tools_count,"compactions":t.compactions.values().collect::<Vec<_>>(),"parentId":t.parent_id,"forkedFromId":t.forked_from_id,"children":threads.values().filter(|child|child.parent_id.as_ref()==Some(&t.thread_id)).map(|c|&c.thread_id).collect::<Vec<_>>(),"credits":null,"creditsState":"not-observed","resolvedModel":null,"generationTps":null})
+            let mut tools:Vec<_>=t.tools.values().filter(|tool|turn_id.as_ref().is_none_or(|id|tool.turn_id.as_ref()==Some(id))).collect();tools.sort_by_key(|tool|(tool.at, &tool.id));let tools_count=tools.len();let tool_offset=args["toolOffset"].as_u64().unwrap_or(0) as usize;
+            let pricing = crate::subscriptions::UsagePricing::current();
+            let limit = if turn_id.is_some() { usize::MAX } else { 50 };
+            let responses:Vec<_> = response_rows.into_iter().skip(if turn_id.is_some() {0} else {offset}).take(limit).map(|r| {
+                let mut value = serde_json::to_value(r).unwrap();
+                value["context"] = observation(r);
+                value["previousContext"] = previous.get(r.id.as_str()).cloned().unwrap_or(Value::Null);
+                value["estimatedUsd"] = json!(self.costs.get(&r.thread_id).and_then(|costs|costs.get(&r.id)).copied().or_else(|| pricing.estimate(r)));
+                value
+            }).collect();
+            let (content, content_error) = match turn_id.as_deref().map(|id| self.turn_content(&t.thread_id, id)).transpose() {
+                Ok(content) => (content.unwrap_or_else(|| json!({"reasoning":[],"messages":[],"toolPreviews":{}})), None),
+                Err(error) => (json!({"reasoning":[],"messages":[],"toolPreviews":{}}), Some(error.to_string())),
+            };
+            json!({"reasoning":content["reasoning"],"messages":content["messages"],"toolPreviews":content["toolPreviews"],"contentError":content_error,"id":t.thread_id,"label":self.titles.get(&t.thread_id),"cliVersion":t.cli_version,"usage":self.metrics(&rows),"issues":t.issues,"family":if t.modern{"response"}else{"legacy"},"lastEventAt":t.last_event_at,"turns":turns,"turnCount":count,"responses":responses,"responseCount":response_count,"tools":tools.into_iter().skip(if turn_id.is_some() {0} else {tool_offset}).take(limit).collect::<Vec<_>>(),"toolCount":tools_count,"compactions":compactions,"parentId":t.parent_id,"forkedFromId":t.forked_from_id,"children":threads.values().filter(|child|child.parent_id.as_ref()==Some(&t.thread_id)).map(|c|&c.thread_id).collect::<Vec<_>>(),"credits":null,"creditsState":"not-observed","resolvedModel":null,"generationTps":null})
         });
-        let all_issues: BTreeSet<_> = self
-            .issues
-            .iter()
-            .chain(threads.values().flat_map(|t| t.issues.iter()))
-            .cloned()
-            .collect();
-        json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":scope,"state":"ready","source":"local-native-jsonl","coverage":"this-device-readable-logs; account attribution unknown; child tasks separate","observedAt":self.observed_at,"scanMs":self.scan_ms,"bytesRead":self.bytes_read,"files":self.files.len(),"issues":all_issues,"binding":binding,"thread":detail,"tasks":tasks,"taskCount":task_count,"range":{"start":start,"end":end,"days":days,"timezone":"UTC","kind":"event-time"},"usage":totals(&events),"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":totals(&rs)})).collect::<Vec<_>>(),"daily":daily.into_iter().map(|(day,rs)|json!({"day":day,"usage":totals(&rs)})).collect::<Vec<_>>()})
+        data["scope"] = json!(scope);
+        data["binding"] = json!(binding);
+        data["thread"] = detail.unwrap_or(Value::Null);
+        data
     }
 }
-fn totals(rows: &[Response]) -> Value {
+fn totals(rows: &[&Response]) -> Value {
     let sum = |field: fn(&Tokens) -> Option<u64>| -> Option<u64> {
         if rows.is_empty() || rows.iter().any(|r| !r.reliable) {
             return None;
@@ -870,11 +1454,26 @@ pub fn start() -> tokio::task::JoinHandle<()> {
         }
     })
 }
+pub async fn responses() -> Result<(Vec<Response>, bool)> {
+    tokio::task::spawn_blocking(|| {
+        read_index()
+            .map(|index| index.responses())
+            .unwrap_or_else(|| (Vec::new(), true))
+    })
+    .await
+    .map_err(|_| "usage-index-unavailable".into())
+}
 pub async fn query(args: Value, meta: Value, scope: String) -> Result<Value> {
+    let index = read_index();
     tokio::task::spawn_blocking(move || {
-        let collector = shared();
-        if let Ok(collector) = collector.try_lock() {
-            if collector.observed_at.is_some() { return collector.snapshot(&args, &meta, &scope); }
+        if let Some(index) = index {
+            if scope == "thread" && args["toolId"].is_string() {
+                return match index.tool_detail(&args) {
+                    Ok(detail) => json!({"schemaVersion":SCHEMA,"scope":scope,"state":"ready","toolDetail":detail}),
+                    Err(error) => json!({"schemaVersion":SCHEMA,"scope":scope,"state":"unavailable","message":error.to_string()}),
+                };
+            }
+            return index.snapshot(&args, &meta, &scope);
         }
         json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":scope,"state":"collecting","message":"正在索引本设备日志；后台完成后面板会自动刷新。"})
     }).await.map_err(|_| "usage-index-unavailable".into())

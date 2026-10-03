@@ -1,6 +1,7 @@
 //! One core-owned subscription scheduler. No dependency on ingress or desktop.
 mod cache;
 mod providers;
+pub(crate) use providers::history::UsagePricing;
 pub mod types;
 use crate::{agents::AgentHost, control::Control, *};
 use providers::REGISTRY;

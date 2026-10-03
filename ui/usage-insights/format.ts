@@ -56,3 +56,12 @@ export const windowLabel = (value: string) => {
 
 export const count = (kind: "Turns" | "Responses" | "Tools", value: number) =>
   text(`count${kind}${value === 1 ? "One" : ""}`, { n: number(value) });
+
+export const money = (value: number | null | undefined, compact = false) => value == null ? "—" : `≈${new Intl.NumberFormat(locale.get(), {style:"currency", currency:"USD", currencyDisplay:"narrowSymbol", notation:compact ? "compact" : "standard", minimumFractionDigits:compact ? 0 : 2, maximumFractionDigits:compact ? 1 : 2}).format(value)}`;
+
+export function promptPreview(value: string | null, images = 0) {
+  const content = value?.trim() ?? "";
+  const annotations = content.startsWith("# Browser comments:") ? (content.match(/^## User Comment \d+/gm) ?? []).length : 0;
+  const request = content.includes("## My request:") ? content.slice(content.indexOf("## My request:") + "## My request:".length).trim() : annotations ? "" : content;
+  return [images > 0 ? `【${images} images】` : null, annotations > 0 ? `【${annotations} annotations】` : null, request].filter(Boolean).join(" ");
+}

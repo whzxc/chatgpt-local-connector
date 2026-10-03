@@ -22,6 +22,7 @@ import {
   Progress as R,
 } from "radix-ui";
 import {
+  X,
   Check,
   ChevronDown,
   ChevronUp,
@@ -32,9 +33,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { t } from "../../i18n";
+import { AnimatedSize } from "./AnimatedSize";
+export { AnimatedSize, AnimatedCollapse } from "./AnimatedSize";
 import { isDesktop, copyText } from "../../platform";
 import { HoverScope } from "./HoverScope";
 export { HoverScope };
+export { HoverPreviewGroup } from "./HoverPreviewGroup";
+export { ErrorCallout, LoadingIndicator } from "./Feedback";
+export { DataTable, Pagination } from "./DataTable";
 export function Icon({
   icon: Component,
   size = 16,
@@ -70,7 +76,7 @@ export function Button({
       type="button"
       {...props}
       disabled={disabled || busy}
-      aria-busy={busy || undefined}
+      aria-busy={busy || props["aria-busy"]}
       className={`button ${variant} ${className}`}
     >
       {busy && <Icon icon={LoaderCircle} className="spin" />}
@@ -81,21 +87,26 @@ export function Button({
 export function IconButton({
   icon,
   label,
+  busy = false,
+  size = 20,
   className = "",
   ...props
 }: Omit<Parameters<typeof Button>[0], "children" | "title"> & {
   icon: LucideIcon;
   label: string;
+  size?: 16 | 20;
 }) {
   return (
     <Tooltip text={label}>
       <Button
         variant="ghost"
         {...props}
+        disabled={props.disabled || busy}
+        aria-busy={busy || undefined}
         aria-label={label}
         className={`icon-button ${className}`}
       >
-        <Icon icon={icon} size={20} />
+        <Icon icon={busy ? LoaderCircle : icon} size={size} className={busy ? "spin" : ""} />
       </Button>
     </Tooltip>
   );
@@ -296,6 +307,7 @@ export function SingleChoice({
   label,
   disabled,
   swatches = false,
+  compact = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -303,17 +315,21 @@ export function SingleChoice({
   label: string;
   disabled?: boolean;
   swatches?: boolean;
+  compact?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const measure = useRef<HTMLDivElement>(null);
   const [fits, setFits] = useState(false);
+  const [contentWidth, setContentWidth] = useState<number>();
   useLayoutEffect(() => {
-    const check = () =>
+    const check = () => {
+      setContentWidth(measure.current?.scrollWidth);
       setFits(
         !!container.current &&
           !!measure.current &&
           measure.current.scrollWidth <= container.current.clientWidth,
       );
+    };
     check();
     const observer = new ResizeObserver(check);
     if (container.current) observer.observe(container.current);
@@ -323,6 +339,7 @@ export function SingleChoice({
   return (
     <div
       ref={container}
+      style={compact ? { width: contentWidth } : undefined}
       className={`choice ${swatches ? "choice-swatches" : ""}`}
     >
       {!swatches && options.length <= 5 && (
@@ -411,6 +428,15 @@ export function SingleChoice({
       )}
     </div>
   );
+}
+export function DetailDialog({ trigger, title, children }: { trigger: ReactNode; title: ReactNode; children: ReactNode }) {
+  return <D.Root><D.Trigger asChild>{trigger}</D.Trigger><D.Portal>
+    <D.Overlay className="detail-dialog-overlay" />
+    <D.Content className="detail-dialog" aria-describedby={undefined}>
+      <header><D.Title>{title}</D.Title><D.Close asChild><IconButton icon={X} label={t("close")} /></D.Close></header>
+      <AnimatedSize className="detail-dialog-body" contentClassName="detail-dialog-content">{children}</AnimatedSize>
+    </D.Content>
+  </D.Portal></D.Root>;
 }
 export const DialogClose = D.Close;
 export { default as Dialog } from "../ElasticPanel";
@@ -681,3 +707,7 @@ export function CopyField({
     </div>
   );
 }
+
+export { StackedBarChart } from "./StackedBarChart";
+
+import "./DetailDialog.css";

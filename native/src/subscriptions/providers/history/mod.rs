@@ -34,13 +34,41 @@ pub(super) struct Scan {
 }
 type Cache = HashMap<PathBuf, (u64, std::time::SystemTime, Scan)>;
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+pub(crate) struct UsagePricing(std::sync::Arc<pricing::Pricing>);
+impl UsagePricing {
+    pub(crate) fn current() -> Self {
+        Self(pricing::current())
+    }
+    pub(crate) fn estimate(&self, r: &crate::usage::Response) -> Option<f64> {
+        if !r.reliable {
+            return None;
+        }
+        let cached = r.tokens.cached?;
+        cost(
+            &Event {
+                at: r.at,
+                model: r.model.clone().unwrap_or_default(),
+                input: r.tokens.input?.checked_sub(cached)?,
+                cached,
+                output: r.tokens.output?,
+                write: 0,
+                fast: r
+                    .service_tier
+                    .as_deref()
+                    .is_some_and(|s| ["fast", "priority"].contains(&s)),
+            },
+            "codex",
+            &self.0,
+        )
+    }
+}
 pub async fn local(provider: &str) -> Value {
     if provider == "codex" {
         let _ = crate::usage::refresh().await;
-        let (rows, incomplete) = crate::usage::shared()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .responses();
+        let (rows, incomplete) = match crate::usage::responses().await {
+            Ok(value) => value,
+            Err(_) => return json!({"error":"history-unavailable"}),
+        };
         let mut missing = incomplete;
         let events = rows
             .into_iter()

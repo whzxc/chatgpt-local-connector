@@ -33,11 +33,17 @@ export default function QuotaBubble({
   rail = false,
   onPopover,
   detailPlacement = "left",
+  onRefresh,
+  showHistory = true,
+  link = true,
 }: {
   provider: ProviderSnapshot;
   rail?: boolean;
   onPopover?: (points: [number, number][]) => void;
   detailPlacement?: "left" | "right" | "bottom";
+  onRefresh?: () => Promise<void>;
+  showHistory?: boolean;
+  link?: boolean;
 }) {
   const now = useNow(),
     reset = resetDisplay.use(),
@@ -45,7 +51,7 @@ export default function QuotaBubble({
   quotaDisplay.use();
   const [requesting, setRequesting] = useState(false),
     [error, setError] = useState("");
-  const usageUrl = usageLink(provider),
+  const usageUrl = link ? usageLink(provider) : undefined,
     notices: string[] = [];
   if (error) notices.push(error);
   if (provider.error)
@@ -82,7 +88,7 @@ export default function QuotaBubble({
     setRequesting(true);
     setError("");
     try {
-      await refreshSubscription(provider.providerId);
+      await (onRefresh ? onRefresh() : refreshSubscription(provider.providerId));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -252,6 +258,7 @@ export default function QuotaBubble({
               </time>
               <IconButton
                 icon={RefreshCw}
+                size={16}
                 label={t("usageRefresh")}
                 busy={requesting || provider.refreshing}
                 disabled={!provider.eligible || !provider.selected}
@@ -273,9 +280,6 @@ export default function QuotaBubble({
                       <span className="quota-estimate">
                         ≈ {estimate.amount}
                       </span>
-                    )}
-                    {w.id === provider.displayWindowId && (
-                      <i role="img" aria-label={t("usageMainDisplay")} />
                     )}
                     {pace?.label && (
                       <Button
@@ -357,7 +361,13 @@ export default function QuotaBubble({
                   </Button>
                 </div>
               )}
-              {provider.history?.periods
+              {(provider.creditBalance ?? 0) > 0 && (
+                <div className="history-period">
+                  <span>{t("usageCreditBalance")}</span>
+                  <span>{new Intl.NumberFormat().format(provider.creditBalance!)} credits</span>
+                </div>
+              )}
+              {showHistory && provider.history?.periods
                 ?.filter((row) => periods.includes(row.id))
                 .map((row) => (
                   <div className="history-period" key={row.id}>
