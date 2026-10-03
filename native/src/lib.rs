@@ -110,10 +110,12 @@ pub fn private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn save(path: &Path, value: &Value) -> Result<()> {
+    save_bytes(path, &serde_json::to_vec(value).map_err(|e| e.to_string())?)
+}
+pub fn save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     private_dir(path.parent().ok_or("invalid path")?)?;
     let temp = path.with_extension(format!("{}.tmp", id()));
-    std::fs::write(&temp, serde_json::to_vec(value).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    std::fs::write(&temp, bytes).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -154,10 +156,30 @@ pub struct Events {
     pub sequence: u64,
     pub pending: std::collections::HashMap<String, Value>,
     pub storage_error: Option<String>,
+    pub durable: bool,
+    desktop_states: std::collections::HashMap<(String, String), String>,
 }
 pub type SharedEvents = Arc<Mutex<Events>>;
 pub async fn event(events: &SharedEvents, session: &str, method: &str, params: Value) {
     let mut e = events.lock().await;
+    // All short-lived IPC readers share this event stream. Deduplicate here,
+    // rather than per connection, so repeated follow/read calls stay bounded.
+    if method == "desktop/thread-stream-state-changed" {
+        let key = (
+            string(&params, "conversationId").to_owned(),
+            string(&params, "ownerClientId").to_owned(),
+        );
+        let digest = hash(params["change"].to_string());
+        if e.desktop_states.get(&key) == Some(&digest) {
+            return;
+        }
+        if !e.desktop_states.contains_key(&key) && e.desktop_states.len() >= 2000 {
+            if let Some(old) = e.desktop_states.keys().next().cloned() {
+                e.desktop_states.remove(&old);
+            }
+        }
+        e.desktop_states.insert(key, digest);
+    }
     e.sequence += 1;
     let row = json!({"cursor":e.sequence,"backendSession":session,"method":method,"params":params,"time":now()});
     e.bytes += row.to_string().len();
@@ -167,22 +189,17 @@ pub async fn event(events: &SharedEvents, session: &str, method: &str, params: V
         let removed = e.rows.remove(0);
         e.bytes -= removed.to_string().len();
     }
-    let dir = root().join("outputs");
-    let result = (|| -> Result<()> {
-        use std::io::Write;
-        private_dir(&dir)?;
-        let mut opts = std::fs::OpenOptions::new();
-        opts.create(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        let mut f = opts
-            .open(dir.join(format!("{session}.jsonl")))
-            .map_err(|x| x.to_string())?;
-        writeln!(f, "{row}").map_err(|x| x.to_string())
-    })();
+    // Codex owns its history. Only Connector-owned Agent streams need an archive.
+    if !e.durable {
+        return;
+    }
+    let session = session.to_owned();
+    let result = tokio::task::spawn_blocking(move || {
+        crate::kernel::event_store::append(&session, &format!("{row}\n"))
+    })
+    .await
+    .map_err(|error| error.to_string())
+    .and_then(|result| result);
     if let Err(err) = result {
         e.storage_error = Some(err);
     }

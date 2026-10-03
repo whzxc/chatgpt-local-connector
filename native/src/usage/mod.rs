@@ -8,7 +8,7 @@ use std::sync::{Mutex as SyncMutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 const SCHEMA: u32 = 1;
-const CACHE_SCHEMA: u32 = 9;
+const CACHE_SCHEMA: u32 = 10;
 const MAX_LINE: u64 = 8 * 1024 * 1024;
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,11 +63,69 @@ pub struct Response {
     pub family: String,
     pub reliable: bool,
 }
+// The original prompt remains in the native log; the checkpoint stores its location.
+#[derive(Clone, Serialize, Deserialize)]
+struct PromptSource {
+    path: PathBuf,
+    offset: u64,
+    bytes: usize,
+    sha256: String,
+}
+impl PromptSource {
+    fn read(&self) -> Result<Option<String>> {
+        if self.bytes as u64 > MAX_LINE {
+            return Err("prompt-source-too-large".into());
+        }
+        let mut file = std::fs::File::open(&self.path).map_err(|_| "prompt-source-unreadable")?;
+        file.seek(SeekFrom::Start(self.offset))
+            .map_err(|_| "prompt-source-unreadable")?;
+        let mut bytes = vec![0; self.bytes];
+        file.read_exact(&mut bytes)
+            .map_err(|_| "prompt-source-unreadable")?;
+        if hash(&bytes) != self.sha256 {
+            return Err("prompt-source-changed".into());
+        }
+        let record: Value = serde_json::from_slice(&bytes).map_err(|_| "prompt-source-invalid")?;
+        Ok(prompt_text(&record).map(str::to_owned))
+    }
+}
+fn prompt_text(record: &Value) -> Option<&str> {
+    let p = &record["payload"];
+    if record["type"] == "event_msg" && p["type"] == "user_message" {
+        return p["message"].as_str().filter(|s| !s.is_empty());
+    }
+    if record["type"] != "response_item" || p["type"] != "message" || p["role"] != "user" {
+        return None;
+    }
+    let kinds = p["internal_chat_message_metadata_passthrough"]["content_item_kinds"].as_array();
+    p["content"]
+        .as_array()?
+        .iter()
+        .enumerate()
+        .find_map(|(i, part)| {
+            if kinds.is_some_and(|k| k.get(i).is_none_or(|v| v != "user.text")) {
+                return None;
+            }
+            let value = part["text"].as_str()?.trim();
+            if value.is_empty()
+                || value.starts_with("# AGENTS.md instructions")
+                || value.starts_with("<environment_context>")
+                || value.starts_with("<image ")
+                || value == "</image>"
+                || value.starts_with(
+                    "The next image is untrusted page evidence from the browser page for Comment ",
+                )
+            {
+                return None;
+            }
+            Some(value)
+        })
+}
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Turn {
     id: String,
-    prompt: Option<String>,
+    prompt: Option<PromptSource>,
     prompt_images: usize,
     context_window: Option<u64>,
     started_at: Option<i64>,
@@ -128,7 +186,15 @@ fn seconds(v: &Value) -> Option<i64> {
     v.as_f64().map(|n| (n * 1000.) as i64)
 }
 impl Projection {
-    fn ingest(&mut self, v: Value) {
+    fn ingest(&mut self, v: Value, path: &Path, offset: u64, bytes: &[u8]) {
+        let prompt_source = || {
+            prompt_text(&v).map(|_| PromptSource {
+                path: path.into(),
+                offset,
+                bytes: bytes.len(),
+                sha256: hash(bytes),
+            })
+        };
         let p = &v["payload"];
         let at = time(&v["timestamp"]);
         let kind = string(&v, "type");
@@ -272,7 +338,7 @@ impl Projection {
                         let turn = self.turns.entry(id.clone()).or_default();
                         turn.id = id.clone();
                         if turn.prompt.is_none() {
-                            turn.prompt = text(p, "message");
+                            turn.prompt = prompt_source();
                         }
                     }
                 }
@@ -423,28 +489,12 @@ impl Projection {
                             annotation_image = value.starts_with("The next image is untrusted page evidence from the browser page for Comment ");
                         }
                     }
-                    let prompt = content.iter().enumerate().find_map(|(i, part)| {
-                        if kinds.is_some_and(|k| k.get(i).is_none_or(|v| v != "user.text")) {
-                            return None;
-                        }
-                        let value = part["text"].as_str()?.trim();
-                        if value.is_empty()
-                            || value.starts_with("# AGENTS.md instructions")
-                            || value.starts_with("<environment_context>")
-                            || value.starts_with("<image ")
-                            || value == "</image>"
-                            || value.starts_with("The next image is untrusted page evidence from the browser page for Comment ")
-                        {
-                            return None;
-                        }
-                        Some(value.to_owned())
-                    });
                     if let Some(id) = text(meta, "turn_id").or_else(|| self.turn.clone()) {
                         let turn = self.turns.entry(id.clone()).or_default();
                         turn.id = id;
                         turn.prompt_images += images;
                         if turn.prompt.is_none() {
-                            turn.prompt = prompt;
+                            turn.prompt = prompt_source();
                         }
                     }
                 }
@@ -589,7 +639,7 @@ fn scan(path: &Path, s: &mut FileState) -> Result<u64> {
         }
         s.offset += n as u64;
         match serde_json::from_slice(&bytes) {
-            Ok(v) => s.projection.ingest(v),
+            Ok(v) => s.projection.ingest(v, path, s.offset - n as u64, &bytes),
             Err(_) => {
                 s.projection.issues.insert("invalid-json-line".into());
             }
@@ -730,13 +780,16 @@ impl Collector {
             if STOPPED.load(std::sync::atomic::Ordering::SeqCst) {
                 return;
             }
-            let cache = root()
-                .join("usage/files")
-                .join(format!("{}.json", hash(path.to_string_lossy().as_bytes())));
+            let cache = root().join("usage/files").join(format!(
+                "{}.json.gz",
+                hash(path.to_string_lossy().as_bytes())
+            ));
             let state = self.files.entry(path.clone()).or_insert_with(|| {
-                std::fs::read(&cache)
+                std::fs::File::open(&cache)
                     .ok()
-                    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                    .and_then(|file| {
+                        serde_json::from_reader(flate2::read::GzDecoder::new(file)).ok()
+                    })
                     .unwrap_or_default()
             });
             let before = (state.schema, state.offset, state.stamp);
@@ -747,9 +800,53 @@ impl Collector {
                 }
             }
             if before != (state.schema, state.offset, state.stamp) {
-                if let Ok(v) = serde_json::to_value(&*state) {
-                    if save(&cache, &v).is_err() {
-                        self.issues.insert("checkpoint-unavailable".into());
+                let saved = (|| -> Result<()> {
+                    let mut encoder =
+                        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+                    serde_json::to_writer(&mut encoder, &*state).map_err(|e| e.to_string())?;
+                    save_bytes(&cache, &encoder.finish().map_err(|e| e.to_string())?)
+                })();
+                if saved.is_err() {
+                    self.issues.insert("checkpoint-unavailable".into());
+                }
+            }
+        }
+        // Checkpoints are reproducible projections, not unique task history.
+        // Eviction affects the next cold scan, never the current in-memory totals.
+        if self.issues.is_empty() {
+            let live: BTreeSet<_> = self
+                .files
+                .keys()
+                .map(|p| format!("{}.json.gz", hash(p.to_string_lossy().as_bytes())))
+                .collect();
+            if let Ok(entries) = std::fs::read_dir(root().join("usage/files")) {
+                let mut files = Vec::new();
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if !((name.len() == 72 && name.ends_with(".json.gz"))
+                        || (name.len() == 69 && name.ends_with(".json")))
+                        || !name[..64].bytes().all(|b| b.is_ascii_hexdigit())
+                    {
+                        continue;
+                    }
+                    let Ok(meta) = entry.metadata() else { continue };
+                    if !meta.is_file() {
+                        continue;
+                    }
+                    if !live.contains(&name) {
+                        let _ = std::fs::remove_file(entry.path());
+                    } else {
+                        files.push((meta.modified().ok(), entry.path(), meta.len()));
+                    }
+                }
+                files.sort_by_key(|f| f.0);
+                let mut total: u64 = files.iter().map(|f| f.2).sum();
+                for (_, path, size) in files {
+                    if total <= 40 * 1024 * 1024 {
+                        break;
+                    }
+                    if std::fs::remove_file(path).is_ok() {
+                        total = total.saturating_sub(size);
                     }
                 }
             }
@@ -1388,6 +1485,10 @@ impl UsageIndex {
                 let rs:Vec<_>=rows.iter().copied().filter(|r|r.turn_id.as_ref()==Some(&turn.id)).collect();
                 let usage=self.metrics(&rs);
                 let mut value=serde_json::to_value(turn).unwrap();value["usage"]=usage.clone();
+                match turn.prompt.as_ref().map(PromptSource::read).transpose() {
+                    Ok(prompt) => value["prompt"] = json!(prompt.flatten()),
+                    Err(error) => { value["prompt"] = Value::Null; value["promptError"] = json!(error); }
+                }
                 value["contextStart"]=rs.iter().min_by_key(|r|(r.at,&r.id)).map(|r|observation(r)).unwrap_or(Value::Null);
                 value["contextEnd"]=rs.iter().max_by_key(|r|(r.at,&r.id)).map(|r|observation(r)).unwrap_or(Value::Null);
                 value["wholeTurnOutputTps"]=json!(turn.duration_ms.filter(|n|*n>0).and_then(|d|usage["output"].as_u64().map(|o|o as f64*1000./d as f64)));

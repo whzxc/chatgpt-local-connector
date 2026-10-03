@@ -46,7 +46,7 @@ Gemini/Qwen/Cline 的 npm 安装需要各自版本要求的 Node；Kimi/Hermes �
 
 Claude Code 使用 Connector 管理的 ACP 适配器。用户安装并登录 Claude Code 后，在 Agents 中启用 Claude；首次启用会后台下载固定版本的适配器及私有 Bun 运行时，使用 SHA-512 校验，并在启动探测通过后原子激活。无需全局 Node、npm 或 `claude-agent-acp`，也不重复下载 SDK 的 Claude 原生程序。适配器通过 `CLAUDE_CODE_EXECUTABLE` 复用已发现的 Claude，认证和 provider 配置仍归 Claude 管理。
 
-组件保存在 CLC 数据目录的 `dependencies/claude-acp/<version>`，按 Connector 内置清单随版本更新；支持 macOS / Windows 的 ARM64、x64。下载使用应用的网络代理配置，不执行 npm 安装脚本。普通发现和刷新不会下载；启用后显示准备状态，失败后重新启用可重试，未完成的安装不会被任务使用。关闭开关会取消当前准备，不卸载已完成组件；退出应用也取消未完成准备。升级后组件清单变化时需要再次启用以准备新版本，既有版本保留供正在运行的会话使用。
+组件保存在 CLC 数据目录的 `dependencies/claude-acp/<version>`，按 Connector 内置清单随版本更新；支持 macOS / Windows 的 ARM64、x64。下载使用应用的网络代理配置，不执行 npm 安装脚本。普通发现和刷新不会下载；启用后显示准备状态，失败后重新启用可重试，未完成的安装不会被任务使用。关闭开关会取消当前准备，不卸载已完成组件；退出应用也取消未完成准备。升级后组件清单变化时需要再次启用以准备新版本，既有版本保留供正在运行的会话使用；下次 Core 启动、尚未创建 Agent 进程时删除已完成安装的旧版本。
 
 Claude 的 `installed`、`path`、`version` 描述本机 Claude Code；`available` 还要求适配器就绪，`adapter.state` 区分 missing、preparing、ready、failed。适配器就绪只表示可以尝试建立会话，不保证 Claude 已登录、额度或模型服务可用。
 
@@ -100,7 +100,7 @@ Pi/ACP 状态包含 starting、idle、running、waiting-permission、cancelling�
 
 超时、进程异常退出或写入结果不明会留下 `unconfirmed` 回执或 `unknown` 任务，不自动重放。存在未确认操作时不能通过新 prompt 自动恢复。停止后的已完成会话可由 agent_send 恢复：Pi 使用原 session 文件，ACP 使用协商后的 session/load。未发送 prompt 的 Pi 空会话可能尚未持久化，不能保证跨进程恢复。
 
-事件有有界内存窗口，完整 JSONL 存在 CLC 私有 outputs 目录，可通过 `control_output` 读取。ACP 最近文本输出超过 256 KiB 时仅保留末尾并标记 outputTruncated；完整输出在事件归档中。进程停止后的任务快照仍可读，实时 events/pending 需要存活进程。停止入口不关闭 Agent 进程；退出 CLC 才关闭其拥有的 Pi/ACP 子进程；Desktop 拥有的 Codex 任务继续沿用原生命周期。
+Codex 事件只保留最近 2000 条或 8 MiB 的内存窗口，缺口与重启通过 gap/reset 表示；会话历史按需从原生 Codex 读取，不持久化镜像。Pi/ACP 事件有同样的有界内存窗口，完整 JSONL 以活跃尾文件和经过校验的 gzip 分段保存在 CLC 私有 outputs 目录，`control_output` 按原始内容和 UTF-16 偏移读取。活跃尾文件达到 8 MiB 后轮转，唯一事件历史不按时间删除；`cli storage compact` 可无损压缩现有归档。ACP 最近文本输出超过 256 KiB 时仅保留末尾并标记 outputTruncated；完整输出在事件归档中。进程停止后的任务快照仍可读，实时 events/pending 需要存活进程。停止入口不关闭 Agent 进程；退出 CLC 才关闭其拥有的 Pi/ACP 子进程；Desktop 拥有的 Codex 任务继续沿用原生命周期。
 
 
 ## 等待语义

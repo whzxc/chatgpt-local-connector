@@ -961,3 +961,54 @@ async fn install_tunnel(proxy: &crate::proxy::NetworkProxy) -> Result<PathBuf> {
     }
     Ok(binary)
 }
+
+/// Called before ingress processes start. Keep every configured version and the newest download.
+pub(crate) fn prune_tunnel_versions() -> Result<()> {
+    let parent = root().join("dependencies/tunnel");
+    let Ok(entries) = std::fs::read_dir(&parent) else {
+        return Ok(());
+    };
+    let mut versions = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir()
+            && entry.file_name().to_string_lossy().starts_with('v')
+            && (entry.path().join("tunnel-client").is_file()
+                || entry.path().join("tunnel-client.exe").is_file())
+        {
+            versions.push((
+                entry.metadata().map_err(|e| e.to_string())?.modified().ok(),
+                entry.path(),
+            ));
+        }
+    }
+    versions.sort_by_key(|v| v.0);
+    if versions.len() <= 1 {
+        return Ok(());
+    }
+    versions.pop();
+    let mut configured = Vec::new();
+    for id in load(&root().join("ingresses/index.json"))?
+        .as_array()
+        .ok_or("invalid ingress index")?
+    {
+        let entry = load(
+            &root()
+                .join("ingresses")
+                .join(id.as_str().ok_or("invalid ingress id")?)
+                .join("config.json"),
+        )?;
+        let binary = string(&entry["config"], "tunnelBinary");
+        if !binary.is_empty() {
+            let path = PathBuf::from(binary);
+            configured.push(path.canonicalize().unwrap_or(path));
+        }
+    }
+    for (_, path) in versions {
+        let resolved = path.canonicalize().map_err(|e| e.to_string())?;
+        if !configured.iter().any(|p| p.starts_with(&resolved)) {
+            std::fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}

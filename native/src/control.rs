@@ -812,7 +812,7 @@ impl Control {
                 let e = self.events.lock().await;
                 let after = num(&args, "after", 0) as u64;
                 Ok(
-                    json!({"backendSession":self.session,"reset":args.get("backendSession").is_some()&&args["backendSession"]!=self.session,"gap":after+1<e.rows.first().and_then(|r|r["cursor"].as_u64()).unwrap_or(1),"events":e.rows.iter().filter(|r|r["cursor"].as_u64().unwrap_or(0)>after).take(num(&args,"limit",100).min(2000)).collect::<Vec<_>>(),"latestCursor":e.sequence,"persistedOutput":{"outputId":self.session,"format":"JSONL","error":e.storage_error}}),
+                    json!({"backendSession":self.session,"reset":args.get("backendSession").is_some()&&args["backendSession"]!=self.session,"gap":after.saturating_add(1)<e.rows.first().and_then(|r|r["cursor"].as_u64()).unwrap_or_else(||e.sequence.saturating_add(1)),"events":e.rows.iter().filter(|r|r["cursor"].as_u64().unwrap_or(0)>after).take(num(&args,"limit",100).min(2000)).collect::<Vec<_>>(),"latestCursor":e.sequence,"retention":"memory-window","historyTool":"codex_read"}),
                 )
             }
             "control_output" => crate::kernel::results::read_output(&args),

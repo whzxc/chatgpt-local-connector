@@ -1805,7 +1805,7 @@
     },
     {
       "name": "codex_events",
-      "description": "按 cursor 查询原生通知，包括任务进度、交互、command/exec/outputDelta、process/outputDelta/exited、fs/changed 和 downstream MCP 订阅通知。最近 2000 条缓冲；gap 或 reset 表示须回读原生状态。",
+      "description": "按 cursor 查询原生通知，包括任务进度、交互、command/exec/outputDelta、process/outputDelta/exited、fs/changed 和 downstream MCP 订阅通知。最近 2000 条或 8 MiB 内存缓冲，不写磁盘归档；gap 或 reset 表示须回读原生状态。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1851,7 +1851,7 @@
     },
     {
       "name": "control_output",
-      "description": "按 outputId 和 offset 完整读取大结果 JSON。结果保存在本机私有目录，不自动截断原始数据。",
+      "description": "按 outputId 和 UTF-16 offset 分页读取大结果 JSON 或 Pi/ACP 事件归档。JSON 快照共享 64 MiB 缓存、最多保留 1 小时，空间不足时按最旧优先淘汰；原始内容不截断。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2386,7 +2386,7 @@
     },
     {
       "name": "agent_events",
-      "description": "读取流式原生事件；完整归档通过 control_output。",
+      "description": "读取流式原生事件。Codex 使用有界内存窗口，历史从原生任务读取；Pi/ACP 的完整归档通过 control_output。",
       "inputSchema": {
         "type": "object",
         "properties": {

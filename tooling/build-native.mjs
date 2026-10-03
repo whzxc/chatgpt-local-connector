@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 
 export async function buildNative({ release = false, target } = {}) {
   const root = fileURLToPath(new URL('../', import.meta.url));
+  if (release && !target) target = process.platform === 'darwin' ? 'aarch64-apple-darwin' : process.platform === 'win32' ? 'x86_64-pc-windows-msvc' : undefined;
   const args = ['build', '--locked', '--manifest-path', 'native/Cargo.toml', '--bin', 'local-connector'];
   if (release) args.push('--release');
   if (target) args.push('--target', target);
@@ -16,6 +17,7 @@ export async function buildNative({ release = false, target } = {}) {
     env.CARGO_ENCODED_RUSTFLAGS = flags.join('\x1f');
     delete env.RUSTFLAGS;
   }
+  execFileSync(process.execPath, [path.join(root, 'tooling/prune-build-cache.mjs')], { cwd: root, stdio: 'inherit' });
   execFileSync('cargo', args, { cwd: root, env, stdio: 'inherit' });
   const name = process.platform === 'win32' ? 'local-connector.exe' : 'local-connector';
   const binary = path.join(root, 'native/target', ...(target ? [target] : []), release ? 'release' : 'debug', name);
@@ -23,6 +25,7 @@ export async function buildNative({ release = false, target } = {}) {
   const destination = path.join(root, 'dist/native', name);
   await mkdir(path.dirname(destination), { recursive: true });
   await copyFile(binary, destination);
+  execFileSync(process.execPath, [path.join(root, 'tooling/prune-build-cache.mjs'), `--keep=native/target/${target || (release ? 'release' : 'debug')}`], { cwd: root, stdio: 'inherit' });
   return binary;
 }
 

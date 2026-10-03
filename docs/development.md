@@ -60,15 +60,13 @@ cargo fmt --manifest-path desktop/Cargo.toml -- --check
 
 Rust outputs are generated under the ignored `desktop/target`, `native/target`, and
 `tooling/verifier/target` directories. The npm test, Desktop check, dev, and
-build commands prune the oldest inactive output groups when the local total
-exceeds 10 GiB; the current command's output and packaged app/installers under
-`bundle` are retained. CI skips this local
-cleanup. The contract fixture uses a stable Cargo project path, and dev builds
-use limited debug information without incremental compilation to avoid a new
-cache for every test run or source change. Direct `cargo` commands bypass the
-automatic check; run `npm run cache:prune` after them when needed. To reclaim
-all Rust outputs, run `cargo clean --manifest-path desktop/Cargo.toml` and
-`cargo clean --manifest-path native/Cargo.toml`; the next build recompiles them.
+build commands prune inactive compiler output groups when the local total exceeds
+10 GiB, including temporary Cargo projects below `tmp/`. Cleanup holds Cargo's
+profile locks and skips busy or explicitly protected groups. It preserves binaries,
+packaged apps/installers, fixture sources, and release receipts. Direct Cargo calls
+must be followed by `npm run cache:prune`; `--dry-run` previews the candidates.
+Development profiles retain limited debug information and disable incremental
+compilation. Dependency caches remain reusable between normal builds.
 
 Desktop IPC task management supports macOS Unix sockets and Windows named pipes. Windows uses the installed Microsoft Store Codex Desktop.
 
@@ -174,3 +172,25 @@ as OpenUsage.
 The native plugin resource is built from `ui/usage-insights` by `tooling/build-plugin.mjs` into `dist/plugin/app.html` and embedded by the Rust crate. Run `npm run build` before invoking Cargo directly on a fresh checkout. Standard `npm test`, `desktop:check`, `check:native` and `desktop:build` prepare this asset automatically. No Node process ships with the plugin. Local exporter and lifecycle instructions are in [plugin.md](plugin.md).
 
 Standalone plugin development, automatic panel reload and portable ZIP builds use `plugin:dev`, `plugin:build` and `plugin:check`; see [plugin development](plugin-development.md). Desktop packaging also creates and verifies the matching plugin ZIP. Release staging requires that platform ZIP alongside the installers.
+
+
+Codex notifications retain only a 2,000-event / 8 MiB in-memory window. Repeated
+identical Desktop state changes do not allocate another event cursor. Consumers
+handle `gap` / `reset` and read task history through `codex_read` / `codex_items`;
+Connector does not mirror native thread snapshots to disk.
+
+Connector-owned Pi/ACP output uses a JSONL tail of up to 8 MiB plus the current
+event, and immutable gzip segments with UTF-16 length indexes. Compression verifies
+the uncompressed SHA-256 before removing a raw segment. `control_output` preserves
+JSONL content and UTF-16 pagination across segments; `cli storage compact` seals
+existing tails. Unique Agent output, request receipts and task associations are
+not subject to cache eviction.
+
+Usage checkpoints contain compressed statistics and source positions, with a
+40 MiB budget. Prompts are read from native files on demand and checked against
+the indexed content hash; unavailable or changed source text is reported, not
+substituted. Orphaned and oldest checkpoints are evicted after a successful scan;
+statistics rebuild from native sources after cache eviction. Temporary large-result
+snapshots retain up to 64 MiB for one hour and may be evicted earlier by newer
+results. Startup and snapshot writes prune expired files. Diagnostic logs rotate
+at 2 MiB and retain up to seven days and approximately 16 MiB.

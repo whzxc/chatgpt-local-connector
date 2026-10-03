@@ -11,6 +11,56 @@ fn append_locked(row: &Value) -> Result<()> {
     let dir = root().join("logs");
     private_dir(&dir)?;
     let path = dir.join(format!("{}.jsonl", chrono::Utc::now().format("%Y-%m-%d")));
+    // Rotate the active day before it becomes a large unbounded file.
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() >= 2 * 1024 * 1024) {
+        std::fs::rename(
+            &path,
+            dir.join(format!(
+                "{}.{}.jsonl",
+                chrono::Utc::now().format("%Y-%m-%d"),
+                chrono::Utc::now().timestamp_millis()
+            )),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    static PRUNED: OnceLock<StdMutex<Option<std::time::Instant>>> = OnceLock::new();
+    let mut last = PRUNED
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|e| e.to_string())?;
+    if last.is_none_or(|at| at.elapsed().as_secs() >= 60) {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(7))
+            .format("%Y-%m-%d")
+            .to_string();
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !entry.file_type().map_err(|e| e.to_string())?.is_file()
+                || !name.ends_with(".jsonl")
+                || name
+                    .get(..10)
+                    .is_none_or(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err())
+            {
+                continue;
+            }
+            files.push((
+                name,
+                entry.path(),
+                entry.metadata().map_err(|e| e.to_string())?.len(),
+            ));
+        }
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut total: u64 = files.iter().map(|f| f.2).sum();
+        for (name, old, size) in files {
+            if old != path && (name[..10] < cutoff[..] || total > 16 * 1024 * 1024) {
+                if std::fs::remove_file(old).is_ok() {
+                    total = total.saturating_sub(size);
+                }
+            }
+        }
+        *last = Some(std::time::Instant::now());
+    }
     let mut options = std::fs::OpenOptions::new();
     options.create(true).append(true);
     #[cfg(unix)]
@@ -48,7 +98,7 @@ pub fn migrate(dir: &Path, ingress: &str) -> Result<()> {
     }
     std::fs::remove_file(path).map_err(|e| e.to_string())
 }
-/// Bound the display read, not the persisted history.
+/// Read recent diagnostics from the bounded, rotated history.
 pub fn recent(ingress: Option<&str>) -> Vec<String> {
     let Ok(_guard) = lock().lock() else {
         return vec![];

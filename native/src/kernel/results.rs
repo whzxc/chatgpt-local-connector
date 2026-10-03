@@ -2,9 +2,16 @@
 use crate::*;
 use std::io::Read;
 use std::time::{Duration, SystemTime};
-const QUOTA: u64 = 1024 * 1024 * 1024;
-const TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const QUOTA: u64 = 64 * 1024 * 1024;
+const TTL: Duration = Duration::from_secs(60 * 60);
 static WRITER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub fn prune() -> Result<()> {
+    let dir = root().join("outputs");
+    let _writer = WRITER.lock().map_err(|e| e.to_string())?;
+    private_dir(&dir)?;
+    make_room(&dir, 0)
+}
 
 pub fn page_output(result: Value) -> Result<Value> {
     let text = result.to_string();
@@ -18,7 +25,7 @@ pub fn page_output(result: Value) -> Result<Value> {
     make_room(&dir, text.len() as u64)?;
     save(&dir.join(format!("{output}.json")), &result)?;
     Ok(
-        json!({"outputId":output,"bytes":text.len(),"characters":text.encode_utf16().count(),"sha256":hash(&text),"nextAction":"control_output","format":"JSON; offsets count UTF-16 code units"}),
+        json!({"outputId":output,"bytes":text.len(),"characters":text.encode_utf16().count(),"sha256":hash(&text),"nextAction":"control_output","format":"JSON; offsets count UTF-16 code units","retention":"temporary-cache","expiresInSeconds":TTL.as_secs()}),
     )
 }
 fn make_room(dir: &Path, incoming: u64) -> Result<()> {
@@ -72,27 +79,25 @@ pub fn read_output(args: &Value) -> Result<Value> {
     uuid::Uuid::parse_str(output).map_err(|_| "INVALID_OUTPUT_ID")?;
     let dir = root().join("outputs");
     let path = dir.join(format!("{output}.json"));
-    let snapshot = path.exists();
-    let file = std::fs::File::open(if snapshot {
-        path
-    } else {
-        dir.join(format!("{output}.jsonl"))
-    })
-    .map_err(|e| e.to_string())?;
-    if snapshot
-        && file
+    let offset = num(args, "offset", 0);
+    let length = num(args, "length", 10000).min(12000);
+    let (text, characters) = if path.exists() {
+        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        if file
             .metadata()
             .and_then(|m| m.modified())
             .map_err(|e| e.to_string())?
             .elapsed()
             .unwrap_or_default()
             >= TTL
-    {
-        return Err("OUTPUT_EXPIRED".into());
-    }
-    let offset = num(args, "offset", 0);
-    let length = num(args, "length", 10000).min(12000);
-    let (text, characters) = read_slice(file, offset, length)?;
+        {
+            return Err("OUTPUT_EXPIRED".into());
+        }
+        let size = file.metadata().map_err(|e| e.to_string())?.len();
+        read_slice(file.take(size), offset, length, None)?
+    } else {
+        crate::kernel::event_store::read(output, offset, length)?
+    };
     let end = offset.saturating_add(length).min(characters);
     Ok(
         json!({"outputId":output,"offset":offset,"text":text,"characters":characters,"nextOffset":if end<characters{Some(end)}else{None}}),
@@ -100,25 +105,25 @@ pub fn read_output(args: &Value) -> Result<Value> {
 }
 // Preserve the published UTF-16 offsets without allocating the entire file or a
 // second full UTF-16 copy. UTF-8 tails cross chunk boundaries intact.
-fn read_slice(mut file: std::fs::File, offset: usize, length: usize) -> Result<(String, usize)> {
+pub(super) fn read_slice(
+    mut file: impl Read,
+    offset: usize,
+    length: usize,
+    known_characters: Option<usize>,
+) -> Result<(String, usize)> {
     let mut buffer = vec![0u8; 64 * 1024 + 4];
     let mut carry = 0;
     let mut characters = 0usize;
     let mut selected = Vec::with_capacity(length);
-    // Bound event-log reads to the length at open; later appends belong to the next call.
-    let mut remaining = file.metadata().map_err(|e| e.to_string())?.len();
-    while remaining > 0 || carry > 0 {
-        let limit = remaining.min(64 * 1024) as usize;
+    loop {
+        let limit = 64 * 1024;
         let read = file
             .read(&mut buffer[carry..carry + limit])
             .map_err(|e| e.to_string())?;
-        remaining = remaining.saturating_sub(read as u64);
         let available = carry + read;
         let valid = match std::str::from_utf8(&buffer[..available]) {
             Ok(_) => available,
-            Err(error) if error.error_len().is_none() && read > 0 && remaining > 0 => {
-                error.valid_up_to()
-            }
+            Err(error) if error.error_len().is_none() && read > 0 => error.valid_up_to(),
             Err(error) => return Err(error.to_string()),
         };
         let text = std::str::from_utf8(&buffer[..valid]).map_err(|e| e.to_string())?;
@@ -130,9 +135,13 @@ fn read_slice(mut file: std::fs::File, offset: usize, length: usize) -> Result<(
         }
         carry = available - valid;
         buffer.copy_within(valid..available, 0);
-        if read == 0 {
+        if read == 0 || (known_characters.is_some() && characters >= offset.saturating_add(length))
+        {
             break;
         }
     }
-    Ok((String::from_utf16_lossy(&selected), characters))
+    Ok((
+        String::from_utf16_lossy(&selected),
+        known_characters.unwrap_or(characters),
+    ))
 }

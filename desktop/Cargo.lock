@@ -570,6 +570,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dirs",
+ "flate2",
  "http-body-util",
  "hyper",
  "hyper-util",

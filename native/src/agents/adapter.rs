@@ -22,6 +22,27 @@ fn runtime(dir: &Path) -> PathBuf {
 fn entry(dir: &Path) -> PathBuf {
     dir.join("node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js")
 }
+// Called only while creating a new Core, before any owned Agent process starts.
+pub fn prune() -> Result<()> {
+    let current = directory();
+    let Some(parent) = current.parent() else {
+        return Ok(());
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Ok(());
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path != current
+            && entry.file_type().map_err(|e| e.to_string())?.is_dir()
+            && load(&path.join("ready.json")).is_ok_and(|v| v["manifest"].is_string())
+        {
+            std::fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
 pub fn ready() -> bool {
     let dir = directory();
     load(&dir.join("ready.json"))

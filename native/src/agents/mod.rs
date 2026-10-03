@@ -40,6 +40,13 @@ const RECEIPTS: crate::kernel::receipts::ReceiptStore =
     crate::kernel::receipts::ReceiptStore::new("agents/requests");
 impl AgentHost {
     pub fn new() -> Result<Arc<Self>> {
+        if let Err(error) = adapter::prune() {
+            crate::logs::record(
+                "WARN",
+                &format!("Cannot prune unused Agent components: {error}"),
+                None,
+            );
+        }
         let mut drivers = HashMap::from([
             ("codex".into(), AgentDriver::CodexNative),
             ("pi".into(), AgentDriver::Pi),
@@ -483,7 +490,7 @@ impl AgentHost {
             }
             let after = num(&args, "after", 0) as u64;
             return Ok(
-                json!({"events":e.rows.iter().filter(|r|r["cursor"].as_u64().unwrap_or(0)>after).take(num(&args,"limit",100).min(2000)).collect::<Vec<_>>(),"backendSession":backend,"reset":args.get("backendSession").is_some()&&args["backendSession"]!=backend,"latestCursor":e.sequence,"gap":after+1<e.rows.first().and_then(|r|r["cursor"].as_u64()).unwrap_or(1),"persistedOutput":{"outputId":task,"format":"JSONL","error":e.storage_error}}),
+                json!({"events":e.rows.iter().filter(|r|r["cursor"].as_u64().unwrap_or(0)>after).take(num(&args,"limit",100).min(2000)).collect::<Vec<_>>(),"backendSession":backend,"reset":args.get("backendSession").is_some()&&args["backendSession"]!=backend,"latestCursor":e.sequence,"gap":after.saturating_add(1)<e.rows.first().and_then(|r|r["cursor"].as_u64()).unwrap_or_else(||e.sequence.saturating_add(1)),"persistedOutput":{"outputId":task,"format":"JSONL","error":e.storage_error}}),
             );
         }
         if !matches!(

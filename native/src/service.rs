@@ -201,6 +201,20 @@ impl Service {
                 }
             }
         }
+        if let Err(error) = crate::kernel::results::prune() {
+            crate::logs::record(
+                "WARN",
+                &format!("Cannot prune temporary outputs: {error}"),
+                None,
+            );
+        }
+        if let Err(error) = crate::ingress::prune_tunnel_versions() {
+            crate::logs::record(
+                "WARN",
+                &format!("Cannot prune unused Tunnel components: {error}"),
+                None,
+            );
+        }
         let control = Control::new(
             crate::desktop::installation()
                 .map(|i| i.binary)

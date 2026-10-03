@@ -49,9 +49,20 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
         .filter(|a| *a != "--json")
         .collect();
     match args.as_slice() {
+        ["storage", "compact"] => {
+            // Refuse mixed old/new writers before changing the archive layout.
+            let owner =
+                crate::runtime::Client::connect(crate::runtime::binary()?, "plugin").await?;
+            let result = tokio::task::spawn_blocking(crate::kernel::event_store::compact_all)
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|value| value);
+            owner.close().await;
+            result
+        }
         [] | ["help"] | ["--help"] => Ok(json!({"version":env!("CARGO_PKG_VERSION"),
             "usage":"<应用可执行文件> cli <command> [--json]",
-            "commands":["plugin export <directory>","subscriptions get","subscriptions set --stdin","subscriptions refresh [providerId]","subscriptions open [providerId]","panel get","panel set --stdin","help","guide","context --stdin","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
+            "commands":["storage compact","plugin export <directory>","subscriptions get","subscriptions set --stdin","subscriptions refresh [providerId]","subscriptions open [providerId]","panel get","panel set --stdin","help","guide","context --stdin","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
             "subscriptionsInput":{"enabled":"boolean; required","providers":"complete array of IDs from subscriptions get; required","pinnedWindows":"complete provider-to-window map; required"},
             "subscriptionsNote":"get reads memory only. set replaces the complete settings: read get.settings first and preserve all intended selections/pins. refresh requests an online read for a selected eligible provider, or all such providers when omitted; accepted is not fresh-data success. Read observedAt/state/error afterwards. open activates the target instance's Agent detail panel, or the Agents panel when omitted.",
             "panelInput":{"autoCollapse":"boolean","size":"small | standard | large","spacing":"compact | standard | roomy","ends":"softened | round","horizontalPercentages":"boolean","alertColor":"boolean","notchFusion":"boolean","dock":"left | right | top | bottom | floating","resetPosition":"true; resets placement, takes precedence over dock"},

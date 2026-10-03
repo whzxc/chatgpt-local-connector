@@ -63,7 +63,10 @@ impl Process {
             input: Mutex::new(input),
             child: Mutex::new(child),
             replies: Default::default(),
-            events: Default::default(),
+            events: Arc::new(Mutex::new(Events {
+                durable: true,
+                ..Events::default()
+            })),
             state: Arc::new(Mutex::new(state)),
             pi,
             alive: true.into(),
