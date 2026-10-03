@@ -28,6 +28,10 @@ impl Default for UpdateState {
 fn resume_path() -> std::path::PathBuf {
     connector_core::root().join("update-resume.json")
 }
+pub fn pending_resume() -> bool {
+    connector_core::load(&resume_path())
+        .is_ok_and(|value| value["version"] == env!("CARGO_PKG_VERSION"))
+}
 pub fn take_resume() -> Option<Vec<String>> {
     let path = resume_path();
     let Ok(value) = connector_core::load(&path) else {
@@ -49,7 +53,9 @@ async fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater
     if cfg!(debug_assertions) {
         return Err("当前应用不支持自动更新，请从下载页获取安装包。".into());
     }
-    let service = app.state::<std::sync::Arc<connector_core::runtime::Client>>();
+    let service = app
+        .try_state::<std::sync::Arc<connector_core::runtime::Client>>()
+        .ok_or("Core 尚未就绪")?;
     let proxy = service.network_proxy().await?;
     app.updater_builder()
         .configure_client(move |builder| proxy.client(builder))
@@ -166,13 +172,14 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         &json!({"version":version,"ingresses":running}),
     )?;
     // Drain auxiliary work even when the tunnel is already disconnected.
-    if let Err(error) = service.shutdown().await {
-        let _ = std::fs::remove_file(resume_path());
-        return Err(error);
+    let installed = async {
+        service.shutdown().await?;
+        update.install(bytes).map_err(|error| error.to_string())
     }
-    if let Err(error) = update.install(bytes) {
+    .await;
+    if let Err(error) = installed {
         let _ = std::fs::remove_file(resume_path());
-        service.resume();
+        service.resume().await;
         let restored = async {
             for id in &running {
                 service
@@ -183,8 +190,8 @@ pub async fn install_update(app: tauri::AppHandle, version: String) -> Result<Va
         }
         .await;
         return Err(match restored {
-            Ok(_) => format!("安装失败：{error}。可重试或手动下载。"),
-            Err(restore) => format!("安装失败：{error}；恢复连接失败：{restore}"),
+            Ok(_) => format!("更新失败：{error}。可重试或手动下载。"),
+            Err(restore) => format!("更新失败：{error}；恢复连接失败：{restore}"),
         });
     }
     // restart() never returns on a runtime worker. Let this command finish and

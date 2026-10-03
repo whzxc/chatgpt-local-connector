@@ -3,6 +3,7 @@ use connector_core::runtime::Client as Service;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 #[cfg(target_os = "macos")]
 mod appearance;
 mod autostart;
@@ -51,7 +52,8 @@ async fn request(
         )
         .await;
     }
-    app.state::<Arc<Service>>()
+    app.try_state::<Arc<Service>>()
+        .ok_or("Core 尚未就绪")?
         .inner()
         .clone()
         .request(route, method, body)
@@ -73,6 +75,43 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+async fn connect_service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+    let binary = connector_core::runtime::binary()?;
+    let service = if updates::pending_resume() {
+        // Older updaters may leave a Core behind. Let its lease expire without
+        // consuming the recovery marker or crashing the new Desktop.
+        let mut last_error = String::new();
+        tokio::time::timeout(std::time::Duration::from_secs(25), async {
+            loop {
+                match Service::connect(binary.clone(), "desktop").await {
+                    Ok(service) => break service,
+                    Err(error) => last_error = error,
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .map_err(|_| format!("更新后等待 Core 就绪超时：{last_error}"))?
+    } else {
+        Service::connect(binary, "desktop").await?
+    };
+    let attached = async {
+        let (endpoint, listener) =
+            connector_core::transport::listen_desktop(Arc::new(desktop_access::Owner(app.clone())))
+                .await?;
+        if let Err(error) = service.attach_desktop(endpoint).await {
+            listener.abort();
+            return Err(error);
+        }
+        Ok::<_, String>(())
+    }
+    .await;
+    if let Err(error) = attached {
+        service.close().await;
+        return Err(error);
+    }
+    Ok(service)
 }
 fn main() {
     if let Some(state_dir) = std::env::args()
@@ -152,19 +191,27 @@ fn main() {
                     handle.exit(0);
                 });
             }
-            let service = tauri::async_runtime::block_on(Service::connect(
-                connector_core::runtime::binary().map_err(std::io::Error::other)?,
-                "desktop",
-            ))
-            .map_err(std::io::Error::other)?;
+            let service = match tauri::async_runtime::block_on(connect_service(app.handle())) {
+                Ok(service) => service,
+                Err(error) => {
+                    connector_core::logs::record(
+                        "ERROR",
+                        &format!("Desktop 启动失败：{error}"),
+                        None,
+                    );
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                    let handle = app.handle().clone();
+                    app.dialog()
+                        .message(format!("{error}\n\n请处理后重新打开 Local Connector。"))
+                        .title("Local Connector 启动失败")
+                        .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                        .show(move |_| handle.exit(1));
+                    return Ok(());
+                }
+            };
             app.manage(service.clone());
-            let (endpoint, _) =
-                tauri::async_runtime::block_on(connector_core::transport::listen_desktop(
-                    Arc::new(desktop_access::Owner(app.handle().clone())),
-                ))
-                .map_err(std::io::Error::other)?;
-            tauri::async_runtime::block_on(service.attach_desktop(endpoint))
-                .map_err(std::io::Error::other)?;
             let autostart = std::env::args().any(|arg| arg == "--autostart");
             let resume =
                 updates::take_resume().or_else(

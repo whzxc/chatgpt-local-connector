@@ -6,7 +6,7 @@ use std::{
     process::Stdio,
     time::{Duration, Instant},
 };
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock, RwLockReadGuard};
 
 const LEASE_TTL: Duration = Duration::from_secs(10);
 struct Lease {
@@ -188,6 +188,7 @@ pub struct Client {
     build: String,
     desktop: Mutex<Option<Value>>,
     startup: Mutex<()>,
+    active: RwLock<bool>,
     heartbeat: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 impl Client {
@@ -200,13 +201,15 @@ impl Client {
             binary,
             desktop: Mutex::new(None),
             startup: Mutex::new(()),
+            active: RwLock::new(true),
             heartbeat: Default::default(),
         });
-        client.ensure().await?;
-        client.resume();
+        drop(client.ensure().await?);
+        client.resume().await;
         Ok(client)
     }
-    pub fn resume(self: &Arc<Self>) {
+    pub async fn resume(self: &Arc<Self>) {
+        *self.active.write().await = true;
         let mut heartbeat = self.heartbeat.lock().unwrap();
         if heartbeat.is_some() {
             return;
@@ -220,12 +223,20 @@ impl Client {
                 };
                 if let Err(error) = client.ensure().await {
                     eprintln!("Core heartbeat: {error}");
-                }
+                };
             }
         });
         *heartbeat = Some(task);
     }
-    async fn ensure(&self) -> Result<()> {
+    async fn ensure(&self) -> Result<RwLockReadGuard<'_, bool>> {
+        let active = self.active.read().await;
+        if !*active {
+            return Err("Core 已暂停，正在关闭或安装更新。".into());
+        }
+        self.ensure_core().await?;
+        Ok(active)
+    }
+    async fn ensure_core(&self) -> Result<()> {
         let _startup = self.startup.lock().await;
         if owner(&self.build).await?.is_none() {
             private_dir(&root())?;
@@ -269,10 +280,11 @@ impl Client {
     }
     pub async fn attach_desktop(&self, endpoint: Value) -> Result<()> {
         *self.desktop.lock().await = Some(endpoint);
-        self.ensure().await
+        let _active = self.ensure().await?;
+        Ok(())
     }
     pub async fn request(&self, route: &str, method: &str, body: Value) -> Result<Value> {
-        self.ensure().await?;
+        let _active = self.ensure().await?;
         crate::transport::forward_request(route, method, body).await
     }
     pub async fn network_proxy(&self) -> Result<crate::proxy::NetworkProxy> {
@@ -288,6 +300,8 @@ impl Client {
         crate::logs::record(level, message, None);
     }
     pub async fn close(&self) {
+        let mut active = self.active.write().await;
+        *active = false;
         if let Some(task) = self.heartbeat.lock().unwrap().take() {
             task.abort();
         }
@@ -295,20 +309,38 @@ impl Client {
             .await;
     }
     pub async fn shutdown(&self) -> Result<()> {
-        self.ensure().await?;
+        // Wait for every in-flight request, including native panel polling, and
+        // exclude all ensure/spawn paths until shutdown has been accepted.
+        let mut active = self.active.write().await;
+        if !*active {
+            return Err("Core 已暂停，正在关闭或安装更新。".into());
+        }
+        self.ensure_core().await?;
+        let lock = File::options()
+            .read(true)
+            .write(true)
+            .open(root().join("core.lock"))
+            .map_err(|e| e.to_string())?;
         crate::transport::forward_request("runtime/shutdown", "POST", json!({"id":self.id}))
             .await?;
+        *active = false;
         if let Some(task) = self.heartbeat.lock().unwrap().take() {
             task.abort();
         }
         let deadline = Instant::now() + Duration::from_secs(10);
-        while owner(&self.build).await?.is_some() {
+        // A missing HTTP listener alone does not prove Core finished stopping.
+        // Core releases this lock only after service cleanup and metadata removal.
+        loop {
+            match lock.try_lock() {
+                Ok(()) => return Ok(()),
+                Err(std::fs::TryLockError::WouldBlock) => {}
+                Err(error) => return Err(error.to_string()),
+            }
             if Instant::now() > deadline {
                 return Err("Core shutdown timed out".into());
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        Ok(())
     }
 }
 impl Drop for Client {
