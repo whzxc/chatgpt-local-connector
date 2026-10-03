@@ -161,13 +161,13 @@ export function onRoute(listener: (route: UsageRoute) => void) {
 export function navigate(threadId: string) {
   if (browserNavigation) window.parent.postMessage({ jsonrpc: "2.0", method: "clc/notifications/navigate", params: { scope: threadId ? "thread" : "global", threadId } }, "*");
 }
-function rpc(method: string, params: unknown): Promise<RpcResult> {
+function rpc(method: string, params: unknown, timeoutMs = 20000): Promise<RpcResult> {
   return new Promise((resolve, reject) => {
     const id = ++sequence;
     const timeout = setTimeout(() => {
       pending.delete(id);
       reject(new Error(text("timeout")));
-    }, 20000);
+    }, timeoutMs);
     pending.set(id, { resolve, reject, timeout });
     window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
   });
@@ -238,5 +238,17 @@ export async function refresh(args: Record<string, unknown>) {
   const data = result._meta?.usage ?? result.structuredContent;
   if (data?.schemaVersion !== 1) throw new Error(text("schemaError"));
   return data;
+}
+export type PluginUpdate = {
+  currentVersion?: string; installedVersion?: string; version?: string;
+  available?: boolean; installable?: boolean; reloadRequired?: boolean; enabled?: boolean;
+};
+export async function pluginUpdate(action: "check" | "update", force = false, version?: string) {
+  await initialize();
+  const result = await rpc("tools/call", {
+    name: action === "check" ? "connector_plugin_check" : "connector_plugin_update",
+    arguments: action === "check" ? { force } : { version },
+  }, action === "update" ? 330000 : 130000);
+  return result.structuredContent as unknown as PluginUpdate;
 }
 declare const __CONNECTOR_VERSION__: string;

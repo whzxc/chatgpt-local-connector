@@ -482,3 +482,4 @@
 .insight-metric-action.button { height: auto; border-radius: 0; align-items: stretch; text-align: left; color: var(--text); }
 .insight-metric-action > span { display: flex; align-items: center; justify-content: space-between; }
 .insight-metric-action:hover { background: var(--hover); }
+.insight-plugin-update { padding-bottom: 12px; font-size: 12px; }

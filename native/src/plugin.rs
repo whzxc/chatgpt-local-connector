@@ -20,6 +20,10 @@ pub fn tools() -> Value {
         tool("connector_task_usage", "任务用量", Some("thread")),
         tool("connector_usage_refresh", "刷新用量", None),
     ]);
+    tools.extend([
+        json!({"name":"connector_plugin_check","description":"Check for a signed CLC plugin update without requiring Connector Desktop or a running Core. force bypasses the hourly metadata cache.","inputSchema":{"type":"object","properties":{"force":{"type":"boolean"}},"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":true},"_meta":{"ui":{"visibility":["app","model"]}}}),
+        json!({"name":"connector_plugin_update","description":"Install the exact offered CLC plugin version through the host. Requires the user's request to update. Existing sessions continue with the old binary until the host reloads. Never restarts the host or interrupts tasks.","inputSchema":{"type":"object","properties":{"version":{"type":"string"}},"required":["version"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":true},"_meta":{"ui":{"visibility":["app","model"]}}}),
+    ]);
     json!({"tools":tools})
 }
 fn uri() -> String {
@@ -43,7 +47,23 @@ fn tool(name: &str, title: &str, entry: Option<&str>) -> Value {
     }
     json!({"name":name,"title":title,"icons":icons(),"description":"Read device-local usage from the running Local Connector. No model turn or account changes.","inputSchema":{"type":"object","properties":{"taskPage":{"type":"integer","minimum":1},"taskSearch":{"type":"string","maxLength":200},"refreshQuota":{"type":"boolean"},"scope":{"enum":["global","thread"]},"threadId":{"type":"string","maxLength":128},"days":{"enum":[1,7,30]},"turnId":{"type":"string","maxLength":128},"toolId":{"type":"string","maxLength":256},"responseOffset":{"type":"integer","minimum":0},"toolOffset":{"type":"integer","minimum":0}},"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false},"_meta":meta})
 }
-pub async fn dispatch(core: &crate::runtime::Client, request: Value) -> Value {
+#[derive(Default)]
+struct Session(Mutex<Option<Arc<crate::runtime::Client>>>);
+impl Session {
+    async fn request(&self, route: &str, method: &str, body: Value) -> Result<Value> {
+        let core = {
+            let mut current = self.0.lock().await;
+            if current.is_none() {
+                *current = Some(
+                    crate::runtime::Client::connect(crate::runtime::binary()?, "plugin").await?,
+                );
+            }
+            current.as_ref().unwrap().clone()
+        };
+        core.request(route, method, body).await
+    }
+}
+async fn dispatch(core: &Session, request: Value) -> Value {
     let id = request["id"].clone();
     let params = &request["params"];
     let result: Result<Value> = match string(&request, "method") {
@@ -58,7 +78,14 @@ pub async fn dispatch(core: &crate::runtime::Client, request: Value) -> Value {
         "resources/read" if params["uri"] == uri() => resource().await,
         "tools/call" => {
             let name = string(params, "name");
-            if ![
+            if name == "connector_plugin_check" || name == "connector_plugin_update" {
+                let result = if name == "connector_plugin_check" {
+                    crate::plugin_updates::check(params["arguments"]["force"] == true).await
+                } else {
+                    crate::plugin_updates::install(string(&params["arguments"], "version")).await
+                };
+                result.map(|value| json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value}))
+            } else if ![
                 "connector_overview",
                 "connector_task_usage",
                 "connector_usage_refresh",
@@ -80,7 +107,10 @@ pub async fn dispatch(core: &crate::runtime::Client, request: Value) -> Value {
                 let meta = json!({"threadId":params["_meta"]["threadId"],"thread_id":params["_meta"]["thread_id"]});
                 let data=match core.request("usage/query","POST",json!({"schemaVersion":1,"pluginVersion":env!("CARGO_PKG_VERSION"),"scope":scope,"arguments":args,"metadata":meta})).await {
                     Ok(v)=>v,
-                    Err(e)=>json!({"schemaVersion":1,"scope":scope,"state":if e=="UNKNOWN_ROUTE" || e=="PLUGIN_VERSION_MISMATCH" {"incompatible"}else{"unavailable"},"message":if e=="UNKNOWN_ROUTE" || e=="PLUGIN_VERSION_MISMATCH" {"请升级 Local Connector 和插件到相同版本，然后重新打开面板。"}else{"本机 Core 暂不可用。请重新加载插件后刷新。"},"connectorVersion":null}),
+                    Err(e)=> {
+                        let incompatible = e == "UNKNOWN_ROUTE" || e == "PLUGIN_VERSION_MISMATCH" || e.starts_with("CORE_BUILD_MISMATCH");
+                        json!({"schemaVersion":1,"scope":scope,"state":if incompatible {"incompatible"}else{"unavailable"},"message":if incompatible {"请将 Local Connector 和插件更新到同一发布构建，关闭旧入口后重载宿主。上方插件更新入口仍可使用。"}else{"本机 Core 暂不可用。请重新加载插件后刷新。"},"connectorVersion":null})
+                    },
                 };
                 Ok(
                     json!({"content":[{"type":"text","text":"Connector 本机用量面板；统计仅在面板中展示。"}],"structuredContent":{"scope":scope,"state":data["state"]},"_meta":{"ui":{"resourceUri":uri()},"usage":data}}),
@@ -129,7 +159,8 @@ async fn resource() -> Result<Value> {
 }
 pub async fn stdio() -> Result<()> {
     init_crypto();
-    let core = crate::runtime::Client::connect(crate::runtime::binary()?, "plugin").await?;
+    // Host negotiation and updates remain available even when an old Core owns the state.
+    let core = Arc::new(Session::default());
     let mut reader = BufReader::new(tokio::io::stdin());
     let stdout = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut jobs = tokio::task::JoinSet::new();
@@ -181,7 +212,9 @@ pub async fn stdio() -> Result<()> {
     }
     jobs.abort_all();
     while jobs.join_next().await.is_some() {}
-    core.close().await;
+    if let Some(core) = core.0.lock().await.take() {
+        core.close().await;
+    }
     Ok(())
 }
 

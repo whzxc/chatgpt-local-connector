@@ -38,3 +38,7 @@ On a host with local execution, inspect the installed CLC CLI's `help`, `guide`,
 Open **Connector 总览** from Explore/sidebar for device-local event-time totals and the independently scoped account quota windows. In a task, use New tab → More tools → **任务用量**. These panels use the same Core as local project and Agent tools; the plugin starts it independently. Closing the last local entrypoint stops Core. Refresh and collection never call a model.
 
 A host thread is bound only when its metadata agrees and the local native log identifies that thread. Missing/conflicting metadata requires explicit task selection; never substitute the latest task. Cached input and reasoning output are subsets, not additional tokens. Tool return bytes and durations are observations, not causal charges. Legacy logs, cloud/other-device activity, null credits, resolved model and pure generation speed can remain unknown. Do not infer waste from a large token count or change models, accounts or quotas automatically.
+
+## 插件更新
+
+`connector_plugin_check` 检查已安装与已发布版本；手动检查使用 `force: true`。用户要求升级时，将检查结果的精确 `version` 传给 `connector_plugin_update`。更新不依赖 Connector Desktop 或运行中 Core；通过发布签名验证后交由宿主安装。不要改写宿主缓存或中断现有任务。`reloadRequired` 表示安装完成但当前会话仍使用旧版：告知用户重载宿主并重新打开面板，不能宣称当前进程已经切换。若同时使用 Connector Desktop，两者必须匹配同一发布构建。失败时读回安装状态再重试；未提供签名更新包的旧发布需要手动安装或由 Desktop 同步。

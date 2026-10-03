@@ -160,6 +160,7 @@ fn main() {
             service_request,
             i18n::set_ui_locale,
             updates::check_update,
+            updates::sync_plugin,
             updates::install_update,
             updates::download_update,
             updates::cancel_update,

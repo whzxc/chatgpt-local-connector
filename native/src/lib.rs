@@ -20,6 +20,7 @@ pub mod kernel;
 pub mod logs;
 pub mod oauth;
 pub mod plugin;
+pub mod plugin_updates;
 pub mod projects;
 pub mod proxy;
 pub mod rpc;

@@ -56,7 +56,13 @@ Account quota is separate from local log statistics. Check the relevant native c
 
 ## Update or roll back
 
-The desktop application's updater does not reinstall the ChatGPT plugin. Keep the old extracted package until the new one works. Use a complete plugin artifact; do not edit the host cache by hand.
+With Connector Desktop installed, starting an updated release synchronizes an older, enabled `clc@local-connector` plugin through the host CLI. Settings → About → Plugin updates shows the result and offers a retry. It does not install an absent plugin or enable a disabled one. Close old plugin clients when their work finishes before updating a shared Core.
+
+Plugin-only installations check for updates when a panel opens and hourly while visible. **Check for updates** forces a fresh check; **Update plugin** installs the offered version. You can also ask the plugin to check and update using `connector_plugin_check` and `connector_plugin_update`, or run `<plugin executable> cli plugin check` then `cli plugin update <version>`. These operations work without Connector Desktop or a compatible running Core. A plugin with no update support needs a one-time manual install of a release that includes it, or a Desktop synchronization.
+
+Downloads use the same release signing key as Desktop. The verified native payload exports its bundled manifest, skills and UI; the host CLI installs the full plugin and its cache. The managed update directory keeps the current and previous package, preserves the original manually extracted package, and removes the temporary download. Metadata is cached for one hour. Updating never edits the host cache directly, restarts the host or interrupts Agent tasks. After installation, reload the host and reopen the panels; an existing session still runs its old binary. If you also use Desktop, keep both on the same release/build. Network, signature or host errors remain retryable; installation failures attempt to restore the previous marketplace source and report any recovery failure.
+
+For manual installation or rollback, preserve the previous package and use the following steps:
 
 1. Let active Connector-owned work finish, then close old plugin clients/panels and any Connector Desktop sharing the same state. Matching version numbers are insufficient if the native builds differ. Do not force-stop unrelated tasks or delete state to bypass a mismatch.
 2. Extract the desired package to a new permanent folder. If you are changing the source folder, replace the marketplace registration:

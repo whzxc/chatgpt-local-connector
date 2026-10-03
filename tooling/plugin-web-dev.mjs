@@ -13,7 +13,7 @@ process.env.CLC_STATE_DIR = state;
 await import('./build-plugin.mjs');
 const binary = await buildNative();
 const client = new Client({ name: 'clc-plugin-web', version: '1' });
-const tools = new Set(['connector_overview', 'connector_task_usage', 'connector_usage_refresh']);
+const tools = new Set(['connector_overview', 'connector_task_usage', 'connector_usage_refresh', 'connector_plugin_check', 'connector_plugin_update']);
 let server;
 let stopping = false;
 async function stop() {
@@ -50,10 +50,10 @@ try {
             }
             const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
             if (!tools.has(body.name)) {
-              response.writeHead(400); response.end(JSON.stringify({ error: '仅支持插件用量面板工具。' })); return;
+              response.writeHead(400); response.end(JSON.stringify({ error: '仅支持插件面板工具。' })); return;
             }
             const result = await client.callTool({ name: body.name, arguments: body.arguments ?? {},
-              ...(typeof body.threadId === 'string' && body.threadId ? { _meta: { threadId: body.threadId } } : {}) });
+              ...(typeof body.threadId === 'string' && body.threadId ? { _meta: { threadId: body.threadId } } : {}) }, undefined, { timeout: 330000 });
             if (!response.destroyed) response.end(JSON.stringify(result));
           })().catch(error => {
             if (!response.destroyed) { response.writeHead(502); response.end(JSON.stringify({ error: error.message })); }

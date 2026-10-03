@@ -37,6 +37,9 @@ export const updates = createStore<{
   message: string;
   dialogOpen: boolean;
   announcement?: Update;
+  pluginMessage?: string;
+  pluginError?: string;
+  pluginSyncing?: boolean;
 }>({
   checking: false,
   phase: "idle",
@@ -179,6 +182,7 @@ export async function openDownloads() {
 }
 export function startUpdateChecks() {
   if (!isDesktop) return () => {};
+  void syncPlugin();
   void (async () => {
     try {
       const saved = localStorage.getItem("update-announcement");
@@ -209,4 +213,18 @@ export function startUpdateChecks() {
     clearTimeout(first);
     clearInterval(timer);
   };
+}
+export async function syncPlugin() {
+  if (!isDesktop || updates.get().pluginSyncing) return;
+  patch({ pluginSyncing: true, pluginError: "" });
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const result = await invoke<{state: string; version?: string}>("sync_plugin");
+    patch({ pluginMessage: result.state === "installed"
+      ? t("pluginUpdateInstalled", { version: result.version })
+      : result.state === "current" ? t("pluginUpdateCurrent", { version: result.version })
+      : result.state === "not_installed" ? t("pluginUpdateNotInstalled") : "" });
+  } catch (error) {
+    patch({ pluginError: t("pluginUpdateFailed", { error: String(error) }) });
+  } finally { patch({ pluginSyncing: false }); }
 }

@@ -859,5 +859,15 @@
   "insights.earlierCalls": "{n} earlier calls",
   "insights.contextCompaction": "Context compaction",
   "insights.closeSearch": "Close search",
-  "insights.turnOutputBytes": "Turn cumulative return size"
+  "insights.turnOutputBytes": "Turn cumulative return size",
+  "pluginUpdates": "Plugin updates",
+  "pluginUpdateTogether": "After Desktop updates and starts, it also updates the installed CLC plugin.",
+  "pluginUpdateInstalled": "Plugin {version} installed. Reload the ChatGPT / Codex host and reopen the panel; current sessions still use the previous version.",
+  "pluginUpdateCurrent": "Plugin {version} is installed.",
+  "pluginUpdateNotInstalled": "CLC is not installed in the host.",
+  "pluginUpdateFailed": "Plugin sync did not complete: {error}",
+  "pluginUpdateSync": "Sync plugin",
+  "pluginUpdateInstall": "Update plugin",
+  "pluginUpdateManual": "Install this version from the release page, or update Desktop and sync the plugin.",
+  "pluginUpdateReloadNotice": "Reload the host after updating. If you also use Connector Desktop, update it to the same version."
 }

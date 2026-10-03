@@ -16,6 +16,7 @@ import {
   cancelUpdate,
   skipUpdate,
   openDownloads,
+  syncPlugin,
 } from "../state/updates";
 import {
   Button,
@@ -88,6 +89,9 @@ export function AppUpdate() {
           {t("openDownloads")} <Icon icon={ExternalLink} />
         </Button>
       </Row>
+      {isDesktop && <Row title={t("pluginUpdates")} description={state.pluginError || state.pluginMessage || t("pluginUpdateTogether")}>
+        <Button busy={state.pluginSyncing} disabled={active || state.pluginSyncing} onClick={() => void syncPlugin()}>{t("pluginUpdateSync")}</Button>
+      </Row>}
       <Row title="whzxc/chatgpt-local-connector">
         <Button
           variant="ghost"

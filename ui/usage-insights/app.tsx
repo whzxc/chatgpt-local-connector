@@ -28,6 +28,7 @@ import { Details, type DetailView } from "./details";
 import { TaskTimeline } from "./timeline";
 import { Overview } from "./overview";
 import { Guide, type GuideSection } from "./guide";
+import { PluginUpdates } from "./plugin-update";
 import {
   text,
   date,
@@ -183,6 +184,7 @@ export default function App() {
         <main
           className={`insight-app ${global ? "insight-overview" : "insight-task"}`}
         >
+          <PluginUpdates />
           <header className="insight-header">
             <div className="insight-title">
               {selected && (

@@ -859,5 +859,15 @@
   "insights.earlierCalls": "之前的 {n} 次调用",
   "insights.contextCompaction": "上下文压缩",
   "insights.closeSearch": "关闭搜索",
-  "insights.turnOutputBytes": "本轮累计返回量"
+  "insights.turnOutputBytes": "本轮累计返回量",
+  "pluginUpdates": "插件更新",
+  "pluginUpdateTogether": "Desktop 更新并启动后，会同步已安装的 CLC 插件。",
+  "pluginUpdateInstalled": "插件 {version} 已安装。请重新加载 ChatGPT / Codex 宿主后打开面板；当前会话仍使用旧版。",
+  "pluginUpdateCurrent": "已安装插件 {version}。",
+  "pluginUpdateNotInstalled": "宿主尚未安装 CLC 插件。",
+  "pluginUpdateFailed": "插件同步未完成：{error}",
+  "pluginUpdateSync": "同步插件",
+  "pluginUpdateInstall": "更新插件",
+  "pluginUpdateManual": "此版本需要从发布页手动安装插件，或先更新 Desktop 后同步插件。",
+  "pluginUpdateReloadNotice": "更新后需要重载宿主；如果同时使用 Connector Desktop，也请更新至同一版本。"
 }
