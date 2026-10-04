@@ -204,7 +204,23 @@ impl Client {
             active: RwLock::new(true),
             heartbeat: Default::default(),
         });
-        drop(client.ensure().await?);
+        // Only a new entrypoint waits for a previous owner's lease to expire.
+        // Retrying under the request gate would serialize every UI poll for 18
+        // seconds and keep update shutdown waiting behind all queued readers.
+        let deadline = Instant::now() + Duration::from_secs(18);
+        loop {
+            match client.ensure().await {
+                Err(error)
+                    if error.starts_with("CORE_BUILD_MISMATCH") && Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+                result => {
+                    drop(result?);
+                    break;
+                }
+            }
+        }
         client.resume().await;
         Ok(client)
     }
@@ -238,19 +254,7 @@ impl Client {
     }
     async fn ensure_core(&self) -> Result<()> {
         let _startup = self.startup.lock().await;
-        // A restarted host can reconnect before the previous Core's 10-second
-        // lease and idle grace expire. Allow that owner to finish naturally.
-        let deadline = Instant::now() + Duration::from_secs(18);
-        let current = loop {
-            match owner(&self.build).await {
-                Err(error)
-                    if error.starts_with("CORE_BUILD_MISMATCH") && Instant::now() < deadline =>
-                {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-                result => break result?,
-            }
-        };
+        let current = owner(&self.build).await?;
         if current.is_none() {
             private_dir(&root())?;
             let log = std::fs::OpenOptions::new()
