@@ -1,13 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Info,
   ChevronDown,
-  ChevronRight,
-  AlertCircle,
 } from "lucide-react";
-import { Button, Icon, Tooltip, Popover, Pagination } from "../components/ui";
-import { t } from "../i18n";
+import { Button, Icon, Tooltip, Popover } from "../components/ui";
 import { text, number, percent, money } from "./format";
 import type { Counts, Detail } from "./bridge";
 
@@ -56,84 +53,50 @@ export function Value({
     </Tooltip>
   );
 }
-type StatItem = {label: string; value: ReactNode; onClick?: () => void};
+type StatItem = {label: string; value: ReactNode};
+export function useMetricFontSize() {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const grid = ref.current;
+    if (!grid) return;
+    const fit = () => {
+      grid.style.removeProperty("--metric-font-size");
+      const values = Array.from(grid.querySelectorAll<HTMLElement>(":scope > div > strong"));
+      const base = values[0] && parseFloat(getComputedStyle(values[0]).fontSize);
+      if (!base) return;
+      const scale = Math.min(1, ...values.map(value => {
+        const width = value.firstElementChild?.getBoundingClientRect().width ?? 0;
+        return width > 0 ? Math.max(0, value.clientWidth - 2) / width : 1;
+      }));
+      grid.style.setProperty("--metric-font-size", `${Math.floor(base * scale * 10) / 10}px`);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  });
+  return ref;
+}
 function StatsGrid({items}: {items: StatItem[]}) {
-  return <div className="insight-metric-grid">{items.map(item => item.onClick
-    ? <Button variant="ghost" className="insight-metric insight-metric-action" key={item.label} onClick={item.onClick}>
-        <span>{item.label}<Icon icon={ChevronRight} /></span><strong>{item.value}</strong>
-      </Button>
-    : <div className="insight-metric" key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>
+  const ref = useMetricFontSize();
+  return <div className="insight-metric-grid" ref={ref}>{items.map(item =>
+    <div className="insight-metric" key={item.label}><span>{item.label}</span><strong><span>{item.value}</span></strong></div>
   )}</div>;
 }
 const cacheHit = (value: Counts) => value.input && value.cached != null ? percent(value.cached / value.input * 100) : "—";
-export function UsageStats({detail, open}: {detail: Detail; open: (kind: "responses" | "tools" | "relations") => void}) {
+export function UsageStats({detail}: {detail: Detail}) {
   const value = detail.usage, turns = detail.turnCount;
-  const relations = detail.children.length + detail.compactions.length + Number(!!detail.parentId) + Number(!!detail.forkedFromId);
   return <StatsGrid items={[
     {label:text("turns"),value:number(turns)},
     {label:text("requests"),value:number(value.requests)},
     {label:text("estimatedCost"),value:<span className="insight-cost">{money(value.estimatedUsd)}</span>},
     {label:text("total"),value:<Value value={value.total ?? value.knownTotal} />},
     {label:text("inputOutput"),value:<span className="insight-io"><Value value={value.input} /><span>/</span><Value value={value.output} /></span>},
-    {label:text("cacheHit"),value:cacheHit(value)},
-    {label:text("responses"),value:number(detail.responseCount),onClick:() => open("responses")},
-    {label:text("tools"),value:number(detail.toolCount),onClick:() => open("tools")},
-    {label:text("relations"),value:number(relations),onClick:() => open("relations")},
+    {label:text("cacheHit"),value:<span className="insight-cache-hit">{cacheHit(value)}</span>},
   ]} />;
-}
-export function TokenStats({value}: {value: Counts}) {
-  return <StatsGrid items={[
-    {label:text("total"),value:<Value value={value.total ?? value.knownTotal ?? (value.input != null && value.output != null ? value.input + value.output : null)} />},
-    {label:text("input"),value:<Value value={value.input} />},
-    {label:text("output"),value:<Value value={value.output} />},
-    {label:text("cached"),value:<Value value={value.cached} />},
-    {label:text("reasoning"),value:<Value value={value.reasoning} />},
-    {label:text("cacheHit"),value:cacheHit(value)},
-  ]} />;
-}
-export function Pager({
-  page,
-  count,
-  size,
-  change,
-  busy = false,
-}: {
-  page: number;
-  count: number;
-  size: number;
-  change: (n: number) => void;
-  busy?: boolean;
-}) {
-  return (
-    <div className="insight-pager">
-      <Pagination
-        current={page + 1}
-        total={count}
-        pageSize={size}
-        disabled={busy}
-        onChange={(next) => change(next - 1)}
-      />
-    </div>
-  );
 }
 export function Empty({ children }: { children?: ReactNode }) {
   return <div className="insight-empty">{children ?? text("empty")}</div>;
-}
-export function Coverage({ issues }: { issues: string[] }) {
-  return (
-    <div className="insight-coverage">
-      {issues.map((issue) => (
-        <div className="insight-issue" key={issue}>
-          <Icon icon={AlertCircle} />
-          <span>
-            {t(`insights.issue.${issue}`) === `insights.issue.${issue}`
-              ? text("fallbackIssue")
-              : t(`insights.issue.${issue}`)}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
 }
 export function Expandable({
   title,

@@ -23,13 +23,12 @@ export type Counts = {
   uncertainRecords?: number;
   records: number;
 };
-export type TaskSelection = { page: number; search: string };
+export type TaskSelection = { page: number; pageSize: number; search: string };
 export type Task = {
   id: string;
   label: string | null;
   lastEventAt: number | null;
   period: Metrics & { turns: number | null };
-  lifetime: Counts;
   family: string;
   issues: string[];
   parentId: string | null;
@@ -128,6 +127,7 @@ export type ReadySnapshot = SnapshotBase & {
   taskCount: number;
   taskMatchCount: number;
   taskPage: number;
+  taskPageSize: number;
   usage: Metrics;
   models: { name: string; usage: Metrics }[];
   daily: { day: string; usage: Metrics }[];
@@ -239,17 +239,5 @@ export async function refresh(args: Record<string, unknown>) {
   const data = result._meta?.usage ?? result.structuredContent;
   if (data?.schemaVersion !== 1) throw new Error(text("schemaError"));
   return data;
-}
-export type PluginUpdate = {
-  currentVersion?: string; installedVersion?: string; version?: string;
-  available?: boolean; installable?: boolean; reloadRequired?: boolean; enabled?: boolean;
-};
-export async function pluginUpdate(action: "check" | "update", force = false, version?: string) {
-  await initialize();
-  const result = await rpc("tools/call", {
-    name: action === "check" ? "connector_plugin_check" : "connector_plugin_update",
-    arguments: action === "check" ? { force } : { version },
-  }, action === "update" ? 330000 : 130000);
-  return result.structuredContent as unknown as PluginUpdate;
 }
 declare const __CONNECTOR_VERSION__: string;

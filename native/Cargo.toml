@@ -14,7 +14,7 @@ test-fixture = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
@@ -38,6 +38,16 @@ http-body-util = "0.1"
 [profile.dev]
 debug = 1
 incremental = false
+opt-level = 1
+
+[profile.dev.package.serde_json]
+opt-level = 3
+
+[profile.dev.package.flate2]
+opt-level = 3
+
+[profile.dev.package.connector-core]
+opt-level = 2
 
 [profile.release]
 lto = "thin"

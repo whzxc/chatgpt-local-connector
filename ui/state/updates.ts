@@ -223,6 +223,7 @@ export async function syncPlugin() {
     patch({ pluginMessage: result.state === "installed"
       ? t("pluginUpdateInstalled", { version: result.version })
       : result.state === "current" ? t("pluginUpdateCurrent", { version: result.version })
+      : result.state === "host_managed" ? t("pluginUpdateHostManaged")
       : result.state === "not_installed" ? t("pluginUpdateNotInstalled") : "" });
   } catch (error) {
     patch({ pluginError: t("pluginUpdateFailed", { error: String(error) }) });

@@ -1,6 +1,6 @@
 import { AlertCircle, ChevronRight, CircleHelp } from "lucide-react";
-import { Button, Icon, Input, DataTable, Pagination, Tooltip } from "../components/ui";
-import { Empty } from "./components";
+import { Button, Icon, Input, DataTable, Pagination, SingleChoice, Tooltip } from "../components/ui";
+import { Empty, useMetricFontSize } from "./components";
 import { text, number, date, short, percent } from "./format";
 import type { ReadySnapshot, TaskSelection } from "./bridge";
 import type { GuideSection } from "./guide";
@@ -17,6 +17,7 @@ export function Overview({ data, choose, guide, refreshQuota, selection, selectT
   guide: (section: GuideSection) => void;
   refreshQuota: () => Promise<void>;
 }) {
+  const metricRef = useMetricFontSize();
   const tasks = data.tasks;
   const filtered = !!selection.search;
   const quota = data.quota ? presentSubscription(data.quota) : null;
@@ -28,23 +29,23 @@ export function Overview({ data, choose, guide, refreshQuota, selection, selectT
         {quota ? <QuotaBubble provider={quota} showHistory={false} link={false} detailPlacement="right" onRefresh={refreshQuota} /> :
           <Empty><Button variant="ghost" onClick={() => guide("start")}>{text("noQuota")}<Icon icon={CircleHelp} /></Button></Empty>}
       </section>
-      <section className="insight-card insight-stat-grid" aria-label={text("usage")}>
+      <section ref={metricRef} className="insight-card insight-stat-grid" aria-label={text("usage")}>
         <div className="insight-stat">
           <div className="insight-title"><span>{text("total")}</span></div>
-          <strong>{number(usage.total ?? usage.knownTotal, true)}</strong>
+          <strong><span>{number(usage.total ?? usage.knownTotal, true)}</span></strong>
           {usage.total == null && usage.knownTotal != null && <small>{text("known")}</small>}
         </div>
         <div className="insight-stat">
           <div className="insight-title"><span>{text("requests")}</span></div>
-          <strong>{number(usage.requests)}</strong>
+          <strong><span>{number(usage.requests)}</span></strong>
         </div>
         <div className="insight-stat">
           <div className="insight-title"><span>{text("estimatedCost")}</span></div>
-          <strong className="insight-cost">{money(usage.estimatedUsd)}</strong>{usage.unpricedRecords > 0 && <small>{text("partialCost")}</small>}
+          <strong className="insight-cost"><span>{money(usage.estimatedUsd)}</span></strong>{usage.unpricedRecords > 0 && <small>{text("partialCost")}</small>}
         </div>
         <div className="insight-stat">
           <div className="insight-title"><span>{text("cacheHit")}</span></div>
-          <strong>{hit == null ? "—" : percent(hit)}</strong>
+          <strong className="insight-cache-hit"><span>{hit == null ? "—" : percent(hit)}</span></strong>
         </div>
       </section>
     </div>
@@ -87,18 +88,25 @@ export function Overview({ data, choose, guide, refreshQuota, selection, selectT
             { title: text("total"), key: "tokens", width: 100, align: "right", render: (task) => number(task.period.total, true) },
             { title: text("input"), key: "input", width: 100, align: "right", render: (task) => number(task.period.input, true) },
             { title: text("output"), key: "output", width: 100, align: "right", render: (task) => number(task.period.output, true) },
-            { title: text("cacheHit"), key: "cacheHit", width: 110, align: "right", render: (task) => task.period.input && task.period.cached != null ? percent(task.period.cached / task.period.input * 100) : "—" },
-            { title: text("estimatedCost"), key: "cost", width: 115, align: "right", render: (task) => money(task.period.estimatedUsd) },
+            { title: text("cacheHit"), key: "cacheHit", width: 110, align: "right", render: (task) => <span className="insight-cache-hit">{task.period.input && task.period.cached != null ? percent(task.period.cached / task.period.input * 100) : "—"}</span> },
+            { title: text("estimatedCost"), key: "cost", width: 115, align: "right", render: (task) => <span className="insight-cost">{money(task.period.estimatedUsd)}</span> },
             { title: text("updated"), key: "updated", width: 130, render: (task) => <small>{date(task.lastEventAt)}</small> },
             { key: "open", width: 36, render: () => <Icon icon={ChevronRight} /> },
           ]}
         />
-        <Pagination current={data.taskPage} pageSize={10} total={data.taskMatchCount}
-          onChange={(page) => selectTasks({...selection, page})} />
+        <div className="insight-task-pagination">
+          <div className="insight-page-size">
+            <SingleChoice compact label={text("pageSize")} value={String(selection.pageSize)}
+              options={[5, 10, 20, 50, 100].map(size => ({value: String(size), label: String(size)}))}
+              onChange={(value) => selectTasks({...selection, pageSize: Number(value), page: 1})} />
+          </div>
+          <Pagination current={data.taskPage} pageSize={data.taskPageSize} total={data.taskMatchCount}
+            onChange={(page) => selectTasks({...selection, page})} />
+        </div>
         {!tasks.length && (
           <Empty>
             {filtered ? (
-              <Button variant="ghost" onClick={() => { selectTasks({search: "", page: 1}); }}>{text("clearFilters")}</Button>
+              <Button variant="ghost" onClick={() => { selectTasks({...selection, search: "", page: 1}); }}>{text("clearFilters")}</Button>
             ) : <Button variant="ghost" onClick={() => guide("start")}>{text("guide.start")}</Button>}
           </Empty>
         )}

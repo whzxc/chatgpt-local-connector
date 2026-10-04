@@ -131,6 +131,12 @@
 
 /* Categorical chart palette, shared by trends and their model legends. */
 :root {
+  --usage-cost: light-dark(#ad6d08, #efb95d);
+  --usage-cache-hit: light-dark(#09845b, #4dca9e);
+  --timeline-node: light-dark(#687080, #566071);
+  --timeline-node-active: light-dark(#0071e3, #286ed0);
+  --timeline-node-compaction: light-dark(#ad6d08, #a36b10);
+  --timeline-node-ink: #fff;
   --chart-1: light-dark(#5146e5, #9c91ff);
   --chart-2: light-dark(#0b9ad4, #50bef0);
   --chart-3: light-dark(#149c6b, #4dca9e);

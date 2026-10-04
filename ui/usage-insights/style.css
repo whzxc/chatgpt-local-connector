@@ -349,7 +349,7 @@
 }
 
 /* Keep a retargeting hover surface inside its group after a host resize. */
-.insight-app .hover-scope,
+.insight-app .hover-scope:not(.trace-map),
 .insight-detail .hover-scope {
   overflow: clip;
   overflow-clip-margin: 4px;
@@ -400,29 +400,36 @@
   grid-template-columns: minmax(260px, .95fr) minmax(0, 1.5fr);
   gap: 16px;
 }
+.insight-account { padding: 20px; }
 .insight-account .quota-bubble { font-family: var(--font-ui); }
 .insight-account .quota-bubble > .usage-history { margin-top: 2px; }
 .insight-stat-grid {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   overflow: hidden;
 }
 .insight-stat {
   min-width: 0;
-  padding: 16px 18px;
+  padding: 12px 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .insight-stat:nth-child(odd) { border-right: 1px solid var(--border); }
 .insight-stat:nth-child(-n + 2) { border-bottom: 1px solid var(--border); }
 .insight-stat > .insight-title, .insight-stat > .insight-between { color: var(--text-secondary); font-size: 13px; min-height: 24px; }
-.insight-stat > strong { font-size: clamp(24px, 3vw, 32px); line-height: 1.15; letter-spacing: -.6px; font-weight: 650; }
-.insight-stat .insight-cost { color: var(--chart-3); }
+.insight-stat > strong { font-size: var(--metric-font-size, clamp(24px, 3vw, 32px)); line-height: 1.15; letter-spacing: -.6px; font-weight: 650; }
+.insight-cost, .insight-app .quota-estimate { color: var(--usage-cost); }
+.insight-cache-hit { color: var(--usage-cache-hit); }
+.insight-stat > strong > span, .insight-metric > strong > span { display: inline-block; width: max-content; white-space: nowrap; }
 .insight-stat .progress { margin-top: auto; height: 6px; }
 .insight-stat small { line-height: 1.6; }
 .insight-trend-card .insight-section-heading { margin-bottom: 16px; }
+.insight-trend-card .insight-section-heading > h2 { flex-shrink: 0; }
+.insight-trend-card .insight-section-heading > :last-child { margin-left: auto; }
+.insight-trend-body { display: grid; gap: 12px; min-width: 0; }
 .insight-model-ranking { display: grid; gap: 20px; padding: 12px 4px 4px; }
 .insight-ranked-model { display: grid; gap: 8px; padding: 10px; margin: -10px; border-radius: 8px; transition: background-color 180ms var(--ease); }
 .insight-ranked-model:hover, .insight-ranked-model:focus-visible { background: var(--hover); }
@@ -435,13 +442,18 @@
 .insight-ranked-model strong { font-weight: 600; white-space: nowrap; }
 .insight-ranked-model .insight-title { overflow-wrap: anywhere; }
 .stacked-bar-chart { min-width: 0; width: 100%; }
+.insight-trend-cost .recharts-yAxis .recharts-cartesian-axis-tick-value { fill: var(--usage-cost); }
+.insight-trend-cost .recharts-tooltip-item-value { color: var(--usage-cost); }
+@media (min-width: 1100px) {
+  .insight-trend-body { grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 28px; align-items: start; }
+}
 @media (max-width: 700px) {
   .insight-summary-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 480px) {
   .insight-stat-grid { padding: 0; }
   .insight-stat { padding: 14px; }
-  .insight-stat > strong { font-size: 26px; }
+  .insight-stat > strong { font-size: var(--metric-font-size, 26px); }
   .insight-trend-card .insight-section-heading { gap: 8px; flex-wrap: wrap; }
   .insight-trend-card .insight-muted { font-size: 12px; }
   .insight-ranked-model small { font-size: 11px; line-height: 1.6; }
@@ -457,29 +469,31 @@
 .insight-metric-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   overflow: hidden;
-  background: var(--surface);
+  background: var(--border);
 }
-.insight-metric { min-width: 0; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
-.insight-metric:not(:nth-child(3n)) { border-right: 1px solid var(--border); }
-.insight-metric:not(:nth-last-child(-n + 3)) { border-bottom: 1px solid var(--border); }
+.insight-metric { min-width: 0; padding: 18px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); }
+@media (min-width: 1400px) {
+  .insight-metric-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .insight-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .insight-metric > span { color: var(--text-secondary); font-size: 13px; }
-.insight-metric > strong { font-size: clamp(20px, 2.4vw, 32px); font-weight: 650; line-height: 1.3; }
-.insight-metric .insight-cost { color: var(--chart-3); }
-.insight-io { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: .75em; }
+.insight-metric > strong { font-size: var(--metric-font-size, clamp(20px, 2.4vw, 32px)); font-weight: 650; line-height: 1.3; }
+.insight-io { display: inline-flex; align-items: baseline; gap: .2em; }
 .insight-io > span:nth-child(2) { color: var(--text-tertiary); font-weight: 400; }
-.insight-detail .insight-metric { padding: 14px; }
-.insight-detail .insight-metric > strong { font-size: 22px; }
 @media (max-width: 480px) {
   .insight-task-search { width: 180px; }
   .insight-metric { padding: 12px; gap: 8px; }
   .insight-metric > span { font-size: 11px; }
-  .insight-metric > strong, .insight-detail .insight-metric > strong { font-size: 18px; }
+  .insight-metric > strong { font-size: var(--metric-font-size, 18px); }
 }
 
-.insight-metric-action.button { height: auto; border-radius: 0; align-items: stretch; text-align: left; color: var(--text); }
-.insight-metric-action > span { display: flex; align-items: center; justify-content: space-between; }
-.insight-metric-action:hover { background: var(--hover); }
-.insight-plugin-update { padding-bottom: 12px; font-size: 12px; }
+
+.insight-task-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.insight-page-size { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; color: var(--text-secondary); }
+.insight-task-pagination .data-pagination { margin-top: 0; margin-left: auto; }

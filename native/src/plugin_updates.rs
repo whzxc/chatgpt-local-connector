@@ -8,6 +8,11 @@ const FEED: &str =
 const RELEASES: &str = "https://github.com/whzxc/chatgpt-local-connector/releases/download";
 const PLUGIN: &str = "clc@local-connector";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const MARKETPLACE: &str = "https://github.com/whzxc/clc-plugins.git";
+
+fn git_managed(plugin: &Value) -> bool {
+    plugin["marketplaceSource"]["sourceType"] == "git"
+}
 
 struct PendingExport(Option<PathBuf>);
 impl Drop for PendingExport {
@@ -146,6 +151,15 @@ pub async fn check(force: bool) -> Result<Value> {
         .as_ref()
         .and_then(|p| p["version"].as_str())
         .unwrap_or(VERSION);
+    if plugin.as_ref().is_some_and(git_managed) {
+        return Ok(
+            json!({"currentVersion":VERSION,"installedVersion":installed_version,
+            "version":installed_version,"installed":true,"enabled":plugin.as_ref().map(|p|p["enabled"].clone()),
+            "available":false,"installable":false,"managedBy":"host",
+            "updateCommand":"codex plugin marketplace upgrade local-connector",
+            "reloadRequired":version(installed_version)? > version(VERSION)?}),
+        );
+    }
     let latest = feed(force).await?;
     let next = string(&latest, "version");
     let newer = version(next)? > version(installed_version)?;
@@ -300,6 +314,9 @@ pub async fn sync() -> Result<Value> {
     let Some(plugin) = installed().await? else {
         return Ok(json!({"state":"not_installed"}));
     };
+    if git_managed(&plugin) {
+        return Ok(json!({"state":"host_managed","version":plugin["version"]}));
+    }
     if version(string(&plugin, "version"))? >= version(VERSION)? {
         return Ok(json!({"state":"current","version":plugin["version"]}));
     }
@@ -308,6 +325,9 @@ pub async fn sync() -> Result<Value> {
 pub async fn install(expected: &str) -> Result<Value> {
     let _lock = lock()?;
     let plugin = installed().await?.ok_or("请先在宿主安装 CLC 插件")?;
+    if git_managed(&plugin) {
+        return Err("当前插件由 Git 市场管理；请运行 codex plugin marketplace upgrade local-connector，再重载宿主。".into());
+    }
     enabled(&plugin)?;
     let latest = feed(true).await?;
     if latest["version"] != expected {
@@ -343,5 +363,55 @@ pub async fn install(expected: &str) -> Result<Value> {
     std::fs::rename(&staged, &executable).map_err(|e| e.to_string())?;
     let result = install_source(&executable, expected, &plugin).await;
     let _ = std::fs::remove_file(executable);
+    result
+}
+
+/// Switch an existing local installation through the host's marketplace API.
+/// Adding a same-name marketplace reconciles configured plugins without enabling them.
+pub async fn migrate_git() -> Result<Value> {
+    let _lock = lock()?;
+    let plugin = installed().await?.ok_or("请先在宿主安装 CLC 插件")?;
+    if git_managed(&plugin) {
+        return Ok(json!({"state":"host_managed","version":plugin["version"]}));
+    }
+    if plugin["marketplaceSource"]["sourceType"] != "local" {
+        return Err("仅支持将本地 CLC 市场迁移到 Git 市场".into());
+    }
+    let original = load(&PathBuf::from(string(&plugin["source"], "path")).join(".mcp.json"))?;
+    if original["mcpServers"]["clc"]["env"]
+        .as_object()
+        .is_some_and(|env| !env.is_empty())
+    {
+        return Err("原插件包含自定义 env；请先将这些值配置为宿主进程的环境变量并从本地 .mcp.json 移除，再迁移。原安装未修改。".into());
+    }
+    let source = string(&plugin["marketplaceSource"], "source");
+    let result: Result<Value> = async {
+        host(&[
+            "plugin",
+            "marketplace",
+            "add",
+            MARKETPLACE,
+            "--ref",
+            "stable",
+            "--json",
+        ])
+        .await?;
+        let current = installed().await?.ok_or("宿主未确认插件安装")?;
+        if !git_managed(&current)
+            || current["marketplaceSource"]["source"] != MARKETPLACE
+            || current["enabled"] != plugin["enabled"]
+        {
+            return Err("宿主回读的插件来源或启用状态不一致".into());
+        }
+        Ok(json!({"state":"host_managed","version":current["version"],"reloadRequired":true}))
+    }
+    .await;
+    if let Err(error) = result {
+        let rollback = host(&["plugin", "marketplace", "add", source, "--json"]).await;
+        return Err(match rollback {
+            Ok(_) => format!("{error}；已恢复原本地市场"),
+            Err(e) => format!("{error}；恢复原本地市场失败：{e}"),
+        });
+    }
     result
 }

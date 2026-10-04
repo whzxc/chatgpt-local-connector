@@ -14,7 +14,8 @@ for (const file of ['LICENSE','skills/local-connector/SKILL.md','assets/icon.svg
 if (await readFile(path.join(directory,'skills/local-connector/SKILL.md'),'utf8') !== await readFile(new URL('../plugins/clc/skills/local-connector/SKILL.md',import.meta.url),'utf8')) throw new Error('Bundled workflow skill differs from this source');
 const config = JSON.parse(await readFile(path.join(directory, '.mcp.json'), 'utf8'));
 const server = config.mcpServers.clc;
-if (Object.keys(config.mcpServers).length !== 1 || server.cwd !== '.' || server.command !== (process.platform === 'win32' ? './bin/local-connector.exe' : './bin/local-connector') || server.args.join() !== 'mcp') throw new Error('Plugin must use its own relative executable');
+const commands = process.platform === 'win32' ? ['./bin/local-connector.exe', './bin/local-connector'] : ['./bin/local-connector'];
+if (Object.keys(config.mcpServers).length !== 1 || server.cwd !== '.' || !commands.includes(server.command) || server.args.join() !== 'mcp') throw new Error('Plugin must use its own relative executable');
 const binary = path.resolve(directory, server.command);
 const mode = (await stat(binary)).mode;
 if (process.platform !== 'win32' && !(mode & 0o111)) throw new Error('Plugin binary is not executable');

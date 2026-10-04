@@ -34,6 +34,7 @@
     "release:finalize": "node tooling/release.mjs finalize",
     "plugin:dev": "node tooling/plugin-dev.mjs",
     "plugin:web": "node tooling/plugin-web-dev.mjs",
+    "plugin:marketplace": "node tooling/plugin-marketplace.mjs",
     "plugin:build": "node tooling/plugin-build.mjs",
     "plugin:check": "node tooling/check-plugin.mjs"
   },

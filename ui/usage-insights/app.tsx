@@ -24,11 +24,9 @@ import {
   type TaskSelection,
 } from "./bridge";
 import { Empty, UsageStats } from "./components";
-import { Details, type DetailView } from "./details";
 import { TaskTimeline } from "./timeline";
 import { Overview } from "./overview";
 import { Guide, type GuideSection } from "./guide";
-import { PluginUpdates } from "./plugin-update";
 import {
   text,
   date,
@@ -45,9 +43,8 @@ export default function App() {
     [busy, setBusy] = useState(false);
   const [days, setDays] = useState("7"),
     [selected, setSelected] = useState("");
-  const [taskSelection, setTaskSelection] = useState<TaskSelection>({ page: 1, search: "" });
+  const [taskSelection, setTaskSelection] = useState<TaskSelection>({ page: 1, pageSize: 10, search: "" });
   const [guide, setGuide] = useState<GuideSection | null>(null);
-  const [view, setView] = useState<DetailView | null>(null);
   const [routeVersion, setRouteVersion] = useState(0);
   const browserRoute = useRef(false);
   const entryScope = useRef<"global" | "thread">("thread"),
@@ -83,6 +80,7 @@ export default function App() {
         ...(refreshQuota ? { refreshQuota: true } : {}),
         ...(f.selected ? { threadId: f.selected } : {}),
         taskPage: f.taskSelection.page,
+        taskPageSize: f.taskSelection.pageSize,
         taskSearch: f.taskSelection.search,
       });
       if (serial === request.current) {
@@ -117,7 +115,6 @@ export default function App() {
       inFlight.current = false;
       filter.current = { ...filter.current, selected: route.threadId };
       setSelected(route.threadId);
-      setView(null);
       setData(previous => previous?.state === "ready" ? { ...previous, thread: null, binding: "unknown", scope: route.scope } : previous);
       setRouteVersion(version => version + 1);
       window.scrollTo(0, 0);
@@ -158,7 +155,6 @@ export default function App() {
     if (id) window.scrollTo(0, 0);
     request.current++;
     inFlight.current = false;
-    setView(null);
     setSelected(id);
     setData((previous) =>
       previous?.state === "ready"
@@ -238,7 +234,6 @@ export default function App() {
                   />
                 </div>
               )}
-              <PluginUpdates />
             </div>
           </header>
           {failure && (
@@ -266,7 +261,7 @@ export default function App() {
                     <>
                       {detail ? (
                         <>
-                          <UsageStats detail={detail} open={kind => setView({ kind })} />
+                          <UsageStats detail={detail} />
                           <TaskTimeline key={detail.id} detail={detail} />
 
                         </>
@@ -283,15 +278,7 @@ export default function App() {
             </>
           )}
           {guide && <Guide section={guide} close={() => setGuide(null)} />}
-          {view && ready && (
-            <Details
-              key={view.kind}
-              view={view}
-              data={ready}
-              close={() => setView(null)}
-              choose={choose}
-            />
-          )}
+
         </main>
       </TooltipProvider>
     </MotionConfig>

@@ -27,7 +27,7 @@ export function UsageChart({data}: {data: ReadySnapshot}) {
       const row: Record<string,string|number> = {label};
       for (const category of categories) {
         const model = models.find(model => model.name === category.name);
-        row[category.key] = model ? value(model.usage, metric) : 0;
+        if (model && model.usage.requests > 0) row[category.key] = value(model.usage, metric);
       }
       rows.push(row);
     }
@@ -36,26 +36,29 @@ export function UsageChart({data}: {data: ReadySnapshot}) {
   const ranked = [...categories].sort((a,b) => value(b.usage,metric)-value(a.usage,metric));
   const total = categories.reduce((sum,model) => sum+value(model.usage,metric), 0);
   const display = (n: number, compact = false) => metric === "cost" ? money(n, compact) : number(n, compact);
-  return <section className="insight-card insight-trend-card">
+  return <section className={`insight-card insight-trend-card${metric === "cost" ? " insight-trend-cost" : ""}`}>
     <div className="insight-section-heading">
+      <h2>{text("trend")}</h2>
       <SingleChoice compact label={text("chartMetric")} value={metric} onChange={v => setMetric(v as Metric)} options={[
         {value:"tokens",label:text("total")},{value:"cost",label:text("estimatedCost")},{value:"requests",label:text("requests")},
       ]} />
     </div>
-    <StackedBarChart data={rows} series={categories} valueLabel={display} label={`${text("trend")} · ${data.range.timezone}`} highlighted={highlight} />
-    <div className="insight-model-ranking">
-      {ranked.map(model => {
-        const share = total ? value(model.usage,metric)/total*100 : 0;
-        const hit = model.usage.input && model.usage.cached != null ? model.usage.cached/model.usage.input*100 : null;
-        return <div className="insight-ranked-model" key={model.key} tabIndex={0}
-          onPointerEnter={() => setHighlight(model.key)} onPointerLeave={() => setHighlight(undefined)}
-          onFocus={() => setHighlight(model.key)} onBlur={() => setHighlight(undefined)}>
-          <div className="insight-between"><span className="insight-title"><i className="insight-swatch" style={{background:model.color}} />{model.name}<span className="insight-model-share">{percent(share)}</span></span><strong>{metric === "cost" && model.usage.estimatedUsd == null ? "—" : display(value(model.usage,metric))}</strong></div>
-          <Progress color={model.color} value={share} label={model.name} />
-          <small>{text("requestCount",{n:number(model.usage.requests)})} · {money(model.usage.estimatedUsd)} · {text("cacheHit")} {hit == null ? "—" : percent(hit)}{model.usage.unpricedRecords > 0 ? ` · ${text("partialCost")}` : ""}</small>
-        </div>;
-      })}
-      {!ranked.length && <Empty />}
+    <div className="insight-trend-body">
+      <StackedBarChart data={rows} series={categories} valueLabel={display} label={`${text("trend")} · ${data.range.timezone}`} highlighted={highlight} />
+      <div className="insight-model-ranking">
+        {ranked.map(model => {
+          const share = total ? value(model.usage,metric)/total*100 : 0;
+          const hit = model.usage.input && model.usage.cached != null ? model.usage.cached/model.usage.input*100 : null;
+          return <div className="insight-ranked-model" key={model.key} tabIndex={0}
+            onPointerEnter={() => setHighlight(model.key)} onPointerLeave={() => setHighlight(undefined)}
+            onFocus={() => setHighlight(model.key)} onBlur={() => setHighlight(undefined)}>
+            <div className="insight-between"><span className="insight-title"><i className="insight-swatch" style={{background:model.color}} />{model.name}<span className="insight-model-share">{percent(share)}</span></span><strong className={metric === "cost" ? "insight-cost" : undefined}>{metric === "cost" && model.usage.estimatedUsd == null ? "—" : display(value(model.usage,metric))}</strong></div>
+            <Progress color={model.color} value={share} label={model.name} />
+            <small>{text("requestCount",{n:number(model.usage.requests)})} · <span className="insight-cost">{money(model.usage.estimatedUsd)}</span> · {text("cacheHit")} <span className="insight-cache-hit">{hit == null ? "—" : percent(hit)}</span>{model.usage.unpricedRecords > 0 ? ` · ${text("partialCost")}` : ""}</small>
+          </div>;
+        })}
+        {!ranked.length && <Empty />}
+      </div>
     </div>
   </section>;
 }

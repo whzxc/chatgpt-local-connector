@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicU16, Ordering};
 
 pub struct Service {
     pub runtime: crate::runtime::State,
-    usage_job: Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub subscriptions: Arc<crate::subscriptions::SubscriptionService>,
     pub control: Arc<Control>,
     pub agents: Arc<crate::agents::AgentHost>,
@@ -233,7 +232,6 @@ impl Service {
             crate::subscriptions::SubscriptionService::new(control.clone(), agents.clone())?;
         Ok(Arc::new(Self {
             runtime: Default::default(),
-            usage_job: Mutex::new(None),
             subscriptions,
             execution,
             control,
@@ -347,21 +345,11 @@ impl Service {
         status["core"]["registered"] = json!(running > 0);
         Ok(status)
     }
-    pub async fn start_usage(&self) {
-        let mut job = self.usage_job.lock().await;
-        if job.is_none() {
-            *job = Some(crate::usage::start());
-        }
-    }
     pub async fn stop(&self) -> Result<()> {
         let _configuration = self.configuration.lock().await;
         self.closing.store(true, Ordering::SeqCst);
         crate::logs::record("INFO", "Service stopping", None);
         crate::usage::stop();
-        if let Some(job) = self.usage_job.lock().await.take() {
-            job.abort();
-            let _ = job.await;
-        }
         self.subscriptions.stop().await;
         let entries = self.entries().await;
         for ingress in &entries {
