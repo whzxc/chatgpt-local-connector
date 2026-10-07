@@ -163,7 +163,10 @@ export default function TrayPanel({
         },
       );
       if (stopped) dispose();
-      else off = dispose;
+      else {
+        off = dispose;
+        await action("ready");
+      }
     });
     const key = (e: KeyboardEvent) => {
       if (

@@ -57,7 +57,10 @@ export default function App() {
     taskState = tasks.use(),
     nav = navigation.use();
   updates.use();
-  const [page, setPage] = useState<Page>("overview"),
+  const [page, setPage] = useState<Page>(() => {
+    const saved = localStorage.getItem("clc-page");
+    return ["overview", "settings", "logs", "tasks"].includes(saved ?? "") ? saved as Page : "overview";
+  }),
     [usage, setUsage] = useState(false);
   const [sheetWide, setSheetWide] = useState(false);
   const sheet = useRef<HTMLElement>(null),
@@ -68,6 +71,16 @@ export default function App() {
     sheetClosing = useRef(false),
     backdropDown = useRef(false);
   const layers = panelLayers.use();
+  useEffect(() => { localStorage.setItem("clc-page", page); }, [page]);
+  useEffect(() => {
+    if (!isDesktop) return;
+    // Keep drafts and active dialogs alive; only retire an idle hidden surface.
+    const timer = setInterval(() => {
+      if (document.querySelector('[role="dialog"], form') || updates.get().phase !== "idle" || updates.get().checking || updates.get().dialogOpen || updateVisible()) return;
+      void import("@tauri-apps/api/core").then(({ invoke }) => invoke("release_main_window")).catch(() => {});
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
   useLayoutEffect(() => {
     if (page === "overview" || !sheet.current) return;
     const node = sheet.current,
@@ -238,7 +251,11 @@ export default function App() {
         listen<string>("connection-error", (e) => notify(e.payload, true)),
       ]);
       if (stopped) listeners.forEach((stop) => stop());
-      else stops.push(...listeners);
+      else {
+        stops.push(...listeners);
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("main_window_ready");
+      }
     });
     return () => {
       stopped = true;

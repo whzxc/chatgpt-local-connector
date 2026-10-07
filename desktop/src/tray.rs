@@ -5,7 +5,9 @@ mod windows;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(not(target_os = "windows"))]
 use tauri::tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Emitter, Manager};
+#[cfg(not(target_os = "macos"))]
+use tauri::Emitter;
+use tauri::Manager;
 #[cfg(target_os = "windows")]
 pub use windows::install;
 
@@ -16,6 +18,49 @@ struct PanelHeight(AtomicU32);
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     app.manage(PanelInteraction::default());
     app.manage(PanelHeight(AtomicU32::new(100)));
+    TrayIconBuilder::with_id("main-tray")
+        .icon(tauri::include_image!("icons/tray-logo.png"))
+        .icon_as_template(false)
+        .tooltip("Local Connector")
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(move |tray, event| {
+            if let TrayIconEvent::Click {
+                position,
+                rect,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Err(error) = toggle(tray.app_handle(), position, rect) {
+                    eprintln!("Tray panel: {error}");
+                }
+            }
+        })
+        .build(app)?;
+    let handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            let app = handle.clone();
+            let _ = handle.run_on_main_thread(move || {
+                if app.state::<PanelInteraction>().0.load(Ordering::Relaxed) {
+                    return;
+                }
+                #[cfg(target_os = "macos")]
+                macos::retire_if_hidden(&app);
+                #[cfg(not(target_os = "macos"))]
+                if let Some(w) = app.get_webview_window("tray-panel") {
+                    if w.is_visible() == Ok(false) {
+                        let _ = w.destroy();
+                    }
+                }
+            });
+        }
+    });
+    Ok(())
+}
+#[cfg(not(target_os = "windows"))]
+fn create_panel(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let window = tauri::WebviewWindowBuilder::new(
         app,
         "tray-panel",
@@ -57,26 +102,7 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             let _ = hide(&handle);
         }
     });
-    TrayIconBuilder::with_id("main-tray")
-        .icon(tauri::include_image!("icons/tray-logo.png"))
-        .icon_as_template(false)
-        .tooltip("Local Connector")
-        .show_menu_on_left_click(false)
-        .on_tray_icon_event(move |tray, event| {
-            if let TrayIconEvent::Click {
-                position,
-                rect,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                if let Err(error) = toggle(tray.app_handle(), position, rect) {
-                    eprintln!("Tray panel: {error}");
-                }
-            }
-        })
-        .build(app)?;
-    Ok(())
+    Ok(window)
 }
 #[cfg(not(target_os = "windows"))]
 fn pointer_on_icon(window: &tauri::WebviewWindow) -> bool {
@@ -112,8 +138,12 @@ fn toggle(
     point: tauri::PhysicalPosition<f64>,
     rect: tauri::Rect,
 ) -> tauri::Result<()> {
-    let Some(window) = app.get_webview_window("tray-panel") else {
-        return Ok(());
+    let window = match app.get_webview_window("tray-panel") {
+        Some(window) => window,
+        None => {
+            create_panel(app)?;
+            return Ok(());
+        }
     };
     #[cfg(target_os = "macos")]
     {
@@ -224,6 +254,18 @@ pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), S
     }
     let app = window.app_handle();
     match action.as_str() {
+        "ready" => {
+            #[cfg(not(target_os = "windows"))]
+            if let Some(rect) = app
+                .tray_by_id("main-tray")
+                .and_then(|t| t.rect().ok().flatten())
+            {
+                let scale = window.scale_factor().map_err(|e| e.to_string())?;
+                let point = rect.position.to_physical::<f64>(scale);
+                toggle(app, point, rect).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
         "menu-open" => {
             app.state::<PanelInteraction>()
                 .0
@@ -244,9 +286,7 @@ pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), S
         }
         "updates" => {
             hide(&window).map_err(|e| e.to_string())?;
-            crate::show_main_window(app);
-            app.emit_to("main", "updates:check", ())
-                .map_err(|e| e.to_string())
+            crate::windows::show(app, Some(("updates:check".into(), serde_json::Value::Null)))
         }
         "hide" => hide(&window).map_err(|e| e.to_string()),
         "quit" => {
@@ -255,9 +295,7 @@ pub fn tray_action(window: tauri::WebviewWindow, action: String) -> Result<(), S
         }
         "overview" | "settings" | "logs" | "tasks" => {
             hide(&window).map_err(|e| e.to_string())?;
-            crate::show_main_window(app);
-            app.emit_to("main", "navigate", action)
-                .map_err(|e| e.to_string())
+            crate::windows::show(app, Some(("navigate".into(), serde_json::json!(action))))
         }
         _ => Err("invalid action".into()),
     }

@@ -80,7 +80,13 @@ pub fn configure(app: &tauri::AppHandle, body: Value) -> Result<Value, String> {
         .auto_collapse
         .store(p["autoCollapse"] == true, Ordering::Relaxed);
     #[cfg(target_os = "macos")]
-    macos::configure(app, p.clone());
+    {
+        macos::configure(app, p.clone());
+        sync_window(
+            app,
+            app.state::<Arc<Runtime>>().count.load(Ordering::Relaxed),
+        );
+    }
     let saved = preferences();
     let _ = app.emit_to("main", "usage-panel:preferences", &saved);
     Ok(saved)
@@ -114,40 +120,40 @@ fn apply(app: &tauri::AppHandle, snapshot: Value, state: &Arc<Runtime>) {
     let previous = state.count.swap(count, Ordering::Relaxed);
     if previous != count {
         #[cfg(target_os = "macos")]
-        {
-            let handle = app.clone();
-            let data = snapshot.clone();
-            let _ = app.run_on_main_thread(move || {
-                if count == 0 {
-                    macos::close();
-                    if let Some(w) = handle.get_webview_window("usage-rail") {
-                        let _ = w.destroy();
-                    }
-                } else if handle.get_webview_window("usage-rail").is_none() {
-                    if let Ok(w) = tauri::WebviewWindowBuilder::new(
-                        &handle,
-                        "usage-rail",
-                        tauri::WebviewUrl::App("usage-rail.html".into()),
-                    )
-                    .title("Subscription usage")
-                    .inner_size(macos::width(), macos::height(count))
-                    .visible(false)
-                    .transparent(true)
-                    .decorations(false)
-                    .focused(false)
-                    .focusable(false)
-                    .skip_taskbar(true)
-                    .build()
-                    {
-                        let _ = w.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
-                        let _ = macos::install(&w, count);
-                        let _ = w.emit_to("usage-rail", "subscriptions:changed", data);
-                    }
-                }
-            });
-        }
+        sync_window(app, count);
         state.wake.notify_one();
     }
+}
+#[cfg(target_os = "macos")]
+fn sync_window(app: &tauri::AppHandle, count: usize) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if count == 0 || preferences()["visible"] == false {
+            macos::close();
+            if let Some(w) = handle.get_webview_window("usage-rail") {
+                let _ = w.destroy();
+            }
+        } else if handle.get_webview_window("usage-rail").is_none() {
+            if let Ok(w) = tauri::WebviewWindowBuilder::new(
+                &handle,
+                "usage-rail",
+                tauri::WebviewUrl::App("usage-rail.html".into()),
+            )
+            .title("Subscription usage")
+            .inner_size(macos::width(), macos::height(count))
+            .visible(false)
+            .transparent(true)
+            .decorations(false)
+            .focused(false)
+            .focusable(false)
+            .skip_taskbar(true)
+            .build()
+            {
+                let _ = w.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
+                let _ = macos::install(&w, count);
+            }
+        }
+    });
 }
 pub fn install(app: &tauri::AppHandle) {
     let state = Arc::new(Runtime::default());

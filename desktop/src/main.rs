@@ -13,6 +13,7 @@ mod session;
 mod tray;
 mod updates;
 mod usage_panel;
+mod windows;
 #[cfg(target_os = "windows")]
 mod windows_frame;
 
@@ -70,10 +71,8 @@ async fn service_request(
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+    if let Err(error) = windows::show(app, None) {
+        eprintln!("Open window: {error}");
     }
 }
 async fn connect_service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
@@ -136,6 +135,7 @@ fn main() {
     }
     tauri::Builder::default()
         .manage(updates::UpdateState::default())
+        .manage(windows::MainState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_main_window(app);
         }))
@@ -157,6 +157,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             tray::tray_action,
             tray::tray_panel_resize,
+            windows::main_window_ready,
+            windows::release_main_window,
             service_request,
             i18n::set_ui_locale,
             updates::check_update,
@@ -247,6 +249,7 @@ fn main() {
                 // On macOS this disables WKWebView's own opaque background.
                 window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
             }
+            windows::install(app.handle());
             usage_panel::install(app.handle());
             tray::install(app)?;
             #[cfg(target_os = "windows")]
@@ -276,6 +279,12 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Local Connector 启动失败")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested {
+                code: None, api, ..
+            } = &event
+            {
+                api.prevent_exit();
+            }
             if let tauri::RunEvent::Exit = event {
                 usage_panel::close();
                 // The updater already drained the service before replacing the

@@ -40,6 +40,7 @@ struct Panel {
     layout: Option<Layout>,
     generation: u64,
     expanded: bool,
+    compact: bool,
     slot: Option<usize>,
     provider_id: Option<String>,
     left: Option<Instant>,
@@ -61,7 +62,7 @@ pub fn snapshot() -> Value {
         json!({
             "status":if p.native.isVisible() {"visible"} else {"hidden"},
             "observedAt":connector_core::now(),"placement":p.placement.value(),
-            "visible":p.native.isVisible(),"expanded":p.expanded,
+            "visible":p.native.isVisible(),"expanded":p.expanded,"compactCanvas":p.compact,
             "interaction":match &p.interaction {None=>"idle",Some(v) if v.dragged=>"dragging",Some(_)=>"pressed"},
             "providerId":p.provider_id,"menuOpen":p.menu_open,
             "frame":{"x":frame.origin.x,"y":frame.origin.y,"width":frame.size.width,"height":frame.size.height,"coordinates":"appkit-screen-points"},
@@ -113,8 +114,9 @@ pub fn install(window: &tauri::WebviewWindow, count: usize) -> tauri::Result<()>
         let local = RcBlock::new(move |event: NonNull<NSEvent>| { pointer(&local_app); event.as_ptr() });
         let monitors = [NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &global),
             NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &local)].into_iter().flatten().collect();
-        PANEL.with(|cell| *cell.borrow_mut() = Some(Panel {native:panel,canvas:content,app:app.clone(),count,preferences:super::preferences(),placement:Placement::load(&super::preferences()["placement"]),layout:None,screen:None,generation:0,expanded:false,slot:None,provider_id:None,left:None,geometry:Value::Null,monitors,interaction:None,menu_open:false,pending_preferences:None}));
-        tick(&app,count,super::preferences()["autoCollapse"]!=false);
+        PANEL.with(|cell| *cell.borrow_mut() = Some(Panel {native:panel,canvas:content,app:app.clone(),count,preferences:super::preferences(),placement:Placement::load(&super::preferences()["placement"]),layout:None,screen:None,generation:0,expanded:false,compact:true,slot:None,provider_id:None,left:None,geometry:Value::Null,monitors,interaction:None,menu_open:false,pending_preferences:None}));
+        // Layout emits frontend events. Wait for ready so this WebView's
+        // runtime lock is released before emitting, including on recreation.
     })
 }
 
@@ -154,7 +156,14 @@ fn place(p: &mut Panel, mut screen: ScreenGeometry, at: Option<NSPoint>) {
     }
     let size = placement::rail_size(&p.preferences, p.count, &p.placement, &screen);
     let origin = at.unwrap_or_else(|| placement::origin(&p.placement, &screen, size));
-    let layout = placement::layout(&p.preferences, p.count, &p.placement, &screen, origin);
+    let layout = placement::layout(
+        &p.preferences,
+        p.count,
+        &p.placement,
+        &screen,
+        origin,
+        p.compact,
+    );
     p.native.setLevel(if p.placement.dock == "top" {
         NSStatusWindowLevel
     } else {
@@ -320,6 +329,10 @@ pub fn tick(app: &tauri::AppHandle, count: usize, _auto_collapse: bool) {
         if p.preferences["notchFusion"] == false {
             screen.notch = None;
         }
+        if !p.expanded && !p.compact && p.left.is_some_and(|at| at.elapsed().as_millis() >= 1500) {
+            p.compact = true;
+            p.layout = None;
+        }
         if p.layout.is_none() || p.screen.as_ref() != Some(&screen) {
             p.placement.display = screen.id.clone();
             place(p, screen, None);
@@ -419,6 +432,12 @@ fn pointer(app: &tauri::AppHandle) {
         }
         if p.preferences["autoCollapse"] == false || p.placement.dock == "floating" {
             p.expanded = true;
+        }
+        if p.expanded && p.compact {
+            p.compact = false;
+            if let Some(screen) = p.screen.clone() {
+                place(p, screen, None);
+            }
         }
         // Wake zones/corridors observe only; unpainted pixels still click through.
         let content = hit(&p.geometry["primaryInput"], x, y)
@@ -702,6 +721,8 @@ pub fn geometry(app: &tauri::AppHandle, body: Value) {
     pointer(app);
 }
 pub fn ready(app: &tauri::AppHandle) {
+    let count = PANEL.with(|cell| cell.borrow().as_ref().map(|p| p.count).unwrap_or(0));
+    tick(app, count, super::preferences()["autoCollapse"] != false);
     PANEL.with(|cell| {
         if let Some(p) = cell.borrow().as_ref() {
             emit(app, p);

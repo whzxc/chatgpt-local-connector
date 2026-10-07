@@ -172,3 +172,28 @@ pub fn menu_closed(window: &tauri::WebviewWindow) -> tauri::Result<()> {
         });
     })
 }
+
+// AppKit retains the reparented canvas and event monitors independently of Tauri.
+pub fn retire_if_hidden(app: &tauri::AppHandle) {
+    let retired = PANEL.with(|cell| {
+        let mut state = cell.borrow_mut();
+        if state.as_ref().is_none_or(|p| p.native.isVisible()) {
+            return false;
+        }
+        if let Some(p) = state.take() {
+            for monitor in p._monitors {
+                unsafe {
+                    NSEvent::removeMonitor(&monitor);
+                }
+            }
+            p.native.setContentView(None);
+            p.native.close();
+        }
+        true
+    });
+    if retired {
+        if let Some(window) = app.get_webview_window("tray-panel") {
+            let _ = window.destroy();
+        }
+    }
+}

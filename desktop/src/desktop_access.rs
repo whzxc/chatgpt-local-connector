@@ -1,7 +1,7 @@
 //! Fixed local desktop operations, shared by the frontend and authenticated CLI.
 use connector_core::transport::{DesktopAccess, DesktopRequest};
 use serde_json::{json, Value};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 pub struct Owner(pub tauri::AppHandle);
 pub fn check_write(app: &tauri::AppHandle) -> Result<(), String> {
@@ -116,27 +116,11 @@ pub async fn request(app: &tauri::AppHandle, operation: DesktopRequest) -> Resul
 
 pub fn open(app: &tauri::AppHandle, provider: &str) -> Result<Value, String> {
     check_write(app)?;
-    let window = app
-        .get_webview_window("main")
-        .ok_or("main window unavailable")?;
-    window.unminimize().map_err(|e| e.to_string())?;
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-    window
-        .emit_to("main", "subscriptions:open", provider)
-        .map_err(|e| e.to_string())?;
+    crate::windows::show(app, Some(("subscriptions:open".into(), json!(provider))))?;
     Ok(json!({"opened":true,"providerId":provider,"pid":std::process::id()}))
 }
 
 pub fn open_settings(app: &tauri::AppHandle) -> Result<(), String> {
     check_write(app)?;
-    let window = app
-        .get_webview_window("main")
-        .ok_or("main window unavailable")?;
-    window.unminimize().map_err(|e| e.to_string())?;
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-    window
-        .emit_to("main", "agents:settings", ())
-        .map_err(|e| e.to_string())
+    crate::windows::show(app, Some(("agents:settings".into(), Value::Null)))
 }

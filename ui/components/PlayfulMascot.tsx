@@ -27,7 +27,6 @@ const stateExpressions = {
   unavailable: dizzy,
   working: happy,
 };
-const sprites = [logo, happy, surprised, pout, closed, cross, squeezed, dizzy];
 export default function PlayfulMascot({
   state,
   onDisplacement,
@@ -365,15 +364,7 @@ export default function PlayfulMascot({
         aria-label={t("pokeTheMascot")}
       >
         <span ref={head} className="mascot-head" aria-hidden="true">
-          {sprites.map((src) => (
-            <img
-              key={src}
-              src={src}
-              alt=""
-              draggable={false}
-              style={{ visibility: src === expression ? "visible" : "hidden" }}
-            />
-          ))}
+          <img src={expression} alt="" draggable={false} />
         </span>
       </button>
     </div>

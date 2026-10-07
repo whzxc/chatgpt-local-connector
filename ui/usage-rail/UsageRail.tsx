@@ -505,7 +505,7 @@ export default function UsageRail({
           <path className="bubble-shape" d={path(bubble)} opacity={reveal} />
         )}
       </svg>
-      <div
+      {openness > 0.001 && <div
         className="ring-layer"
         style={{ clipPath: `path('${path(railPoints)}')` }}
       >
@@ -558,7 +558,7 @@ export default function UsageRail({
             {page + 1}/{pages} ›
           </button>
         )}
-      </div>
+      </div>}
       {active && (
         <aside
           className="rail-bubble"

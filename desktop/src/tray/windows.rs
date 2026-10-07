@@ -3,7 +3,6 @@ use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter,
 };
 
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
@@ -44,8 +43,10 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => app.exit(0),
             "overview" | "tasks" | "logs" | "settings" => {
-                crate::show_main_window(app);
-                if let Err(error) = app.emit_to("main", "navigate", event.id.as_ref()) {
+                if let Err(error) = crate::windows::show(
+                    app,
+                    Some(("navigate".into(), serde_json::json!(event.id.as_ref()))),
+                ) {
                     eprintln!("Tray navigation: {error}");
                 }
             }

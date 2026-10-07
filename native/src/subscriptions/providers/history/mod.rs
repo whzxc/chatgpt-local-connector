@@ -34,60 +34,31 @@ pub(super) struct Scan {
 }
 type Cache = HashMap<PathBuf, (u64, std::time::SystemTime, Scan)>;
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
-pub(crate) struct UsagePricing(std::sync::Arc<pricing::Pricing>);
-impl UsagePricing {
-    pub(crate) fn current() -> Self {
-        Self(pricing::current())
-    }
-    pub(crate) fn estimate(&self, r: &crate::usage::Response) -> Option<f64> {
-        if !r.reliable {
-            return None;
-        }
-        let cached = r.tokens.cached?;
-        cost(
-            &Event {
-                at: r.at,
-                model: r.model.clone().unwrap_or_default(),
-                input: r.tokens.input?.checked_sub(cached)?,
-                cached,
-                output: r.tokens.output?,
-                write: 0,
-                fast: r
-                    .service_tier
-                    .as_deref()
-                    .is_some_and(|s| ["fast", "priority"].contains(&s)),
-            },
-            "codex",
-            &self.0,
-        )
-    }
-}
 pub async fn local(provider: &str) -> Value {
     if provider == "codex" {
-        let _ = crate::usage::refresh().await;
-        let (rows, incomplete) = match crate::usage::responses().await {
-            Ok(value) => value,
-            Err(_) => return json!({"error":"history-unavailable"}),
-        };
-        let mut missing = incomplete;
-        let events = rows
-            .into_iter()
-            .filter_map(|r| {
+        return tokio::task::spawn_blocking(|| {
+            let cutoff = (Utc::now() - chrono::Duration::days(32)).timestamp_millis();
+            let mut missing = false;
+            let mut events = Vec::new();
+            let incomplete = crate::usage::visit_responses(|r| {
                 if !r.reliable {
                     missing = true;
-                    return None;
+                    return;
                 }
                 let (Some(input), Some(cached), Some(output)) =
                     (r.tokens.input, r.tokens.cached, r.tokens.output)
                 else {
                     missing = true;
-                    return None;
+                    return;
                 };
                 let Some(input) = input.checked_sub(cached) else {
                     missing = true;
-                    return None;
+                    return;
                 };
-                Some(Event {
+                if r.at < cutoff {
+                    return;
+                }
+                events.push(Event {
                     at: r.at,
                     model: r.model.unwrap_or_default(),
                     input,
@@ -98,10 +69,12 @@ pub async fn local(provider: &str) -> Value {
                         .service_tier
                         .as_deref()
                         .is_some_and(|s| ["fast", "priority"].contains(&s)),
-                })
-            })
-            .collect();
-        return summarize(events, provider, missing, &pricing::current());
+                });
+            });
+            summarize(events, "codex", missing || incomplete, &pricing::current())
+        })
+        .await
+        .unwrap_or_else(|_| json!({"error":"history-unavailable"}));
     }
     let prices = pricing::current();
     let provider = provider.to_string();

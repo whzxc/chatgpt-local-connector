@@ -6,7 +6,7 @@ export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amou
   const h=p.history, length=quotaPeriod(w,p), reset=Date.parse(w.resetsAt??'');
   const observed=Date.parse(p.observedAt??''), historyAt=Date.parse(h?.observedAt??'');
   const local = p.agentId==='codex' && h?.scope==='local-device';
-  if(!h?.timeline || h.error || (!local && (h.incomplete || h.scope!=='account-export')) || p.state!=='ready' || p.error || !length
+  if(!h?.samples || h.error || (!local && (h.incomplete || h.scope!=='account-export')) || p.state!=='ready' || p.error || !length
     || !Number.isFinite(reset) || !Number.isFinite(observed) || !Number.isFinite(historyAt)
     || now-observed>300000 || now-historyAt>300000 || observed>now+30000 || historyAt>now+30000
     || now>=reset || w.usedPercent<1 || w.usedPercent>=100 || !Number.isFinite(w.usedPercent))return null;
@@ -15,10 +15,9 @@ export function cycleEstimate(w:QuotaWindow,p:ProviderSnapshot,now:number):{amou
   const start=reset-length, end=Math.min(observed,historyAt,now);
   if(start>=end || !h.coverageStart || Date.parse(h.coverageStart)>start
     || Math.abs(observed-historyAt)>300000)return null;
-  let tokens=0,usd=0,priced=0;
-  for(const [at,count,cost,known] of h.timeline) {
-    if(at>=start && at<=end){tokens+=count;usd+=cost;priced+=known;}
-  }
+  const sample=h.samples[w.id];
+  if(!sample || sample.start!==start || sample.end!==end)return null;
+  const {tokens,estimatedUsd:usd,pricedTokens:priced}=sample;
   if(tokens<=0 || priced<=0 || (!local && priced!==tokens) || usd<=0 || !Number.isFinite(usd))return null;
   const money=new Intl.NumberFormat(locale.get(),{style:'currency',currency:'USD',currencyDisplay:'narrowSymbol',maximumFractionDigits:2});
   const compact=new Intl.NumberFormat(locale.get(),{notation:'compact',maximumFractionDigits:1});

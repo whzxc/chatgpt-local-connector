@@ -1,7 +1,6 @@
 //! One core-owned subscription scheduler. No dependency on ingress or desktop.
 mod cache;
 mod providers;
-pub(crate) use providers::history::UsagePricing;
 pub mod types;
 use crate::{agents::AgentHost, control::Control, *};
 use providers::REGISTRY;
@@ -526,6 +525,7 @@ impl SubscriptionService {
                         slot.history_job = None;
                         if let Some(history) = history.filter(|h| h.get("error").is_none()) {
                             slot.view.raw_usage["history"] = history;
+                            cache::compact_history(&mut slot.view);
                             cache::persist(slot);
                             service.publish(&mut state);
                         }

@@ -1,13 +1,10 @@
-//! Device-local usage projection shared by the desktop and plugin.
+//! Incremental device-local subscription usage, streamed one task at a time.
 //! Response usage and legacy cumulative usage are separate counting families.
 use crate::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::sync::{Mutex as SyncMutex, OnceLock, RwLock};
-use std::time::{Duration, Instant};
 
-const SCHEMA: u32 = 1;
 const CACHE_SCHEMA: u32 = 13;
 const MAX_LINE: u64 = 8 * 1024 * 1024;
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -71,24 +68,6 @@ struct PromptSource {
     bytes: usize,
     sha256: String,
 }
-impl PromptSource {
-    fn read(&self) -> Result<Option<String>> {
-        if self.bytes as u64 > MAX_LINE {
-            return Err("prompt-source-too-large".into());
-        }
-        let mut file = std::fs::File::open(&self.path).map_err(|_| "prompt-source-unreadable")?;
-        file.seek(SeekFrom::Start(self.offset))
-            .map_err(|_| "prompt-source-unreadable")?;
-        let mut bytes = vec![0; self.bytes];
-        file.read_exact(&mut bytes)
-            .map_err(|_| "prompt-source-unreadable")?;
-        if hash(&bytes) != self.sha256 {
-            return Err("prompt-source-changed".into());
-        }
-        let record: Value = serde_json::from_slice(&bytes).map_err(|_| "prompt-source-invalid")?;
-        Ok(prompt_text(&record).map(str::to_owned))
-    }
-}
 fn prompt_text(record: &Value) -> Option<&str> {
     let p = &record["payload"];
     if record["type"] == "event_msg" && p["type"] == "user_message" {
@@ -138,56 +117,6 @@ struct Turn {
     service_tier: Option<String>,
 }
 
-#[derive(Default)]
-struct OutputPerformance {
-    output: f64,
-    duration_ms: f64,
-    turns: usize,
-}
-impl OutputPerformance {
-    fn collect(thread: &Projection, rows: &[&Response], range: Option<(i64, i64)>) -> Self {
-        let mut by_turn = BTreeMap::<&str, Vec<&Response>>::new();
-        for row in rows {
-            if let Some(id) = row.turn_id.as_deref() {
-                by_turn.entry(id).or_default().push(row);
-            }
-        }
-        let mut result = Self::default();
-        for (id, rows) in by_turn {
-            let Some(turn) = thread.turns.get(id) else {
-                continue;
-            };
-            if !matches!(turn.status.as_str(), "completed" | "interrupted") {
-                continue;
-            }
-            // A period samples complete turns, never partial output divided by
-            // a whole turn's duration. Missing timing/output remains unknown.
-            if let Some((start, end)) = range {
-                if !turn
-                    .started_at
-                    .zip(turn.completed_at)
-                    .is_some_and(|(a, b)| a >= start && b <= end)
-                    || rows.iter().any(|row| row.at < start || row.at > end)
-                {
-                    continue;
-                }
-            }
-            let Some(duration) = turn.duration_ms.filter(|n| *n > 0) else {
-                continue;
-            };
-            let Some(output) = totals(&rows)["output"].as_u64() else {
-                continue;
-            };
-            result.output += output as f64;
-            result.duration_ms += duration as f64;
-            result.turns += 1;
-        }
-        result
-    }
-    fn value(&self) -> Value {
-        json!({"wholeTurnOutputTps":if self.duration_ms > 0. {Some(self.output * 1000. / self.duration_ms)} else {None},"turns":self.turns})
-    }
-}
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Tool {
@@ -601,57 +530,6 @@ struct FileState {
     #[serde(default)]
     catalogue_only: bool,
 }
-// Old, unchanged files need only their identity and final event time for the
-// task list. Reading their first/last records does not index their message bodies.
-fn catalogue(path: &Path) -> Result<FileState> {
-    let mut file = std::fs::File::open(path).map_err(|_| "file-unreadable")?;
-    let meta = file.metadata().map_err(|_| "file-metadata-unavailable")?;
-    let mut first = Vec::new();
-    BufReader::new(&mut file)
-        .take(MAX_LINE + 1)
-        .read_until(b'\n', &mut first)
-        .map_err(|_| "file-read-failed")?;
-    let record = usage_record(&first, false).map_err(|_| "invalid-session-header")?;
-    if record["type"] != "session_meta" {
-        return Err("invalid-session-header".into());
-    }
-    let mut projection = Projection::default();
-    projection.ingest(record, path, 0, &first);
-    let offset = meta.len().saturating_sub(64 * 1024);
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|_| "file-read-failed")?;
-    let mut tail = Vec::new();
-    file.read_to_end(&mut tail)
-        .map_err(|_| "file-read-failed")?;
-    #[derive(Deserialize)]
-    struct Timestamp {
-        timestamp: Option<String>,
-    }
-    for line in tail.split(|b| *b == b'\n').skip(usize::from(offset > 0)) {
-        if let Ok(record) = serde_json::from_slice::<Timestamp>(line) {
-            projection.last_event_at = projection
-                .last_event_at
-                .max(record.timestamp.and_then(|t| time(&json!(t))));
-        }
-    }
-    if projection.thread_id.is_empty() || projection.last_event_at.is_none() {
-        return Err("incomplete-session-catalogue".into());
-    }
-    Ok(FileState {
-        schema: CACHE_SCHEMA,
-        length: meta.len(),
-        identity: file_identity(&meta),
-        stamp: meta
-            .modified()
-            .unwrap_or(std::time::UNIX_EPOCH)
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos(),
-        projection,
-        catalogue_only: true,
-        ..Default::default()
-    })
-}
 fn file_identity(meta: &std::fs::Metadata) -> String {
     #[cfg(unix)]
     {
@@ -892,28 +770,92 @@ fn scan(path: &Path, s: &mut FileState, detail: bool) -> Result<u64> {
     s.schema = CACHE_SCHEMA;
     Ok(read)
 }
-#[derive(Default)]
-struct Collector {
-    files: BTreeMap<PathBuf, FileState>,
-    titles: BTreeMap<String, String>,
-    checked: Option<Instant>,
-    observed_at: Option<String>,
-    issues: BTreeSet<String>,
-    bytes_read: u64,
-    scan_ms: u64,
-    pruned_at: Option<Instant>,
-    index: Option<Arc<UsageIndex>>,
-}
 static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub fn stop() {
     STOPPED.store(true, std::sync::atomic::Ordering::SeqCst);
 }
-static COLLECTOR: OnceLock<Arc<SyncMutex<Collector>>> = OnceLock::new();
-fn shared() -> Arc<SyncMutex<Collector>> {
-    COLLECTOR
-        .get_or_init(|| Arc::new(SyncMutex::new(Collector::default())))
-        .clone()
+// Serialize scans without retaining parsed history between refreshes.
+static SCAN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Checkpoints keep incremental state on disk. Merge copies of each task before
+/// visiting responses so duplicate IDs and legacy baselines keep their semantics.
+pub(crate) fn visit_responses(mut visit: impl FnMut(Response)) -> bool {
+    let _scan = SCAN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut paths = Vec::new();
+    let mut issues = BTreeSet::new();
+    for folder in ["sessions", "archived_sessions"] {
+        discover(&codex_home().join(folder), &mut paths, &mut issues, 0);
+    }
+    paths.sort();
+    let mut tasks = BTreeMap::<String, Vec<PathBuf>>::new();
+    for path in &paths {
+        let header = (|| -> Result<String> {
+            let file = std::fs::File::open(path).map_err(|_| "file-unreadable")?;
+            let mut bytes = Vec::new();
+            BufReader::new(file)
+                .take(MAX_LINE + 1)
+                .read_until(b'\n', &mut bytes)
+                .map_err(|_| "file-read-failed")?;
+            let record = usage_record(&bytes, false).map_err(|_| "invalid-session-header")?;
+            text(&record["payload"], "id")
+                .filter(|_| record["type"] == "session_meta")
+                .ok_or_else(|| "invalid-session-header".into())
+        })();
+        match header {
+            Ok(id) => tasks.entry(id).or_default().push(path.clone()),
+            Err(e) => {
+                issues.insert(e);
+                tasks.entry(String::new()).or_default().push(path.clone());
+            }
+        }
+    }
+    let mut incomplete = !issues.is_empty();
+    for paths in tasks.into_values() {
+        let mut files = BTreeMap::new();
+        for path in paths {
+            if STOPPED.load(std::sync::atomic::Ordering::SeqCst) {
+                return true;
+            }
+            let cache = root().join("usage/files").join(format!(
+                "{}.json.gz",
+                hash(path.to_string_lossy().as_bytes())
+            ));
+            let mut state: FileState = std::fs::File::open(&cache)
+                .ok()
+                .and_then(|file| serde_json::from_reader(flate2::read::GzDecoder::new(file)).ok())
+                .unwrap_or_default();
+            let before = (state.schema, state.offset, state.stamp);
+            incomplete |= scan(&path, &mut state, false).is_err();
+            if before != (state.schema, state.offset, state.stamp) {
+                let saved = (|| -> Result<()> {
+                    let mut encoder =
+                        flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+                    serde_json::to_writer(&mut encoder, &state).map_err(|e| e.to_string())?;
+                    save_bytes(&cache, &encoder.finish().map_err(|e| e.to_string())?)
+                })();
+                incomplete |= saved.is_err();
+            }
+            files.insert(path, state);
+        }
+        let merged = threads(&files);
+        drop(files);
+        for task in merged.into_values() {
+            incomplete |= !task.issues.is_empty();
+            for response in if task.modern {
+                task.responses
+            } else {
+                task.legacy
+            }
+            .into_values()
+            {
+                visit(response);
+            }
+        }
+    }
+    prune_checkpoints(&paths, !issues.is_empty());
+    incomplete
 }
+
 fn discover(dir: &Path, out: &mut Vec<PathBuf>, issues: &mut BTreeSet<String>, depth: usize) {
     if depth > 8 || out.len() >= 50000 {
         issues.insert("file-discovery-limit".into());
@@ -940,1000 +882,195 @@ fn discover(dir: &Path, out: &mut Vec<PathBuf>, issues: &mut BTreeSet<String>, d
         }
     }
 }
-impl Collector {
-    pub fn refresh(&mut self, period: Option<i64>, selected: Option<&str>) {
-        if self
-            .checked
-            .is_some_and(|t| t.elapsed() < Duration::from_secs(4))
-        {
-            return;
-        }
-        let start = Instant::now();
-        self.issues.clear();
-        self.bytes_read = 0;
-        let home = codex_home();
-        self.titles.clear();
-        if let Ok(file) = std::fs::File::open(home.join("session_index.jsonl")) {
-            for line in BufReader::new(file)
-                .lines()
-                .map_while(std::result::Result::ok)
-            {
-                if let Ok(record) = serde_json::from_str::<Value>(&line) {
-                    if let (Some(id), Some(name)) =
-                        (text(&record, "id"), text(&record, "thread_name"))
-                    {
-                        self.titles.insert(id, name);
-                    }
-                }
-            }
-        }
-        let database = std::fs::read_dir(&home)
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(std::result::Result::ok)
-            .filter_map(|entry| {
-                let name = entry.file_name();
-                let name = name.to_str()?;
-                let version = name
-                    .strip_prefix("state_")?
-                    .strip_suffix(".sqlite")?
-                    .parse::<u32>()
-                    .ok()?;
-                Some((version, entry.path()))
-            })
-            .max_by_key(|(version, _)| *version);
-        if let Some((_, path)) = database {
-            if let Ok(db) = rusqlite::Connection::open_with_flags(
-                path,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            ) {
-                if let Ok(mut query) = db.prepare("SELECT id, name, title FROM threads") {
-                    if let Ok(rows) = query.query_map([], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                            row.get::<_, Option<String>>(2)?,
-                        ))
-                    }) {
-                        for (id, name, title) in rows.flatten() {
-                            if let Some(name) = name.filter(|value| !value.is_empty()) {
-                                self.titles.insert(id, name);
-                            } else if let Some(title) = title.filter(|value| !value.is_empty()) {
-                                self.titles.entry(id).or_insert(title);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        let mut paths = Vec::new();
-        for folder in ["sessions", "archived_sessions"] {
-            discover(&home.join(folder), &mut paths, &mut self.issues, 0);
-        }
-        paths.sort();
-        self.files.retain(|p, _| paths.binary_search(p).is_ok());
-        let cutoff = period.map(|days| {
-            let now = chrono::Local::now();
-            if days == 1 {
-                now.date_naive()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap()
-                    .and_local_timezone(chrono::Local)
-                    .earliest()
-                    .map(|v| v.timestamp_millis())
-                    .unwrap_or(now.timestamp_millis())
-            } else {
-                now.timestamp_millis() - days * 86400000
-            }
-        });
-        // Most recent sources first. A page never waits for the all-history collector.
-        paths.sort_by_cached_key(|p| {
-            std::cmp::Reverse(std::fs::metadata(p).and_then(|m| m.modified()).ok())
-        });
-        let mut pending = BTreeMap::new();
-        for path in paths {
-            if STOPPED.load(std::sync::atomic::Ordering::SeqCst) {
-                return;
-            }
-            let mut detail = selected.is_some_and(|id| {
-                path.file_name()
-                    .is_some_and(|name| name.to_string_lossy().contains(id))
-            });
-            let mut cache = root()
-                .join(if detail { "usage/tasks" } else { "usage/files" })
-                .join(format!(
-                    "{}.json.gz",
-                    hash(path.to_string_lossy().as_bytes())
-                ));
-            let meta = std::fs::metadata(&path).ok();
-            let stamp = meta
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let length = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-            let identity = meta.as_ref().map(file_identity).unwrap_or_default();
-            let old_file = cutoff.is_some_and(|cutoff| (stamp / 1_000_000) < cutoff as u128);
-            let mut other_task = selected.is_some() && !detail;
-            let state = self.files.entry(path.clone()).or_insert_with(|| {
-                // Full-history checkpoints can be much larger than the catalogue.
-                // Do not deserialize them for sources this page does not need.
-                if old_file || other_task {
-                    return FileState::default();
-                }
-                std::fs::File::open(&cache)
-                    .ok()
-                    .and_then(|file| {
-                        serde_json::from_reader(flate2::read::GzDecoder::new(file)).ok()
-                    })
-                    .unwrap_or_default()
-            });
-            if old_file || other_task {
-                if state.schema != CACHE_SCHEMA
-                    || state.length != length
-                    || state.stamp != stamp
-                    || state.identity != identity
-                {
-                    if let Ok(entry) = catalogue(&path) {
-                        *state = entry;
-                    }
-                }
-                if other_task && selected == Some(state.projection.thread_id.as_str()) {
-                    detail = true;
-                    other_task = false;
-                    cache = root().join("usage/tasks").join(format!(
-                        "{}.json.gz",
-                        hash(path.to_string_lossy().as_bytes())
-                    ));
-                    *state = std::fs::File::open(&cache)
-                        .ok()
-                        .and_then(|file| {
-                            serde_json::from_reader(flate2::read::GzDecoder::new(file)).ok()
-                        })
-                        .unwrap_or_default();
-                }
-                // A recent event in a copied file must still count even if its mtime is old.
-                if state.schema == CACHE_SCHEMA
-                    && state.length == length
-                    && state.stamp == stamp
-                    && state.identity == identity
-                    && (other_task
-                        || cutoff.is_some_and(|cutoff| {
-                            state.projection.last_event_at.is_some_and(|at| at < cutoff)
-                        }))
-                {
-                    continue;
-                }
-            }
-            pending.insert(path, (cache, detail));
-        }
-        // Files are independent until response IDs are merged. Bound parallel
-        // decoding so large ranges do not serialize all JSON parsing on one CPU.
-        let mut jobs: Vec<_> = self
-            .files
-            .iter_mut()
-            .filter_map(|(path, state)| {
-                pending
-                    .remove(path)
-                    .map(|(cache, detail)| (path, state, cache, detail))
-            })
-            .collect();
-        let workers = std::thread::available_parallelism().map_or(1, |n| n.get().min(4));
-        let batch_size = jobs.len().div_ceil(workers).max(1);
-        let results = std::thread::scope(|scope| {
-            let handles: Vec<_> = jobs
-                .chunks_mut(batch_size)
-                .map(|batch| {
-                    scope.spawn(move || {
-                        let mut bytes_read = 0;
-                        let mut issues = BTreeSet::new();
-                        for (path, state, cache, detail) in batch {
-                            let before = (state.schema, state.offset, state.stamp);
-                            match scan(path, state, *detail) {
-                                Ok(n) => bytes_read += n,
-                                Err(e) => {
-                                    issues.insert(e);
-                                }
-                            }
-                            if before != (state.schema, state.offset, state.stamp) {
-                                let saved = (|| -> Result<()> {
-                                    let mut encoder = flate2::write::GzEncoder::new(
-                                        Vec::new(),
-                                        flate2::Compression::fast(),
-                                    );
-                                    serde_json::to_writer(&mut encoder, &**state)
-                                        .map_err(|e| e.to_string())?;
-                                    save_bytes(cache, &encoder.finish().map_err(|e| e.to_string())?)
-                                })();
-                                if saved.is_err() {
-                                    issues.insert("checkpoint-unavailable".into());
-                                }
-                            }
-                        }
-                        (bytes_read, issues)
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|handle| handle.join().expect("usage collector worker panicked"))
-                .collect::<Vec<_>>()
-        });
-        for (bytes_read, issues) in results {
-            self.bytes_read += bytes_read;
-            self.issues.extend(issues);
-        }
-        self.observed_at = Some(now());
-        self.checked = Some(Instant::now());
-        self.scan_ms = start.elapsed().as_millis() as u64;
-        let mut index = UsageIndex {
-            sources: self
-                .files
-                .iter()
-                .fold(BTreeMap::new(), |mut sources, (path, file)| {
-                    sources
-                        .entry(file.projection.thread_id.clone())
-                        .or_insert_with(Vec::new)
-                        .push(path.clone());
-                    sources
-                }),
-            threads: self.threads(),
-            titles: self.titles.clone(),
-            overviews: BTreeMap::new(),
-            costs: BTreeMap::new(),
-            observed_at: self.observed_at.clone(),
-            issues: self.issues.clone(),
-            files: self.files.len(),
-            bytes_read: self.bytes_read,
-            scan_ms: self.scan_ms,
-        };
-        let prices = crate::subscriptions::UsagePricing::current();
-        let cutoff = chrono::Utc::now().timestamp_millis() - 30 * 86400000;
-        for (id, thread) in &index.threads {
-            let rows: Vec<_> = if thread.modern {
-                thread.responses.values()
-            } else {
-                thread.legacy.values()
-            }
-            .collect();
-            index.costs.insert(
-                id.clone(),
-                rows.iter()
-                    .filter(|r| r.at >= cutoff)
-                    .filter_map(|r| prices.estimate(r).map(|usd| (r.id.clone(), usd)))
-                    .collect(),
-            );
-        }
-        for days in period
-            .map(|days| vec![days])
-            .unwrap_or_else(|| vec![1, 7, 30])
-        {
-            index.overviews.insert(days, index.overview(days));
-        }
-        // Checkpoints are reproducible projections, not unique task history.
-        // Eviction affects the next cold scan, never the current in-memory totals.
-        if self
-            .pruned_at
-            .is_none_or(|at| at.elapsed() >= Duration::from_secs(60))
-        {
-            self.prune_checkpoints();
-            self.pruned_at = Some(Instant::now());
-        }
-        // Publish only a completed view, independently of the history collector.
-        let index = Arc::new(index);
-        self.index = Some(index.clone());
-        if period.is_none() && selected.is_none() {
-            let previous = published()
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .replace(index);
-            drop(previous);
-        }
-    }
-    fn prune_checkpoints(&self) {
-        let live: BTreeMap<_, _> = self
-            .files
-            .iter()
-            .map(|(path, state)| {
-                (
-                    format!("{}.json.gz", hash(path.to_string_lossy().as_bytes())),
-                    state.length,
-                )
-            })
-            .collect();
-        let mut files = Vec::new();
-        for dir in ["usage/files", "usage/tasks"] {
-            if let Ok(entries) = std::fs::read_dir(root().join(dir)) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().into_owned();
-                    if !((name.len() == 72 && name.ends_with(".json.gz"))
-                        || (name.len() == 69 && name.ends_with(".json")))
-                        || !name[..64].bytes().all(|b| b.is_ascii_hexdigit())
-                    {
-                        continue;
-                    }
-                    let Ok(meta) = entry.metadata() else { continue };
-                    if !meta.is_file() {
-                        continue;
-                    }
-                    if let Some(source_bytes) = live.get(&name) {
-                        files.push((
-                            meta.modified().ok(),
-                            entry.path(),
-                            meta.len(),
-                            *source_bytes,
-                        ));
-                    } else if self.issues.is_empty() {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
-                }
-            }
-        }
-        // Prefer checkpoints which save the most source I/O per byte. The same
-        // bounded budget covers overview summaries and on-demand task details.
-        files.sort_by(|a, b| {
-            (u128::from(a.3) * u128::from(b.2.max(1)))
-                .cmp(&(u128::from(b.3) * u128::from(a.2.max(1))))
-                .then_with(|| a.0.cmp(&b.0))
-        });
-        let mut total: u64 = files.iter().map(|f| f.2).sum();
-        for (_, path, size, _) in files {
-            if total <= 40 * 1024 * 1024 {
-                break;
-            }
-            if std::fs::remove_file(path).is_ok() {
-                total = total.saturating_sub(size);
-            }
-        }
-    }
-    fn threads(&self) -> BTreeMap<String, Projection> {
-        let mut threads: BTreeMap<String, Projection> = BTreeMap::new();
-        for f in self.files.values() {
-            let p = &f.projection;
-            if p.thread_id.is_empty() {
-                continue;
-            }
-            let t = match threads.entry(p.thread_id.clone()) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    let t = entry.insert(p.clone());
-                    if f.partial {
-                        t.issues.insert("partial-tail-pending".into());
-                    }
-                    continue;
-                }
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            };
-            t.modern |= p.modern;
-            t.issues.extend(p.issues.clone());
-            if f.partial {
-                t.issues.insert("partial-tail-pending".into());
-            }
-            for (id, r) in &p.responses {
-                if let Some(old) = t.responses.get_mut(id) {
-                    old.reliable &= r.reliable;
-                    if old.tokens != r.tokens {
-                        old.reliable = false;
-                        t.issues.insert("conflicting-response-usage".into());
-                    }
-                } else {
-                    t.responses.insert(id.clone(), r.clone());
-                }
-            }
-            for (id, r) in &p.legacy {
-                if let Some(old) = t.legacy.get_mut(id) {
-                    old.reliable &= r.reliable;
-                    if old.tokens != r.tokens {
-                        old.reliable = false;
-                        t.issues.insert("legacy-overlap-baseline-conflict".into());
-                    }
-                } else {
-                    t.legacy.insert(id.clone(), r.clone());
-                }
-            }
-            for (id, incoming) in &p.turns {
-                let old = t
-                    .turns
-                    .entry(id.clone())
-                    .or_insert_with(|| incoming.clone());
-                if incoming.completed_at.or(incoming.started_at)
-                    > old.completed_at.or(old.started_at)
-                {
-                    *old = incoming.clone();
-                } else {
-                    old.context_window = old.context_window.or(incoming.context_window);
-                    old.prompt_images = old.prompt_images.max(incoming.prompt_images);
-                    if old.prompt.is_none() {
-                        old.prompt = incoming.prompt.clone();
-                    }
-                    if old.model.is_none() {
-                        old.model = incoming.model.clone();
-                    }
-                    if old.effort.is_none() {
-                        old.effort = incoming.effort.clone();
-                    }
-                }
-            }
-            for (id, incoming) in &p.tools {
-                let old = t
-                    .tools
-                    .entry(id.clone())
-                    .or_insert_with(|| incoming.clone());
-                if old.output_bytes.is_none() {
-                    old.output_bytes = incoming.output_bytes;
-                }
-                if old.name.is_none() {
-                    old.name = incoming.name.clone();
-                }
-                if old.turn_id.is_none() {
-                    old.turn_id = incoming.turn_id.clone();
-                }
-                if incoming.completed_at > old.completed_at {
-                    old.started_at = incoming.started_at;
-                    old.completed_at = incoming.completed_at;
-                    old.status = incoming.status.clone();
-                }
-            }
-            t.compactions.extend(p.compactions.clone());
-            t.last_event_at = t.last_event_at.max(p.last_event_at);
-            if p.reported_total.as_ref().map(|v| v.0) > t.reported_total.as_ref().map(|v| v.0) {
-                t.reported_total = p.reported_total.clone();
-            }
-        }
-        let indexed: BTreeSet<_> = self
-            .files
-            .values()
-            .filter(|file| !file.catalogue_only)
-            .map(|file| file.projection.thread_id.as_str())
-            .collect();
-        for t in threads.values_mut() {
-            if !indexed.contains(t.thread_id.as_str()) {
-                continue;
-            }
-            let first_response_at = t.responses.values().map(|r| r.at).min();
-            if t.modern {
-                for key in t.compactions.keys() {
-                    if !t.responses.contains_key(key) {
-                        t.issues.insert("compaction-response-not-observed".into());
-                    }
-                }
-                if !t.related {
-                    if let Some((_, expected)) = &t.reported_total {
-                        let observed = totals(&t.responses.values().collect::<Vec<_>>());
-                        if observed["total"].as_u64() != expected.total() {
-                            t.issues.insert("response-sum-cumulative-mismatch".into());
-                        }
-                    }
-                }
-            }
-            if !t.modern {
-                t.issues
-                    .insert("legacy-coverage-response-and-compaction-unknown".into());
-            } else if t
-                .legacy
-                .values()
-                .any(|r| first_response_at.is_some_and(|at| r.at < at))
-            {
-                t.issues
-                    .insert("legacy-prefix-excluded-from-response-family".into());
-            }
-            if t.related && !t.modern {
-                t.issues.insert("legacy-related-history-partial".into());
-            }
-        }
-        threads
-    }
-}
-
-struct UsageIndex {
-    sources: BTreeMap<String, Vec<PathBuf>>,
-    threads: BTreeMap<String, Projection>,
-    titles: BTreeMap<String, String>,
-    overviews: BTreeMap<i64, Value>,
-    costs: BTreeMap<String, BTreeMap<String, f64>>,
-    observed_at: Option<String>,
-    issues: BTreeSet<String>,
-    files: usize,
-    bytes_read: u64,
-    scan_ms: u64,
-}
-fn codex_home() -> PathBuf {
-    std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"))
-}
-fn overview_page(overview: &Value, args: &Value) -> Value {
-    let mut data = Value::Object(
-        overview
-            .as_object()
-            .unwrap()
-            .iter()
-            .filter(|(key, _)| key.as_str() != "tasks")
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
-    );
-    let search = args["taskSearch"]
-        .as_str()
-        .unwrap_or("")
-        .trim()
-        .to_lowercase();
-    let tasks: Vec<_> = overview["tasks"]
-        .as_array()
-        .unwrap()
+fn prune_checkpoints(paths: &[PathBuf], incomplete: bool) {
+    let live: BTreeMap<_, _> = paths
         .iter()
-        .filter(|task| {
-            search.is_empty()
-                || task["label"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .contains(&search)
-                || task["id"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .contains(&search)
+        .map(|path| {
+            (
+                format!("{}.json.gz", hash(path.to_string_lossy().as_bytes())),
+                std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
+            )
         })
         .collect();
-    let page_size = args["taskPageSize"]
-        .as_u64()
-        .filter(|size| [5, 10, 20, 50, 100].contains(size))
-        .unwrap_or(10) as usize;
-    let page = args["taskPage"]
-        .as_u64()
-        .unwrap_or(1)
-        .max(1)
-        .min(tasks.len().div_ceil(page_size).max(1) as u64);
-    data["taskMatchCount"] = json!(tasks.len());
-    data["taskPage"] = json!(page);
-    data["taskPageSize"] = json!(page_size);
-    data["tasks"] = json!(tasks
-        .into_iter()
-        .skip((page as usize - 1) * page_size)
-        .take(page_size)
-        .collect::<Vec<_>>());
-    data
-}
-static INDEX: OnceLock<RwLock<Option<Arc<UsageIndex>>>> = OnceLock::new();
-fn published() -> &'static RwLock<Option<Arc<UsageIndex>>> {
-    INDEX.get_or_init(|| RwLock::new(None))
-}
-fn read_index() -> Option<Arc<UsageIndex>> {
-    published()
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-}
-impl UsageIndex {
-    fn metrics(&self, rows: &[&Response]) -> Value {
-        let mut value = totals(rows);
-        let pricing = crate::subscriptions::UsagePricing::current();
-        let prices: Vec<_> = rows
-            .iter()
-            .filter_map(|r| {
-                self.costs
-                    .get(&r.thread_id)
-                    .and_then(|costs| costs.get(&r.id))
-                    .copied()
-                    .or_else(|| pricing.estimate(r))
-            })
-            .collect();
-        value["estimatedUsd"] = if prices.is_empty() && !rows.is_empty() {
-            Value::Null
-        } else {
-            json!(prices.iter().copied().sum::<f64>())
-        };
-        value["unpricedRecords"] = json!(rows.len() - prices.len());
-        value["requests"] = json!(rows.iter().filter(|r| r.family == "response").count());
-        value
-    }
-    pub fn responses(&self) -> (Vec<Response>, bool) {
-        let threads = &self.threads;
-        let incomplete = !self.issues.is_empty() || threads.values().any(|t| !t.issues.is_empty());
-        (
-            threads
-                .values()
-                .flat_map(|t| {
-                    if t.modern {
-                        t.responses.values()
-                    } else {
-                        t.legacy.values()
-                    }
-                })
-                .cloned()
-                .collect(),
-            incomplete,
-        )
-    }
-    fn overview(&self, days: i64) -> Value {
-        let threads = &self.threads;
-        let now = chrono::Local::now();
-        let end = now.timestamp_millis();
-        let start = if days == 1 {
-            now.date_naive()
-                .and_hms_opt(0, 0, 0)
-                .unwrap()
-                .and_local_timezone(chrono::Local)
-                .earliest()
-                .map(|midnight| midnight.timestamp_millis())
-                .unwrap_or(end)
-        } else {
-            end - days * 86400000
-        };
-        let local_day = |at| {
-            chrono::DateTime::from_timestamp_millis(at)
-                .map(|date| {
-                    date.with_timezone(&chrono::Local)
-                        .format("%Y-%m-%d")
-                        .to_string()
-                })
-                .unwrap_or_default()
-        };
-        let mut tasks = Vec::new();
-        let mut performance = OutputPerformance::default();
-        let mut events = Vec::new();
-        let mut models: BTreeMap<String, Vec<&Response>> = BTreeMap::new();
-        let mut daily: BTreeMap<String, Vec<&Response>> = BTreeMap::new();
-        let mut series: BTreeMap<String, BTreeMap<String, Vec<&Response>>> = BTreeMap::new();
-        for (id, t) in threads {
-            let rows: Vec<_> = if t.modern {
-                t.responses.values()
-            } else {
-                t.legacy.values()
-            }
-            .collect();
-            let period: Vec<_> = rows
-                .iter()
-                .filter(|r| r.at >= start && r.at <= end)
-                .copied()
-                .collect();
-            for r in &period {
-                models
-                    .entry(r.model.clone().unwrap_or_else(|| "unknown".into()))
-                    .or_default()
-                    .push(*r);
-                let day = local_day(r.at);
-                daily.entry(day).or_default().push(*r);
-                let bucket = chrono::DateTime::from_timestamp_millis(r.at)
-                    .map(|date| {
-                        date.with_timezone(&chrono::Local)
-                            .format(if days == 1 {
-                                "%Y-%m-%dT%H:00:00%:z"
-                            } else {
-                                "%Y-%m-%d"
-                            })
-                            .to_string()
-                    })
-                    .unwrap_or_default();
-                series
-                    .entry(bucket)
-                    .or_default()
-                    .entry(r.model.clone().unwrap_or_else(|| "unknown".into()))
-                    .or_default()
-                    .push(*r);
-            }
-            events.extend(period.iter().copied());
-            // Count distinct turns observed in this period, including boundary
-            // events without a response and turns continuing across the boundary.
-            let turns: BTreeSet<_> = period
-                .iter()
-                .filter_map(|r| r.turn_id.as_deref())
-                .chain(
-                    t.turns
-                        .values()
-                        .filter(|turn| {
-                            [turn.started_at, turn.completed_at]
-                                .into_iter()
-                                .flatten()
-                                .any(|at| at >= start && at <= end)
-                        })
-                        .map(|turn| turn.id.as_str()),
-                )
-                .collect();
-            let mut metrics = self.metrics(&period);
-            let task_performance = OutputPerformance::collect(t, &rows, Some((start, end)));
-            performance.output += task_performance.output;
-            performance.duration_ms += task_performance.duration_ms;
-            performance.turns += task_performance.turns;
-            metrics["turns"] = if t.last_event_at.is_some_and(|at| at < start) {
-                json!(0)
-            } else if t.turns.is_empty() && rows.iter().all(|r| r.turn_id.is_none()) {
-                Value::Null
-            } else {
-                json!(turns.len())
-            };
-            tasks.push(json!({"id":id,"label":self.titles.get(id),"lastEventAt":t.last_event_at,"period":metrics,"performance":task_performance.value(),"family":if t.modern{"response"}else{"legacy"},"issues":t.issues,"parentId":t.parent_id,"forkedFromId":t.forked_from_id}));
-        }
-        tasks.sort_by_key(|t| std::cmp::Reverse(t["lastEventAt"].as_i64().unwrap_or(0)));
-        let task_count = tasks.len();
-        let all_issues: BTreeSet<_> = self
-            .issues
-            .iter()
-            .chain(threads.values().flat_map(|t| t.issues.iter()))
-            .cloned()
-            .collect();
-        json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":"global","state":"ready","source":"local-native-jsonl","coverage":"this-device-readable-logs; account attribution unknown; child tasks separate","observedAt":self.observed_at,"scanMs":self.scan_ms,"bytesRead":self.bytes_read,"files":self.files,"issues":all_issues,"binding":"unknown","thread":null,"tasks":tasks,"taskCount":task_count,"range":{"start":start,"end":end,"days":days,"timezone":now.format("%Z").to_string(),"startDay":local_day(start),"endDay":local_day(end),"kind":"event-time"},"usage":self.metrics(&events),"performance":performance.value(),"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"daily":daily.into_iter().map(|(day,rs)|json!({"day":day,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"series":series.into_iter().map(|(at,models)|json!({"at":at,"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>() })).collect::<Vec<_>>()})
-    }
-    fn visit_records(&self, thread_id: &str, mut visit: impl FnMut(&Value)) -> Result<()> {
-        for path in self.sources.get(thread_id).into_iter().flatten() {
-            let file = std::fs::File::open(path).map_err(|_| "task-source-unreadable")?;
-            let mut reader = BufReader::new(file);
-            loop {
-                let mut bytes = Vec::new();
-                let n = reader
-                    .by_ref()
-                    .take(MAX_LINE + 1)
-                    .read_until(b'\n', &mut bytes)
-                    .map_err(|_| "task-source-unreadable")?;
-                if n == 0 {
-                    break;
-                }
-                if n as u64 > MAX_LINE {
-                    while bytes.last() != Some(&b'\n') {
-                        bytes.clear();
-                        if reader
-                            .by_ref()
-                            .take(64 * 1024)
-                            .read_until(b'\n', &mut bytes)
-                            .map_err(|_| "task-source-unreadable")?
-                            == 0
-                        {
-                            break;
-                        }
-                    }
-                    continue;
-                }
-                let Ok(record) = serde_json::from_slice::<Value>(&bytes) else {
-                    continue;
-                };
-                visit(&record);
-            }
-        }
-        Ok(())
-    }
-    fn turn_content(&self, thread_id: &str, turn_id: &str) -> Result<Value> {
-        let mut turn = None;
-        let mut entries = BTreeMap::<String, Value>::new();
-        let mut messages = BTreeMap::<String, Value>::new();
-        let mut tool_previews = BTreeMap::<String, String>::new();
-        self.visit_records(thread_id, |record| {
-            let p = &record["payload"];
-            let kind = string(record, "type");
-            if kind == "turn_context" || (kind == "event_msg" && p["type"] == "task_started") {
-                turn = text(p, "turn_id");
-            }
-            if p["thread_id"].as_str().is_some_and(|id| id != thread_id) {
-                return;
-            }
-            let record_turn = text(p, "turn_id")
-                .or_else(|| text(&p["internal_chat_message_metadata_passthrough"], "turn_id"))
-                .or_else(|| turn.clone());
-            if record_turn.as_deref() != Some(turn_id) {
-                return;
-            }
-            if kind == "response_item" && p["type"] == "message" && p["role"] == "assistant" {
-                let body = p["content"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|part| part["type"] == "output_text")
-                    .filter_map(|part| part["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
-                if !body.trim().is_empty() {
-                    if let Some(at) = time(&record["timestamp"]) {
-                        let id =
-                            text(p, "id").unwrap_or_else(|| hash(format!("{turn_id}:{at}:{body}")));
-                        messages.entry(id.clone()).or_insert_with(
-                            || json!({"id":id,"turnId":turn_id,"at":at,"text":body}),
-                        );
-                    }
-                }
-                return;
-            }
-            if kind == "response_item"
-                && (p["type"] == "function_call" || p["type"] == "custom_tool_call")
-            {
-                if let Some(id) = text(p, "call_id") {
-                    let raw = if p["type"] == "function_call" {
-                        &p["arguments"]
-                    } else {
-                        &p["input"]
-                    };
-                    let decoded = raw
-                        .as_str()
-                        .and_then(|value| serde_json::from_str::<Value>(value).ok());
-                    let value = decoded.as_ref().unwrap_or(raw);
-                    let summary = [
-                        "title",
-                        "description",
-                        "cmd",
-                        "command",
-                        "query",
-                        "url",
-                        "path",
-                    ]
-                    .iter()
-                    .find_map(|key| value[*key].as_str())
-                    .or_else(|| value.as_str());
-                    if let Some(summary) = summary {
-                        let preview = summary.split_whitespace().collect::<Vec<_>>().join(" ");
-                        if !preview.is_empty() {
-                            tool_previews.insert(id, preview.chars().take(240).collect());
-                        }
-                    }
-                }
-                return;
-            }
-            let completed = kind == "event_msg"
-                && p["type"] == "item_completed"
-                && p["item"]["type"] == "Reasoning";
-            if !completed && !(kind == "response_item" && p["type"] == "reasoning") {
-                return;
-            }
-            let item = if completed { &p["item"] } else { p };
-            let parts = if completed {
-                &item["summary_text"]
-            } else {
-                &item["summary"]
-            };
-            let body = parts
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|part| {
-                    if completed {
-                        part.as_str()
-                    } else {
-                        part["text"].as_str()
-                    }
-                })
-                .filter(|value| !value.trim().is_empty())
-                .collect::<Vec<_>>()
-                .join("\n\n");
-            // Only the recorded plaintext summary is displayed. Encrypted payloads
-            // are neither returned nor treated as readable reasoning.
-            if body.is_empty() {
-                return;
-            }
-            let Some(at) = time(&record["timestamp"]) else {
-                return;
-            };
-            let id = text(item, "id").unwrap_or_else(|| hash(format!("{turn_id}:{at}:{body}")));
-            let entry = entries
-                .entry(id.clone())
-                .or_insert_with(|| json!({"id":id,"turnId":turn_id,"at":at,"text":body}));
-            if completed {
-                if let (Some(start), Some(end)) =
-                    (p["started_at_ms"].as_i64(), p["completed_at_ms"].as_i64())
+    let mut files = Vec::new();
+    for dir in ["usage/files", "usage/tasks"] {
+        if let Ok(entries) = std::fs::read_dir(root().join(dir)) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if !((name.len() == 72 && name.ends_with(".json.gz"))
+                    || (name.len() == 69 && name.ends_with(".json")))
+                    || !name[..64].bytes().all(|b| b.is_ascii_hexdigit())
                 {
-                    if end >= start {
-                        entry["at"] = json!(start);
-                        entry["durationMs"] = json!(end - start);
+                    continue;
+                }
+                let Ok(meta) = entry.metadata() else { continue };
+                if !meta.is_file() {
+                    continue;
+                }
+                if let Some(source_bytes) = live.get(&name) {
+                    files.push((
+                        meta.modified().ok(),
+                        entry.path(),
+                        meta.len(),
+                        *source_bytes,
+                    ));
+                } else if !incomplete {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+    // Prefer checkpoints which save the most source I/O per byte. The same
+    // bounded budget covers overview summaries and on-demand task details.
+    files.sort_by(|a, b| {
+        (u128::from(a.3) * u128::from(b.2.max(1)))
+            .cmp(&(u128::from(b.3) * u128::from(a.2.max(1))))
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    let mut total: u64 = files.iter().map(|f| f.2).sum();
+    for (_, path, size, _) in files {
+        if total <= 40 * 1024 * 1024 {
+            break;
+        }
+        if std::fs::remove_file(path).is_ok() {
+            total = total.saturating_sub(size);
+        }
+    }
+}
+fn threads(files: &BTreeMap<PathBuf, FileState>) -> BTreeMap<String, Projection> {
+    let mut threads: BTreeMap<String, Projection> = BTreeMap::new();
+    for f in files.values() {
+        let p = &f.projection;
+        if p.thread_id.is_empty() {
+            continue;
+        }
+        let t = match threads.entry(p.thread_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let t = entry.insert(p.clone());
+                if f.partial {
+                    t.issues.insert("partial-tail-pending".into());
+                }
+                continue;
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+        t.modern |= p.modern;
+        t.issues.extend(p.issues.clone());
+        if f.partial {
+            t.issues.insert("partial-tail-pending".into());
+        }
+        for (id, r) in &p.responses {
+            if let Some(old) = t.responses.get_mut(id) {
+                old.reliable &= r.reliable;
+                if old.tokens != r.tokens {
+                    old.reliable = false;
+                    t.issues.insert("conflicting-response-usage".into());
+                }
+            } else {
+                t.responses.insert(id.clone(), r.clone());
+            }
+        }
+        for (id, r) in &p.legacy {
+            if let Some(old) = t.legacy.get_mut(id) {
+                old.reliable &= r.reliable;
+                if old.tokens != r.tokens {
+                    old.reliable = false;
+                    t.issues.insert("legacy-overlap-baseline-conflict".into());
+                }
+            } else {
+                t.legacy.insert(id.clone(), r.clone());
+            }
+        }
+        for (id, incoming) in &p.turns {
+            let old = t
+                .turns
+                .entry(id.clone())
+                .or_insert_with(|| incoming.clone());
+            if incoming.completed_at.or(incoming.started_at) > old.completed_at.or(old.started_at) {
+                *old = incoming.clone();
+            } else {
+                old.context_window = old.context_window.or(incoming.context_window);
+                old.prompt_images = old.prompt_images.max(incoming.prompt_images);
+                if old.prompt.is_none() {
+                    old.prompt = incoming.prompt.clone();
+                }
+                if old.model.is_none() {
+                    old.model = incoming.model.clone();
+                }
+                if old.effort.is_none() {
+                    old.effort = incoming.effort.clone();
+                }
+            }
+        }
+        for (id, incoming) in &p.tools {
+            let old = t
+                .tools
+                .entry(id.clone())
+                .or_insert_with(|| incoming.clone());
+            if old.output_bytes.is_none() {
+                old.output_bytes = incoming.output_bytes;
+            }
+            if old.name.is_none() {
+                old.name = incoming.name.clone();
+            }
+            if old.turn_id.is_none() {
+                old.turn_id = incoming.turn_id.clone();
+            }
+            if incoming.completed_at > old.completed_at {
+                old.started_at = incoming.started_at;
+                old.completed_at = incoming.completed_at;
+                old.status = incoming.status.clone();
+            }
+        }
+        t.compactions.extend(p.compactions.clone());
+        t.last_event_at = t.last_event_at.max(p.last_event_at);
+        if p.reported_total.as_ref().map(|v| v.0) > t.reported_total.as_ref().map(|v| v.0) {
+            t.reported_total = p.reported_total.clone();
+        }
+    }
+    let indexed: BTreeSet<_> = files
+        .values()
+        .filter(|file| !file.catalogue_only)
+        .map(|file| file.projection.thread_id.as_str())
+        .collect();
+    for t in threads.values_mut() {
+        if !indexed.contains(t.thread_id.as_str()) {
+            continue;
+        }
+        let first_response_at = t.responses.values().map(|r| r.at).min();
+        if t.modern {
+            for key in t.compactions.keys() {
+                if !t.responses.contains_key(key) {
+                    t.issues.insert("compaction-response-not-observed".into());
+                }
+            }
+            if !t.related {
+                if let Some((_, expected)) = &t.reported_total {
+                    let observed = totals(&t.responses.values().collect::<Vec<_>>());
+                    if observed["total"].as_u64() != expected.total() {
+                        t.issues.insert("response-sum-cumulative-mismatch".into());
                     }
                 }
             }
-        })?;
-        let mut entries: Vec<_> = entries.into_values().collect();
-        entries.sort_by_key(|entry| {
-            (
-                entry["at"].as_i64().unwrap_or(0),
-                entry["id"].as_str().unwrap_or("").to_owned(),
-            )
-        });
-        let mut messages: Vec<_> = messages.into_values().collect();
-        messages.sort_by_key(|entry| entry["at"].as_i64().unwrap_or(0));
-        Ok(json!({"reasoning":entries,"messages":messages,"toolPreviews":tool_previews}))
-    }
-    fn tool_detail(&self, args: &Value) -> Result<Value> {
-        let thread_id = args["threadId"].as_str().ok_or("missing-thread-id")?;
-        let tool_id = args["toolId"].as_str().ok_or("missing-tool-id")?;
-        let thread = self.threads.get(thread_id).ok_or("thread-not-found")?;
-        let tool = thread.tools.get(tool_id).ok_or("tool-not-found")?;
-        if args["turnId"]
-            .as_str()
-            .is_some_and(|id| tool.turn_id.as_deref() != Some(id))
+        }
+        if !t.modern {
+            t.issues
+                .insert("legacy-coverage-response-and-compaction-unknown".into());
+        } else if t
+            .legacy
+            .values()
+            .any(|r| first_response_at.is_some_and(|at| r.at < at))
         {
-            return Err("tool-turn-mismatch".into());
+            t.issues
+                .insert("legacy-prefix-excluded-from-response-family".into());
         }
-        let mut input = Value::Null;
-        let mut output = Value::Null;
-        self.visit_records(thread_id, |record| {
-            let p = &record["payload"];
-            if record["type"] != "response_item" || p["call_id"] != tool_id {
-                return;
-            }
-            match string(p, "type") {
-                "function_call" => input = p["arguments"].clone(),
-                "custom_tool_call" => input = p["input"].clone(),
-                "function_call_output" | "custom_tool_call_output" => output = p["output"].clone(),
-                _ => {}
-            }
-        })?;
-        Ok(json!({"id":tool_id,"input":input,"output":output}))
-    }
-    fn snapshot(&self, args: &Value, meta: &Value, scope: &str) -> Value {
-        let days = args["days"]
-            .as_i64()
-            .filter(|days| [1, 7, 30].contains(days))
-            .unwrap_or(7);
-        let overview = &self.overviews[&days];
-        let mut data = overview_page(overview, args);
-        let threads = &self.threads;
-        let mut binding = "unknown";
-        let selected = text(args, "threadId");
-        let a = text(meta, "threadId");
-        let b = text(meta, "thread_id");
-        let candidate = if scope == "global" {
-            None
-        } else if let Some(s) = selected {
-            binding = "selected";
-            Some(s)
-        } else if a.is_some() && b.is_some() && a != b {
-            binding = "conflict";
-            None
-        } else {
-            binding = "host";
-            a.or(b)
-        };
-        let thread = candidate.as_ref().and_then(|id| threads.get(id));
-        if thread.is_none() && binding != "conflict" {
-            binding = "unknown";
+        if t.related && !t.modern {
+            t.issues.insert("legacy-related-history-partial".into());
         }
-        let detail=thread.map(|t| {
-            let rows:Vec<_>=if t.modern{t.responses.values()}else{t.legacy.values()}.collect();
-            let mut ordered = rows.clone();
-            ordered.sort_by_key(|r| (r.at, &r.id));
-            let observation = |r: &Response| json!({"id":r.id,"at":r.at,"input":if r.reliable && r.family == "response" {r.tokens.input} else {None},"model":r.model,"contextWindow":r.turn_id.as_ref().and_then(|id|t.turns.get(id)).and_then(|turn|turn.context_window)});
-            let previous: BTreeMap<_, _> = ordered.windows(2).map(|pair| (pair[1].id.as_str(), observation(pair[0]))).collect();
-            let compactions: Vec<_> = t.compactions.values().map(|event| {
-                let mut value = event.clone();
-                let at = event["at"].as_i64().unwrap_or(0);
-                value["before"] = ordered.iter().rev().find(|r|r.at <= at).map(|r|observation(r)).unwrap_or(Value::Null);
-                value["after"] = ordered.iter().find(|r|r.at > at).map(|r|observation(r)).unwrap_or(Value::Null);
-                value
-            }).collect();
-            let mut turns:Vec<_>=t.turns.values().map(|turn| {
-                let rs:Vec<_>=rows.iter().copied().filter(|r|r.turn_id.as_ref()==Some(&turn.id)).collect();
-                let usage=self.metrics(&rs);
-                let mut value=serde_json::to_value(turn).unwrap();value["usage"]=usage.clone();
-                match turn.prompt.as_ref().map(PromptSource::read).transpose() {
-                    Ok(prompt) => value["prompt"] = json!(prompt.flatten()),
-                    Err(error) => { value["prompt"] = Value::Null; value["promptError"] = json!(error); }
-                }
-                value["contextStart"]=rs.iter().min_by_key(|r|(r.at,&r.id)).map(|r|observation(r)).unwrap_or(Value::Null);
-                value["contextEnd"]=rs.iter().max_by_key(|r|(r.at,&r.id)).map(|r|observation(r)).unwrap_or(Value::Null);
-                value["wholeTurnOutputTps"]=json!(turn.duration_ms.filter(|n|*n>0).and_then(|d|usage["output"].as_u64().map(|o|o as f64*1000./d as f64)));
-                value["toolCount"]=json!(t.tools.values().filter(|tool|tool.turn_id.as_ref()==Some(&turn.id)).count());value
-            }).collect();
-            turns.sort_by_key(|v|std::cmp::Reverse(v["startedAt"].as_i64().unwrap_or(0)));
-            let count=turns.len();
-            let turn_id=text(args,"turnId");
-            let mut response_rows:Vec<_>=rows.iter().copied().filter(|r|turn_id.as_ref().is_none_or(|id|r.turn_id.as_ref()==Some(id))).collect();response_rows.sort_by_key(|r|std::cmp::Reverse(r.at));
-            let response_count=response_rows.len();let offset=args["responseOffset"].as_u64().unwrap_or(0) as usize;
-            let mut tools:Vec<_>=t.tools.values().filter(|tool|turn_id.as_ref().is_none_or(|id|tool.turn_id.as_ref()==Some(id))).collect();tools.sort_by_key(|tool|(tool.at, &tool.id));let tools_count=tools.len();let tool_offset=args["toolOffset"].as_u64().unwrap_or(0) as usize;
-            let pricing = crate::subscriptions::UsagePricing::current();
-            let limit = if turn_id.is_some() { usize::MAX } else { 50 };
-            let responses:Vec<_> = response_rows.into_iter().skip(if turn_id.is_some() {0} else {offset}).take(limit).map(|r| {
-                let mut value = serde_json::to_value(r).unwrap();
-                value["context"] = observation(r);
-                value["previousContext"] = previous.get(r.id.as_str()).cloned().unwrap_or(Value::Null);
-                value["estimatedUsd"] = json!(self.costs.get(&r.thread_id).and_then(|costs|costs.get(&r.id)).copied().or_else(|| pricing.estimate(r)));
-                value
-            }).collect();
-            let (content, content_error) = match turn_id.as_deref().map(|id| self.turn_content(&t.thread_id, id)).transpose() {
-                Ok(content) => (content.unwrap_or_else(|| json!({"reasoning":[],"messages":[],"toolPreviews":{}})), None),
-                Err(error) => (json!({"reasoning":[],"messages":[],"toolPreviews":{}}), Some(error.to_string())),
-            };
-            json!({"reasoning":content["reasoning"],"messages":content["messages"],"toolPreviews":content["toolPreviews"],"contentError":content_error,"id":t.thread_id,"label":self.titles.get(&t.thread_id),"cliVersion":t.cli_version,"usage":self.metrics(&rows),"performance":OutputPerformance::collect(t, &rows, None).value(),"issues":t.issues,"family":if t.modern{"response"}else{"legacy"},"lastEventAt":t.last_event_at,"turns":turns,"turnCount":count,"responses":responses,"responseCount":response_count,"tools":tools.into_iter().skip(if turn_id.is_some() {0} else {tool_offset}).take(limit).collect::<Vec<_>>(),"toolCount":tools_count,"compactions":compactions,"parentId":t.parent_id,"forkedFromId":t.forked_from_id,"children":threads.values().filter(|child|child.parent_id.as_ref()==Some(&t.thread_id)).map(|c|&c.thread_id).collect::<Vec<_>>(),"credits":null,"creditsState":"not-observed","resolvedModel":null,"generationTps":null})
-        });
-        data["scope"] = json!(scope);
-        data["binding"] = json!(binding);
-        data["thread"] = detail.unwrap_or(Value::Null);
-        data
     }
+    threads
 }
+
 fn totals(rows: &[&Response]) -> Value {
     let sum = |field: fn(&Tokens) -> Option<u64>| -> Option<u64> {
         if rows.is_empty() || rows.iter().any(|r| !r.reliable) {
@@ -1954,59 +1091,9 @@ fn totals(rows: &[&Response]) -> Value {
     };
     json!({"input":sum(|t|t.input),"cached":sum(|t|t.cached),"output":sum(|t|t.output),"reasoning":sum(|t|t.reasoning),"total":sum(Tokens::total),"knownTotal":known_total,"uncertainRecords":rows.len()-known.len(),"records":rows.len()})
 }
-pub async fn refresh() -> Result<()> {
-    tokio::task::spawn_blocking(|| {
-        shared()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .refresh(None, None)
-    })
-    .await
-    .map_err(|_| "usage-index-unavailable".into())
-}
-type ViewCollectors = BTreeMap<String, Arc<SyncMutex<Collector>>>;
-static VIEWS: OnceLock<SyncMutex<ViewCollectors>> = OnceLock::new();
-fn view_collector(key: &str) -> Arc<SyncMutex<Collector>> {
-    let mut views = VIEWS
-        .get_or_init(|| SyncMutex::new(BTreeMap::new()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if key.starts_with("thread:") {
-        views.retain(|k, _| !k.starts_with("thread:") || k == key);
-    }
-    views.entry(key.to_owned()).or_default().clone()
-}
-pub async fn responses() -> Result<(Vec<Response>, bool)> {
-    tokio::task::spawn_blocking(|| {
-        read_index()
-            .map(|index| index.responses())
-            .unwrap_or_else(|| (Vec::new(), true))
-    })
-    .await
-    .map_err(|_| "usage-index-unavailable".into())
-}
-pub async fn query(args: Value, meta: Value, scope: String) -> Result<Value> {
-    tokio::task::spawn_blocking(move || {
-        let days = args["days"].as_i64().filter(|d| [1,7,30].contains(d)).unwrap_or(7);
-        let explicit = text(&args,"threadId");
-        let a = text(&meta,"threadId");
-        let b = text(&meta,"thread_id");
-        let selected = if scope != "thread" { None } else if explicit.is_some() { explicit } else if a.is_some() && b.is_some() && a != b { None } else { a.or(b) };
-        let key = selected.as_ref().map(|id|format!("thread:{id}")).unwrap_or_else(||format!("period:{days}"));
-        let collector = view_collector(&key);
-        let mut collector = collector.lock().unwrap_or_else(|e|e.into_inner());
-        collector.refresh(if selected.is_some() {None} else {Some(days)}, selected.as_deref());
-        let index = collector.index.clone();
-        drop(collector);
-        if let Some(index) = index {
-            if scope == "thread" && args["toolId"].is_string() {
-                return match index.tool_detail(&args) {
-                    Ok(detail) => json!({"schemaVersion":SCHEMA,"scope":scope,"state":"ready","toolDetail":detail}),
-                    Err(error) => json!({"schemaVersion":SCHEMA,"scope":scope,"state":"unavailable","message":error.to_string()}),
-                };
-            }
-            return index.snapshot(&args, &meta, &scope);
-        }
-        json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":scope,"state":"collecting","message":"正在读取所选范围的本机用量。"})
-    }).await.map_err(|_| "usage-index-unavailable".into())
+
+fn codex_home() -> PathBuf {
+    std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"))
 }

@@ -300,6 +300,7 @@ pub fn layout(
     placement: &Placement,
     screen: &ScreenGeometry,
     at: NSPoint,
+    compact: bool,
 ) -> Layout {
     let metrics = fitted_metrics(p, count, placement, screen);
     let size = rail_size(p, count, placement, screen);
@@ -320,8 +321,23 @@ pub fn layout(
         &placement.dock
     }
     .to_string();
-    // Keep one stable, screen-sized canvas for every expanded surface.
-    let frame = a;
+    // Expanded bubbles keep the full screen coordinate space. Once the rail
+    // has settled closed, shrink the actual WebView, not just its native clip.
+    let frame = if compact {
+        let margin = (metric("flareWidth") + metric("windowPadding"))
+            * metrics["scale"].as_f64().unwrap_or(1.);
+        let left = (at.x - margin).max(a.origin.x).floor();
+        let bottom = (at.y - margin).max(a.origin.y).floor();
+        let right = (at.x + size.width + margin)
+            .min(a.origin.x + a.size.width)
+            .ceil();
+        let top = (at.y + size.height + margin)
+            .min(a.origin.y + a.size.height)
+            .ceil();
+        rect(left, bottom, (right - left).max(1.), (top - bottom).max(1.))
+    } else {
+        a
+    };
     Layout {
         frame,
         rail: rect(
