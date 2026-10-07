@@ -8,7 +8,7 @@ use std::sync::{Mutex as SyncMutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 const SCHEMA: u32 = 1;
-const CACHE_SCHEMA: u32 = 12;
+const CACHE_SCHEMA: u32 = 13;
 const MAX_LINE: u64 = 8 * 1024 * 1024;
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -135,6 +135,58 @@ struct Turn {
     status: String,
     model: Option<String>,
     effort: Option<String>,
+    service_tier: Option<String>,
+}
+
+#[derive(Default)]
+struct OutputPerformance {
+    output: f64,
+    duration_ms: f64,
+    turns: usize,
+}
+impl OutputPerformance {
+    fn collect(thread: &Projection, rows: &[&Response], range: Option<(i64, i64)>) -> Self {
+        let mut by_turn = BTreeMap::<&str, Vec<&Response>>::new();
+        for row in rows {
+            if let Some(id) = row.turn_id.as_deref() {
+                by_turn.entry(id).or_default().push(row);
+            }
+        }
+        let mut result = Self::default();
+        for (id, rows) in by_turn {
+            let Some(turn) = thread.turns.get(id) else {
+                continue;
+            };
+            if !matches!(turn.status.as_str(), "completed" | "interrupted") {
+                continue;
+            }
+            // A period samples complete turns, never partial output divided by
+            // a whole turn's duration. Missing timing/output remains unknown.
+            if let Some((start, end)) = range {
+                if !turn
+                    .started_at
+                    .zip(turn.completed_at)
+                    .is_some_and(|(a, b)| a >= start && b <= end)
+                    || rows.iter().any(|row| row.at < start || row.at > end)
+                {
+                    continue;
+                }
+            }
+            let Some(duration) = turn.duration_ms.filter(|n| *n > 0) else {
+                continue;
+            };
+            let Some(output) = totals(&rows)["output"].as_u64() else {
+                continue;
+            };
+            result.output += output as f64;
+            result.duration_ms += duration as f64;
+            result.turns += 1;
+        }
+        result
+    }
+    fn value(&self) -> Value {
+        json!({"wholeTurnOutputTps":if self.duration_ms > 0. {Some(self.output * 1000. / self.duration_ms)} else {None},"turns":self.turns})
+    }
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -231,11 +283,15 @@ impl Projection {
             self.turn = text(p, "turn_id");
             self.model = text(p, "model");
             self.effort = text(p, "effort");
+            if p.get("service_tier").is_some() {
+                self.tier = text(p, "service_tier");
+            }
             if let Some(id) = &self.turn {
                 let t = self.turns.entry(id.clone()).or_default();
                 t.id = id.clone();
                 t.model = self.model.clone();
                 t.effort = self.effort.clone();
+                t.service_tier = self.tier.clone();
             }
         }
         if kind == "token_usage_record" {
@@ -308,6 +364,7 @@ impl Projection {
                         let t = self.turns.entry(id.clone()).or_default();
                         t.id = id;
                         if sub == "task_started" {
+                            t.service_tier = self.tier.clone();
                             self.own_started = !self.related
                                 || self
                                     .created_at
@@ -644,7 +701,7 @@ fn usage_record(bytes: &[u8], detail: bool) -> serde_json::Result<Value> {
             "thread_source",
             "cli_version",
         ],
-        "turn_context" => &["turn_id", "model", "effort"],
+        "turn_context" => &["turn_id", "model", "effort", "service_tier"],
         "token_usage_record" => &[
             "thread_id",
             "response_id",
@@ -1514,6 +1571,7 @@ impl UsageIndex {
                 .unwrap_or_default()
         };
         let mut tasks = Vec::new();
+        let mut performance = OutputPerformance::default();
         let mut events = Vec::new();
         let mut models: BTreeMap<String, Vec<&Response>> = BTreeMap::new();
         let mut daily: BTreeMap<String, Vec<&Response>> = BTreeMap::new();
@@ -1574,6 +1632,10 @@ impl UsageIndex {
                 )
                 .collect();
             let mut metrics = self.metrics(&period);
+            let task_performance = OutputPerformance::collect(t, &rows, Some((start, end)));
+            performance.output += task_performance.output;
+            performance.duration_ms += task_performance.duration_ms;
+            performance.turns += task_performance.turns;
             metrics["turns"] = if t.last_event_at.is_some_and(|at| at < start) {
                 json!(0)
             } else if t.turns.is_empty() && rows.iter().all(|r| r.turn_id.is_none()) {
@@ -1581,7 +1643,7 @@ impl UsageIndex {
             } else {
                 json!(turns.len())
             };
-            tasks.push(json!({"id":id,"label":self.titles.get(id),"lastEventAt":t.last_event_at,"period":metrics,"family":if t.modern{"response"}else{"legacy"},"issues":t.issues,"parentId":t.parent_id,"forkedFromId":t.forked_from_id}));
+            tasks.push(json!({"id":id,"label":self.titles.get(id),"lastEventAt":t.last_event_at,"period":metrics,"performance":task_performance.value(),"family":if t.modern{"response"}else{"legacy"},"issues":t.issues,"parentId":t.parent_id,"forkedFromId":t.forked_from_id}));
         }
         tasks.sort_by_key(|t| std::cmp::Reverse(t["lastEventAt"].as_i64().unwrap_or(0)));
         let task_count = tasks.len();
@@ -1591,7 +1653,7 @@ impl UsageIndex {
             .chain(threads.values().flat_map(|t| t.issues.iter()))
             .cloned()
             .collect();
-        json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":"global","state":"ready","source":"local-native-jsonl","coverage":"this-device-readable-logs; account attribution unknown; child tasks separate","observedAt":self.observed_at,"scanMs":self.scan_ms,"bytesRead":self.bytes_read,"files":self.files,"issues":all_issues,"binding":"unknown","thread":null,"tasks":tasks,"taskCount":task_count,"range":{"start":start,"end":end,"days":days,"timezone":now.format("%Z").to_string(),"startDay":local_day(start),"endDay":local_day(end),"kind":"event-time"},"usage":self.metrics(&events),"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"daily":daily.into_iter().map(|(day,rs)|json!({"day":day,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"series":series.into_iter().map(|(at,models)|json!({"at":at,"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>() })).collect::<Vec<_>>()})
+        json!({"schemaVersion":SCHEMA,"connectorVersion":env!("CARGO_PKG_VERSION"),"scope":"global","state":"ready","source":"local-native-jsonl","coverage":"this-device-readable-logs; account attribution unknown; child tasks separate","observedAt":self.observed_at,"scanMs":self.scan_ms,"bytesRead":self.bytes_read,"files":self.files,"issues":all_issues,"binding":"unknown","thread":null,"tasks":tasks,"taskCount":task_count,"range":{"start":start,"end":end,"days":days,"timezone":now.format("%Z").to_string(),"startDay":local_day(start),"endDay":local_day(end),"kind":"event-time"},"usage":self.metrics(&events),"performance":performance.value(),"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"daily":daily.into_iter().map(|(day,rs)|json!({"day":day,"usage":self.metrics(&rs)})).collect::<Vec<_>>(),"series":series.into_iter().map(|(at,models)|json!({"at":at,"models":models.into_iter().map(|(name,rs)|json!({"name":name,"usage":self.metrics(&rs)})).collect::<Vec<_>>() })).collect::<Vec<_>>()})
     }
     fn visit_records(&self, thread_id: &str, mut visit: impl FnMut(&Value)) -> Result<()> {
         for path in self.sources.get(thread_id).into_iter().flatten() {
@@ -1864,7 +1926,7 @@ impl UsageIndex {
                 Ok(content) => (content.unwrap_or_else(|| json!({"reasoning":[],"messages":[],"toolPreviews":{}})), None),
                 Err(error) => (json!({"reasoning":[],"messages":[],"toolPreviews":{}}), Some(error.to_string())),
             };
-            json!({"reasoning":content["reasoning"],"messages":content["messages"],"toolPreviews":content["toolPreviews"],"contentError":content_error,"id":t.thread_id,"label":self.titles.get(&t.thread_id),"cliVersion":t.cli_version,"usage":self.metrics(&rows),"issues":t.issues,"family":if t.modern{"response"}else{"legacy"},"lastEventAt":t.last_event_at,"turns":turns,"turnCount":count,"responses":responses,"responseCount":response_count,"tools":tools.into_iter().skip(if turn_id.is_some() {0} else {tool_offset}).take(limit).collect::<Vec<_>>(),"toolCount":tools_count,"compactions":compactions,"parentId":t.parent_id,"forkedFromId":t.forked_from_id,"children":threads.values().filter(|child|child.parent_id.as_ref()==Some(&t.thread_id)).map(|c|&c.thread_id).collect::<Vec<_>>(),"credits":null,"creditsState":"not-observed","resolvedModel":null,"generationTps":null})
+            json!({"reasoning":content["reasoning"],"messages":content["messages"],"toolPreviews":content["toolPreviews"],"contentError":content_error,"id":t.thread_id,"label":self.titles.get(&t.thread_id),"cliVersion":t.cli_version,"usage":self.metrics(&rows),"performance":OutputPerformance::collect(t, &rows, None).value(),"issues":t.issues,"family":if t.modern{"response"}else{"legacy"},"lastEventAt":t.last_event_at,"turns":turns,"turnCount":count,"responses":responses,"responseCount":response_count,"tools":tools.into_iter().skip(if turn_id.is_some() {0} else {tool_offset}).take(limit).collect::<Vec<_>>(),"toolCount":tools_count,"compactions":compactions,"parentId":t.parent_id,"forkedFromId":t.forked_from_id,"children":threads.values().filter(|child|child.parent_id.as_ref()==Some(&t.thread_id)).map(|c|&c.thread_id).collect::<Vec<_>>(),"credits":null,"creditsState":"not-observed","resolvedModel":null,"generationTps":null})
         });
         data["scope"] = json!(scope);
         data["binding"] = json!(binding);

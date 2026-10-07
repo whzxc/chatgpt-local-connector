@@ -6,6 +6,5 @@ import { buildNative } from './build-native.mjs';
 await rm(new URL('../desktop/runtime/', import.meta.url), { recursive: true, force: true });
 await build({ configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)) });
 
-await import("./build-plugin.mjs");
 const args = process.argv.slice(2);
 await buildNative({ release: !args.includes('--debug'), target: args.includes('--target') ? args[args.indexOf('--target') + 1] : undefined });

@@ -83,7 +83,7 @@ Packages contain the Desktop executable, standalone Core executable, frontend st
 
 macOS app packaging requires full Xcode 26 or later, including `actool`; Command Line Tools alone are insufficient. Select Xcode with `DEVELOPER_DIR` or `xcode-select`. Tauri compiles `desktop/icons/LocalConnector.icon` into `Assets.car` and sets `CFBundleIconName` to `Icon`. `CFBundleIconFile` uses the same extensionless name, with `desktop/icons/macos/Icon.icns` as the static fallback; both names must stay aligned so AppKit and Finder resolve the same icon. The Icon Composer document contains a light sage gradient, the system dark background, and a separate opaque character layer. macOS 26 controls the background shape, lighting, and icon appearance across Dock, Finder, and application launchers, independently of the app's UI theme. Older macOS versions use the bundled static ICNS; Windows uses ICO. On macOS, `dev` derives a light blue background from the same Icon Composer document, preserving all other layers and appearance settings. Xcode compiles its catalog and static fallback, and the Cargo runner launches `Local Connector Dev.app` from the build directory with frontend and Rust hot reload intact. Both build commands use `DEVELOPER_DIR` when set, otherwise the standard `/Applications/Xcode.app` installation when available. Edit the native source in Icon Composer; its `Assets/head.png` is copied from `ui/assets/local-connector-head.png` and should be updated together when the artwork changes. `desktop:build` checks the compiler before building and validates the compiled icon catalog before generating the DMG.
 
-Use `release:sync` and `release:check` to synchronize and validate `package.json`, npm/Cargo locks, native/Desktop crates, Tauri configuration and the plugin manifest. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).
+Use `release:sync` and `release:check` to synchronize and validate `package.json`, npm/Cargo locks, native/Desktop crates and Tauri configuration. Update URLs and the project public key are fixed in `desktop/tauri.conf.json`; release builds need `TAURI_SIGNING_PRIVATE_KEY` outside the repository. See [release maintenance](release.md).
 
 ## Subscription development
 
@@ -169,33 +169,4 @@ Expired or stale readings do not produce pace forecasts. Cursor uses reported bi
 cycle dates when available; monthly windows otherwise use the same 30-day convention
 as OpenUsage.
 
-The native plugin resource is built from `ui/usage-insights` by `tooling/build-plugin.mjs` into `dist/plugin/app.html` and embedded by the Rust crate. Run `npm run build` before invoking Cargo directly on a fresh checkout. Standard `npm test`, `desktop:check`, `check:native` and `desktop:build` prepare this asset automatically. No Node process ships with the plugin. Local exporter and lifecycle instructions are in [plugin.md](plugin.md).
-
-Standalone plugin development, automatic panel reload and portable ZIP builds use `plugin:dev`, `plugin:build` and `plugin:check`; see [plugin development](plugin-development.md). Desktop packaging also creates and verifies the matching plugin ZIP. Release staging requires that platform ZIP alongside the installers.
-
-
-Codex notifications retain only a 2,000-event / 8 MiB in-memory window. Repeated
-identical Desktop state changes do not allocate another event cursor. Consumers
-handle `gap` / `reset` and read task history through `codex_read` / `codex_items`;
-Connector does not mirror native thread snapshots to disk.
-
-Connector-owned Pi/ACP output uses a JSONL tail of up to 8 MiB plus the current
-event, and immutable gzip segments with UTF-16 length indexes. Compression verifies
-the uncompressed SHA-256 before removing a raw segment. `control_output` preserves
-JSONL content and UTF-16 pagination across segments; `cli storage compact` seals
-existing tails. Unique Agent output, request receipts and task associations are
-not subject to cache eviction.
-
-Usage checkpoints contain compressed statistics and source positions, with a
-40 MiB total budget shared by file checkpoints and the last complete overview
-(with a 2 MiB upper limit for that overview). The overview is saved at most once per minute; a restart can
-display it with its original observation time while the full index rebuilds.
-Prompts are read from native files on demand and checked against
-the indexed content hash; unavailable or changed source text is reported, not
-substituted. Orphaned checkpoints are removed after a successful scan; budget
-eviction retains the most source bytes per compressed checkpoint byte, using age
-to break ties, so unchanged large logs do not repeatedly lose their checkpoints.
-Statistics rebuild from native sources after cache eviction. Temporary large-result
-snapshots retain up to 64 MiB for one hour and may be evicted earlier by newer
-results. Startup and snapshot writes prune expired files. Diagnostic logs rotate
-at 2 MiB and retain up to seven days and approximately 16 MiB.
+Plugin sources, development servers and packaging are owned by the independent [Usage](https://github.com/whzxc/chatgpt-usage-plugin) and [Kanban](https://github.com/whzxc/chatgpt-kanban-plugin) repositories. Connector builds no plugin resources or ZIPs.

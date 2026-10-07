@@ -33,7 +33,6 @@ if (spawnSync('cargo', ['--version'], { env, stdio: 'ignore' }).status !== 0) {
 const prune = spawnSync(process.execPath, [fileURLToPath(new URL('tooling/prune-build-cache.mjs', root))],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });
 if (prune.status !== 0) throw new Error('无法检查 Rust 构建缓存');
-await import('./build-plugin.mjs');
 await buildNative();
 if (process.platform === 'win32') {
   cpSync(fileURLToPath(new URL('dist/native/', root)), fileURLToPath(new URL('desktop/target/debug/bin/', root)), { recursive: true });

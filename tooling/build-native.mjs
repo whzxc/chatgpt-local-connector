@@ -30,7 +30,6 @@ export async function buildNative({ release = false, target } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await import('./build-plugin.mjs');
   const args = process.argv.slice(2);
   await buildNative({ release: args.includes('--release'), target: args.includes('--target') ? args[args.indexOf('--target') + 1] : undefined });
 }

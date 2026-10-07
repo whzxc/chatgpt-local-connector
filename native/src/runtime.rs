@@ -44,7 +44,7 @@ impl State {
                     return Err("core shutting down".into());
                 }
                 let kind = string(&body, "kind");
-                if !["desktop", "plugin"].contains(&kind) || !body["pid"].is_u64() {
+                if !["desktop", "cli"].contains(&kind) || !body["pid"].is_u64() {
                     return Err("invalid local entrypoint".into());
                 }
                 if leases.len() >= 128 && !leases.contains_key(key) {
@@ -85,7 +85,7 @@ impl State {
             "runtime/shutdown" => {
                 if !leases.contains_key(key) || leases.keys().any(|id| id != key) {
                     return Err(
-                        "其他本地入口仍在使用 Core；请先关闭这些插件或 Desktop，再安装更新。"
+                        "其他本地入口仍在使用 Core；请先关闭这些 CLI 或 Desktop，再安装更新。"
                             .into(),
                     );
                 }
@@ -175,7 +175,7 @@ async fn owner(build: &str) -> Result<Option<Value>> {
         || health["build"] != build
     {
         return Err(
-            "CORE_BUILD_MISMATCH：请关闭其他本地入口，再重新加载同一构建的 Desktop 与插件。".into(),
+            "CORE_BUILD_MISMATCH：请关闭其他本地入口，再重新加载同一构建的 Desktop 与 CLI。".into(),
         );
     }
     Ok(Some(info))

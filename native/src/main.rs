@@ -1,4 +1,4 @@
-use connector_core::{plugin, runtime, Result};
+use connector_core::{runtime, Result};
 
 #[tokio::main]
 async fn main() {
@@ -16,14 +16,8 @@ async fn run() -> Result<()> {
         .collect::<Vec<_>>()
         .as_slice()
     {
-        [] | ["mcp"] => plugin::stdio().await,
         ["stdio"] => connector_core::transport::stdio().await,
         ["serve"] => runtime::serve().await,
-        ["export", directory] => {
-            let result = plugin::export(std::path::Path::new(directory))?;
-            println!("{result}");
-            Ok(())
-        }
         ["cli", rest @ ..] => {
             std::process::exit(
                 connector_core::cli::run(rest.iter().map(|s| s.to_string()).collect()).await,
@@ -33,9 +27,6 @@ async fn run() -> Result<()> {
             println!("{}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        _ => Err(
-            "Usage: local-connector [mcp | stdio | serve | export <directory> | cli <command> | --version]"
-                .into(),
-        ),
+        _ => Err("Usage: local-connector [stdio | serve | cli <command> | --version]".into()),
     }
 }

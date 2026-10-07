@@ -11,7 +11,7 @@
     "check": "tsc --noEmit -p ui/tsconfig.json",
     "build": "vite build --config vite.config.ts && node tooling/build-native.mjs",
     "cache:prune": "node tooling/prune-build-cache.mjs",
-    "pretest": "node tooling/build-plugin.mjs && node tooling/prune-build-cache.mjs",
+    "pretest": "node tooling/prune-build-cache.mjs",
     "test": "node --test tests/control-mcp.test.ts",
     "posttest": "node tooling/prune-build-cache.mjs --keep=native/target/contracts",
     "check:package": "node tooling/check-package.mjs",
@@ -31,12 +31,7 @@
     "release:sync": "node tooling/release.mjs sync",
     "release:preflight": "npm run check:format && npm run release:check && npm run check && npm test && npm run build && npm run check:native",
     "release:stage": "node tooling/release.mjs stage",
-    "release:finalize": "node tooling/release.mjs finalize",
-    "plugin:dev": "node tooling/plugin-dev.mjs",
-    "plugin:web": "node tooling/plugin-web-dev.mjs",
-    "plugin:marketplace": "node tooling/plugin-marketplace.mjs",
-    "plugin:build": "node tooling/plugin-build.mjs",
-    "plugin:check": "node tooling/check-plugin.mjs"
+    "release:finalize": "node tooling/release.mjs finalize"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

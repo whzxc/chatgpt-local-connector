@@ -41,6 +41,9 @@ export { HoverScope };
 export { HoverPreviewGroup } from "./HoverPreviewGroup";
 export { ErrorCallout, LoadingIndicator } from "./Feedback";
 export { DataTable, Pagination } from "./DataTable";
+export function Tag({ children, title }: { children: ReactNode; title?: string }) {
+  return <span className="task-tag" title={title}>{children}</span>;
+}
 export function Icon({
   icon: Component,
   size = 16,

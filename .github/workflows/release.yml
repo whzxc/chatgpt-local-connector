@@ -63,27 +63,6 @@ jobs:
           done <<< "$runs"
           echo 'No successful main rehearsal matches this exact commit. Run a rehearsal with passing checks before tagging; do not add a metadata commit.'
           exit 1
-      - name: Gate | Marketplace publishing access
-        if: github.event_name == 'push' || inputs.publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MARKETPLACE_KEY: ${{ secrets.PLUGIN_MARKETPLACE_DEPLOY_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$MARKETPLACE_KEY" || { echo 'Configure PLUGIN_MARKETPLACE_DEPLOY_KEY for whzxc/clc-plugins before publishing.'; exit 1; }
-          gh api repos/whzxc/clc-plugins/git/ref/heads/stable >/dev/null
-      - name: Gate | Check distribution credentials
-        if: github.event_name == 'push' || inputs.publish
-        uses: actions/checkout@v6
-        with:
-          repository: whzxc/clc-plugins
-          ref: stable
-          ssh-key: ${{ secrets.PLUGIN_MARKETPLACE_DEPLOY_KEY }}
-          path: dist/plugin-marketplace-access
-      - name: Gate | Verify push access without changing refs
-        if: github.event_name == 'push' || inputs.publish
-        run: git -C dist/plugin-marketplace-access push --dry-run origin HEAD:refs/heads/stable
   checks:
     needs: gate
     if: github.event_name == 'workflow_dispatch' && !inputs.publish
@@ -156,7 +135,7 @@ jobs:
     if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.checks.result == 'success' || needs.checks.result == 'skipped') && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     concurrency:
-      group: plugin-marketplace
+      group: connector-release
       cancel-in-progress: false
     permissions:
       contents: write
@@ -191,8 +170,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: npm run release:finalize -- release-artifacts
-      - name: Plugin | Assemble signed Git marketplace
-        run: npm run plugin:marketplace -- assemble release-artifacts dist/plugin-marketplace
       - name: Verification | Release metadata leaves source unchanged
         run: git diff --exit-code HEAD
       - name: Artifacts | Upload rehearsal metadata
@@ -205,15 +182,6 @@ jobs:
             release-artifacts/SHA256SUMS.txt
             release-artifacts/release-notes.md
             release-artifacts/local-connector.rb
-          retention-days: 14
-      - name: Artifacts | Upload Git marketplace
-        if: github.event_name == 'workflow_dispatch' && !inputs.publish
-        uses: actions/upload-artifact@v4
-        with:
-          name: plugin-marketplace
-          path: dist/plugin-marketplace/
-          include-hidden-files: true
-          if-no-files-found: error
           retention-days: 14
       - name: Publish | Upload draft and publish
         if: github.event_name == 'push' || inputs.publish
@@ -228,52 +196,15 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Local Connector $GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md
           fi
-          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.exe release-artifacts/*.zip release-artifacts/*.bin release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json release-artifacts/local-connector.rb --clobber
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/*.dmg release-artifacts/*.gz release-artifacts/*.exe release-artifacts/*.sig release-artifacts/SHA256SUMS.txt release-artifacts/latest.json release-artifacts/local-connector.rb --clobber
           gh release edit "$GITHUB_REF_NAME" --notes-file release-artifacts/release-notes.md --draft=false --latest
       - name: Verification | Public downloads
         if: github.event_name == 'push' || inputs.publish
         run: node tooling/release.mjs verify-published release-artifacts
-      - name: Plugin | Check out distribution repository
-        if: github.event_name == 'push' || inputs.publish
-        uses: actions/checkout@v6
-        with:
-          repository: whzxc/clc-plugins
-          ref: stable
-          fetch-depth: 0
-          ssh-key: ${{ secrets.PLUGIN_MARKETPLACE_DEPLOY_KEY }}
-          path: dist/plugin-marketplace-repository
-      - name: Plugin | Publish stable and version tag
-        if: github.event_name == 'push' || inputs.publish
-        run: npm run plugin:marketplace -- publish dist/plugin-marketplace dist/plugin-marketplace-repository
-  marketplace-check:
-    name: Verify Git marketplace (${{ matrix.os }})
-    needs: publish
-    if: github.event_name == 'workflow_dispatch' && !inputs.publish
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - uses: actions/download-artifact@v4
-        with:
-          name: plugin-marketplace
-          path: dist/plugin-marketplace
-      - name: Restore native executable mode
-        if: runner.os == 'macOS'
-        run: chmod +x dist/plugin-marketplace/plugins/clc/bin/local-connector
-      - run: node tooling/build-plugin.mjs
-      - run: npm run plugin:check -- dist/plugin-marketplace/plugins/clc
   timings:
     name: Timing summary
     if: always()
-    needs: [gate, checks, build, publish, marketplace-check]
+    needs: [gate, checks, build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read

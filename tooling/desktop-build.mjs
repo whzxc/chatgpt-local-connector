@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { copyFileSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { compileIcon, requireXcode } from './macos-icons.mjs';
 const root = new URL('../', import.meta.url);
@@ -48,20 +47,5 @@ if (process.platform === 'darwin' && !buildArgs.includes('--no-bundle')) {
 const targetAt = buildArgs.findIndex(a => a === '--target' || a.startsWith('--target='));
 const target = targetAt < 0 ? null : buildArgs[targetAt] === '--target' ? buildArgs[targetAt + 1] : buildArgs[targetAt].slice('--target='.length);
 const profile = buildArgs.some(a => a === '--debug' || a === '-d') ? 'debug' : 'release';
-if (!buildArgs.includes('--no-bundle')) {
-  const native = process.platform === 'darwin'
-    ? `desktop/target/${target}/`+profile+'/bundle/macos/Local Connector.app/Contents/Resources/bin/local-connector'
-    : 'dist/native/local-connector.exe';
-  execFileSync(process.execPath,[fileURLToPath(new URL('tooling/plugin-build.mjs',root)),'--binary',native],
-    {cwd:fileURLToPath(root),env,stdio:'inherit'});
-  if (env.TAURI_SIGNING_PRIVATE_KEY) {
-    const version = JSON.parse(readFileSync(new URL('package.json',root),'utf8')).version;
-    const platform = process.platform === 'darwin' ? 'darwin-aarch64' : 'windows-x86_64';
-    const payload = `dist/plugin-package/CLC.Core_${version}_${platform}.bin`;
-    copyFileSync(new URL(native, root), new URL(payload, root));
-    execFileSync(process.execPath,[fileURLToPath(new URL('node_modules/@tauri-apps/cli/tauri.js',root)),'signer','sign',payload],
-      {cwd:fileURLToPath(root),env,stdio:'inherit'});
-  }
-}
 execFileSync(process.execPath, [prune, `--keep=desktop/target/${target || profile}`],
   { cwd: fileURLToPath(root), env, stdio: 'inherit' });

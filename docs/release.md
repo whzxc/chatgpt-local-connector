@@ -1,13 +1,13 @@
 # 发布维护
 
-源码与下载仓库：`whzxc/chatgpt-local-connector`。版本以 `package.json` 为准。使用 GitHub Releases 托管安装包、更新包、独立插件 ZIP 和静态 `latest.json`，不需要自建分发服务。公共 npm 包不在发布范围内。
+源码与下载仓库：`whzxc/chatgpt-local-connector`。版本以 `package.json` 为准。使用 GitHub Releases 托管安装包、更新包 和静态 `latest.json`，不需要自建分发服务。公共 npm 包不在发布范围内。
 
 ## 发布配置
 
 1. 发布目标为上述 GitHub 公开仓库。本机状态、密钥和真实任务内容不得进入源码或发行包。
 2. 更新公钥位于 `desktop/tauri.conf.json`，发布必须使用其对应私钥。私钥保存在仓库外并离线备份，切勿提交；更换公钥会影响已安装客户端的更新验签。
 3. 在仓库 Actions Secrets 中设置 `TAURI_SIGNING_PRIVATE_KEY`（私钥文件内容）。私钥未加密时无需设置 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`；如果自行使用加密私钥，则设置对应密码。
-4. 允许 Release 工作流写入 Contents 以创建 Release，并读取 Actions artifacts 以复用构建产物。工作流不向源码仓库提交代码或推送分支；Git 插件市场独立发布到分发仓库。安装包校验值、更新清单和 Cask 仅作为发布产物保存。
+4. 允许 Release 工作流写入 Contents 以创建 Release，并读取 Actions artifacts 以复用构建产物。工作流不向源码仓库提交代码或推送分支。安装包校验值、更新清单和 Cask 仅作为发布产物保存。
 
 配置 Actions Secret：
 
@@ -25,7 +25,7 @@ npm run release:check
 npm run release:preflight
 ```
 
-`release:sync` 以 `package.json` 为版本来源，同步 Tauri、两个 Cargo package、npm/Cargo 锁文件和插件 manifest；可在 `CHANGELOG.md` 维护该版本条目。它不提交、不打标签、不上传。
+`release:sync` 以 `package.json` 为版本来源，同步 Tauri、两个 Cargo package、npm/Cargo 锁文件；可在 `CHANGELOG.md` 维护该版本条目。它不提交、不打标签、不上传。
 
 `release:preflight` 首先检查 Core、Desktop 和验签工具的 Rust 格式，再检查版本、类型、契约、前端构建与原生编译。单独检查格式可运行 `npm run check:format`。
 
@@ -46,7 +46,7 @@ macOS DMG 使用 `desktop/assets/dmg-background.png` 提供无文案的拖拽安
 
 原生深浅色图标需要完整 Xcode 26+。构建脚本先用 `actool` 编译 `.icon` 源文件，再将 `target` 下生成的 `Assets.car` 交给 Tauri 打包；开发模式复用相同编译入口。生成资源不进入版本库。
 
-Stage 目录必须为空，每次使用新目录。脚本要求同版本的 `dist/plugin-package/CLC.Plugin_<版本>_<平台>.zip`，与指定平台的发行文件一起暂存。`desktop:build` 会从该平台的独立 Core 生成并启动验证插件目录，再解压 ZIP 复验。插件 ZIP 纳入发布哈希及公开字节回读；它不使用 Desktop 的应用内更新 feed。脚本统一文件名，并使用与 Tauri 相同的 Minisign 验签库验证实际更新包与内置公钥匹配。
+Stage 目录必须为空，每次使用新目录。脚本统一安装包文件名，并使用与 Tauri 相同的 Minisign 验签库验证实际更新包与内置公钥匹配。
 
 ## 发布流程
 
@@ -94,11 +94,11 @@ git push origin v<版本>
 
 工作流步骤：
 
-1. 演练并行检查同一提交并构建 macOS Apple Silicon 与 Windows x64 安装包及独立插件 ZIP，验证更新签名，生成清单、更新说明与含真实 DMG 哈希的 Cask。
+1. 演练并行检查同一提交并构建 macOS Apple Silicon 与 Windows x64 安装包，验证更新签名，生成清单、更新说明与含真实 DMG 哈希的 Cask。
 2. 正式发布从最近 100 次成功的 `main` 演练中，选择提交 SHA 与版本标签所指提交完全相同的一次。找不到匹配构建或产物已过期时停止发布，需在该提交重新演练。
-3. 下载该次演练的两端安装包和插件 ZIP，重新验证签名并生成清单和含真实 DMG 哈希的 Cask；所有文件仅写入产物目录。
+3. 下载该次演练的两端安装包，重新验证签名并生成清单和含真实 DMG 哈希的 Cask；所有文件仅写入产物目录。
 4. 上传全部文件到 Draft Release，再一次性公开为 latest；不会提前把不完整更新推给用户。
-5. 从公开地址下载清单及所有产物，逐一比对本地已验签的字节，然后将 Git 插件包发布到独立分发仓库的 `stable` 分支与版本标签。发布流程不向源码默认分支写入提交。
+5. 从公开地址下载清单及所有产物，逐一比对本地已验签的字节。发布流程不向源码默认分支写入提交。
 
 公开后的版本不可覆盖重建。构建失败可以重跑；如果已经公开但发布后验证失败，先检查已发布内容，使用 `node tooling/release.mjs verify-published <产物目录>` 回读，不重复覆盖该 Release。新修复使用新的版本号。Cask 随安装包在 Release 中公开，不提前更新源码仓库中的安装配方。
 
@@ -122,19 +122,6 @@ gh workflow run release.yml --ref main -f publish=false
 
 总耗时按墙钟时间计算，两端并行构建不能相加；统计覆盖业务作业的调度等待、缓存恢复及保存、依赖安装、检查或打包、验签、上传、发布和公开产物校验。统计作业本身及其上传开销不计入该值，GitHub 页面总时长包含这部分开销。
 
-## 插件分发
+## ChatGPT Desktop 插件
 
-正式发布的每个平台 ZIP 包含可安装的本地 marketplace、相对路径 MCP 配置和该平台原生二进制。用户解压后注册 marketplace 并安装；更新时需要更新宿主缓存、旧 MCP 进程和面板资源，见 [插件操作说明](plugin.md)。源码模板本身没有平台二进制，不能替代该产物。向公共插件目录上架是独立发布动作，需要按目标宿主的当前目录规则提交；GitHub Release 成功不等于目录上架。
-
-
-### Git 市场
-
-`whzxc/clc-plugins` 是独立的公开 MIT 分发仓库，默认分支为 `stable`。只保留 `.agents/plugins/marketplace.json`、`plugins/clc` 安装包、许可证、说明与 `release.json` 来源记录，不放源码开发文件或个人配置。每次发布产生不可覆盖的 `v<版本>` 标签；用户跟踪 `stable` 或固定到版本标签。
-
-首次配置需要先创建该仓库及 `stable` 分支，并在源码仓库设置 `PLUGIN_MARKETPLACE_DEPLOY_KEY` Actions secret。私钥保存在这个 secret，公钥登记为分发仓库可写 deploy key，仅授权该仓库；源码仓库的默认 `GITHUB_TOKEN` 不能跨仓库推送。分支保护需允许该发布身份推送。正式发布前 gate 检查密钥、分支，并通过不修改 refs 的 push dry-run 检查访问权限。
-
-`npm run plugin:marketplace -- assemble <发布产物目录> <空输出目录>` 验证两端 Core 的 minisign 签名、ZIP 内二进制与签名载荷的一致性，以及两端共享文件的一致性，再合成同一市场。MCP 命令使用 `./bin/local-connector`：macOS 执行无扩展名文件，Windows 解析同目录的 `.exe`。不需要 Node 或脚本解释器。
-
-Release 演练上传 `plugin-marketplace` artifact，并分别在 macOS、Windows 运行现有插件检查，验证真实 MCP 启动、工具目录、内嵌 UI 与 Core 退出。正式发布复用同一提交的成功演练产物；公开 Release 回读成功后，`publish` 将市场提交、`stable` 和版本标签原子推送并回读 refs。它拒绝降级或覆盖同版本内容，不使用 force push。
-
-如果 Release 已公开而 Git 市场发布失败，在默认分支手动运行 `Sync plugin marketplace`，填写已公开最新版本号。该流程读取对应版本标签的工具及配置、下载已签名附件并重试市场发布，不重建或覆盖 Release。目标版本必须包含市场发布工具；旧版本可在包含该工具的源码中手动组装，确认版本及来源提交一致后发布。密钥轮换后可使用同样方式重试。
+ChatGPT Desktop 插件分别由 [chatgpt-usage-plugin](https://github.com/whzxc/chatgpt-usage-plugin) 与 [chatgpt-kanban-plugin](https://github.com/whzxc/chatgpt-kanban-plugin) 独立维护、构建和分发。Connector Desktop 发布流程不生成插件 ZIP 或 Core 插件更新载荷，不同步 Git 插件市场，也不安装或更新宿主中的插件。

@@ -488,7 +488,7 @@ pub async fn stdio() -> Result<()> {
 
 pub async fn forward_request(route: &str, method: &str, body: Value) -> Result<Value> {
     crate::init_crypto();
-    let unavailable = "无法连接本机 Core，请重新加载插件或打开 Local Connector。";
+    let unavailable = "无法连接本机 Core，请重新运行 CLI 或打开 Local Connector。";
     let info = load(&root().join("web/native.json")).map_err(|_| unavailable)?;
     let port = info["port"]
         .as_u64()
@@ -532,11 +532,7 @@ pub async fn forward_to(info: &Value, route: &str, method: &str, body: Value) ->
         )
         .bearer_auth(string(&info, "token"))
         .timeout(Duration::from_secs(
-            if route == "plugin/call"
-                || route == "start"
-                || route.ends_with("/start")
-                || route.ends_with("/start-all")
-            {
+            if route == "start" || route.ends_with("/start") || route.ends_with("/start-all") {
                 360
             } else {
                 120

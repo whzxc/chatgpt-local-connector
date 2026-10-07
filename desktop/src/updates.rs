@@ -64,13 +64,6 @@ async fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
-pub async fn sync_plugin() -> Result<Value, String> {
-    if cfg!(debug_assertions) {
-        return Ok(json!({"state":"development"}));
-    }
-    connector_core::plugin_updates::sync().await
-}
-#[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<Value, String> {
     let state = app.state::<UpdateState>();
     let update = updater(&app)
