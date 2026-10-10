@@ -40,7 +40,7 @@ CLC 仅接受 `openai` / `none` / `bearer` / `oauth`。OAuth 提供 PKCE、DCR�
 
 连接编辑弹窗末尾提供 **工具列表：全部 / 常用 / 只读 / 自定义**。新增连接默认全部，保存为 `"all"`，随注册表包含新工具；其它模式保存为明确的 `{ "allowlist": [...] }` 快照。一级表单显示当前工具数量，点击“查看全部”打开二级弹窗。预设在其中展示已选工具；自定义支持组选择与逐项选择，“完成”将选择带回连接表单，“取消”放弃本次选择。选择操作时会保留必需的回执、状态、等待和结果读取依赖，不自动开启可选写操作。编辑器生成的受限策略始终保留 `connector_verify`：它只写连接验证记录，是只读模式的连接维护例外。
 
-常用包含项目事实查询和完整的 Agent/Codex 创建、续接、中断、交互、进度、回执及结果链路，省略通用主机写入、命令和任意原生 RPC。只读包含项目/代码读取、固定只读 Git、Agent/Codex 能力、任务列表、状态、历史、事件、待处理交互、等待、Schema 与输出读取；排除两个 `*_request`（approve/bypass/reject 会改变任务）、create/send/interrupt/respond，以及混合入口 `fs`、`command`、`process`、`mcp`、`codex_call`、`codex_thread`。`codex_query` 透传的原生参数包括插件/应用 `forceRefetch` 和技能 `forceReload`，`codex_account` 的账户读取允许刷新凭据，均保守排除。
+常用包含项目事实查询和完整的 Agent/Codex 创建、续接、中断、交互、进度、回执及结果链路，省略通用主机写入（包括 `git_write`）、命令和任意原生 RPC。`git_write` 支持本地暂存、取消暂存、提交、创建/切换分支和 stash push/pop，使用 UUID 回执并通过 `codex_request` 回读；仅在“全部”或明确选择的“自定义”中启用，不提供远程操作或历史改写。只读包含项目/代码读取、固定只读 `git`（status/log/show/diff）、Agent/Codex 能力、任务列表、状态、历史、事件、待处理交互、等待、Schema 与输出读取；排除两个 `*_request`（approve/bypass/reject 会改变任务）、create/send/interrupt/respond，以及混合入口 `fs`、`command`、`process`、`mcp`、`codex_call`、`codex_thread`。`codex_query` 透传的原生参数包括插件/应用 `forceRefetch` 和技能 `forceReload`，`codex_account` 的账户读取允许刷新凭据，均保守排除。
 
 这是同时作用于 `tools/list` 和 `tools/call` 的顶层 MCP 工具暴露策略，不细分工具内部 action/method，不隔离任务所有权，也不代表设备的 OS 沙箱只读；任务执行仍使用其自身权限。经过本机认证的管理目录始终返回完整注册表。
 

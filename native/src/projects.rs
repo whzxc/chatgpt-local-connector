@@ -65,6 +65,12 @@ pub async fn resolve(c: &Control, id: &str) -> Result<Value> {
     Ok(json!({"id":pid,"name":name,"root":root}))
 }
 async fn git(root: &str, args: Vec<String>) -> Result<String> {
+    git_command(root, args, false).await
+}
+// Global configuration is read only by `git config` to extract commit identity.
+async fn git_command(root: &str, args: Vec<String>, identity: bool) -> Result<String> {
+    let config_query = args.first().is_some_and(|s| s == "config");
+    let mutation = args.first().is_some_and(|s| s == "-c");
     let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
     let missing_ref_check =
         args.first().is_some_and(|s| s == "show-ref") && args.iter().any(|s| s == "--quiet");
@@ -88,36 +94,292 @@ async fn git(root: &str, args: Vec<String>) -> Result<String> {
     ])
     .args(args)
     .env_clear();
-    for k in ["PATH", "HOME", "SYSTEMROOT", "TEMP"] {
+    for k in [
+        "PATH",
+        "HOME",
+        "USERPROFILE",
+        "XDG_CONFIG_HOME",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+    ] {
         if let Some(v) = std::env::var_os(k) {
             cmd.env(k, v);
         }
     }
     cmd.env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", null)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_PAGER", "cat")
         .env("LC_ALL", "C");
-    let o = tokio::time::timeout(std::time::Duration::from_secs(12), cmd.output())
+    if mutation {
+        cmd.env("GIT_NO_LAZY_FETCH", "1");
+    }
+    if !identity {
+        cmd.env("GIT_CONFIG_GLOBAL", null);
+    }
+    cmd.stdin(std::process::Stdio::null());
+    use tokio::io::AsyncReadExt;
+    const LIMIT: u64 = 16 * 1024 * 1024;
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().ok_or("missing Git stdout")?;
+    let stderr = child.stderr.take().ok_or("missing Git stderr")?;
+    let collect = async |stream: Box<dyn tokio::io::AsyncRead + Unpin + Send>| -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        stream
+            .take(LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(|e| e.to_string())?;
+        if bytes.len() > LIMIT as usize {
+            return Err("GIT_OUTPUT_LIMIT".into());
+        }
+        Ok(bytes)
+    };
+    let (stdout, stderr, status) =
+        tokio::time::timeout(std::time::Duration::from_secs(12), async {
+            tokio::try_join!(
+                collect(Box::new(stdout)),
+                collect(Box::new(stderr)),
+                async { child.wait().await.map_err(|e| e.to_string()) }
+            )
+        })
         .await
-        .map_err(|_| "GIT_TIMEOUT")?
-        .map_err(|e| e.to_string())?;
-    if !o.status.success() || o.stdout.len() > 16 * 1024 * 1024 {
+        .map_err(|_| "GIT_TIMEOUT")??;
+    if config_query && status.code() == Some(1) {
+        return Ok(String::new());
+    }
+    if !status.success() {
         return Err(
-            if String::from_utf8_lossy(&o.stderr).contains("not a git repository")
+            if String::from_utf8_lossy(&stderr).contains("not a git repository")
                 && !Path::new(root)
                     .ancestors()
                     .any(|p| p.join(".git").symlink_metadata().is_ok())
             {
                 "NOT_GIT_REPOSITORY".into()
-            } else if missing_ref_check && o.status.code() == Some(1) {
+            } else if missing_ref_check && status.code() == Some(1) {
                 "GIT_REF_MISSING".into()
+            } else if mutation {
+                format!(
+                    "GIT_WRITE_FAILED: {}\n{}",
+                    String::from_utf8_lossy(&stderr)
+                        .chars()
+                        .take(4096)
+                        .collect::<String>(),
+                    String::from_utf8_lossy(&stdout)
+                        .chars()
+                        .take(4096)
+                        .collect::<String>()
+                )
             } else {
                 "GIT_QUERY_FAILED".into()
             },
         );
     }
-    String::from_utf8(o.stdout).map_err(|e| e.to_string())
+    String::from_utf8(stdout).map_err(|e| e.to_string())
+}
+/// Local Git mutations share Control's durable request reservation and receipts.
+pub async fn write(c: &Control, args: &Value) -> Result<Value> {
+    let project = resolve(c, string(args, "project")).await?;
+    let root = string(&project, "root");
+    git(root, strings(&["rev-parse", "--git-dir"])).await?;
+    let operation = string(args, "operation");
+    let permitted: &[&str] = match operation {
+        "add" | "unstage" => &["paths", "all"],
+        "commit" => &["message"],
+        "branch" => &["branch"],
+        "switch" => &["branch", "create"],
+        "stash_push" => &["message"],
+        "stash_pop" => &[],
+        _ => return Err("unsupported Git write operation".into()),
+    };
+    if args
+        .as_object()
+        .ok_or("invalid Git arguments")?
+        .keys()
+        .any(|key| {
+            !["project", "operation", "requestId"].contains(&key.as_str())
+                && !permitted.contains(&key.as_str())
+        })
+    {
+        return Err("argument does not apply to Git operation".into());
+    }
+    if operation == "stash_pop"
+        && !git(
+            root,
+            strings(&[
+                "config",
+                "--name-only",
+                "--get-regexp",
+                "^merge\\..*\\.driver$",
+            ]),
+        )
+        .await?
+        .is_empty()
+    {
+        return Err("stash_pop does not support configured external merge drivers".into());
+    }
+    let mut cmd = strings(&[
+        "-c",
+        "commit.gpgSign=false",
+        "-c",
+        "tag.gpgSign=false",
+        "-c",
+        "maintenance.auto=false",
+        "-c",
+        "gc.auto=0",
+        "-c",
+        "submodule.recurse=false",
+        "-c",
+        "rerere.enabled=false",
+    ]);
+    // A repository's .gitattributes can select local filter commands even with
+    // global configuration disabled. Disable every configured filter driver.
+    let filters = git(
+        root,
+        strings(&[
+            "config",
+            "--null",
+            "--name-only",
+            "--get-regexp",
+            "^filter\\.",
+        ]),
+    )
+    .await?;
+    for key in filters.split('\0').filter(|key| !key.is_empty()) {
+        if let Some((driver, _)) = key.rsplit_once('.') {
+            for (field, value) in [
+                ("clean", ""),
+                ("smudge", ""),
+                ("process", ""),
+                ("required", "false"),
+            ] {
+                cmd.extend(["-c".into(), format!("{driver}.{field}={value}")]);
+            }
+        }
+    }
+    if matches!(operation, "commit" | "stash_push") {
+        for key in ["user.name", "user.email"] {
+            let value = git_command(root, strings(&["config", "--get", key]), true).await?;
+            let value = value.trim_end_matches(['\r', '\n']);
+            if value.trim().is_empty() {
+                return Err(format!(
+                    "configure {key} in repository or user Git config before committing"
+                ));
+            }
+            cmd.extend(["-c".into(), format!("{key}={value}")]);
+        }
+    }
+    match operation {
+        "add" | "unstage" => {
+            let paths = args["paths"].as_array();
+            let all = args["all"] == true;
+            if all == paths.is_some() || paths.is_some_and(|p| p.is_empty()) {
+                return Err("provide either nonempty paths or all=true".into());
+            }
+            let paths: Vec<String> = if all {
+                vec![".".into()]
+            } else {
+                paths
+                    .unwrap()
+                    .iter()
+                    .map(|v| {
+                        let path = v
+                            .as_str()
+                            .filter(|p| !p.is_empty() && !p.contains('\0'))
+                            .ok_or("invalid Git path")?;
+                        if Path::new(path).is_absolute()
+                            || Path::new(path).components().any(|c| {
+                                matches!(
+                                    c,
+                                    std::path::Component::ParentDir
+                                        | std::path::Component::Prefix(_)
+                                )
+                            })
+                        {
+                            return Err("Git paths must stay relative to project".to_string());
+                        }
+                        Ok(path.to_owned())
+                    })
+                    .collect::<Result<_>>()?
+            };
+            if operation == "add" {
+                cmd.extend(strings(&["add", "--all", "--"]));
+            } else if git(root, strings(&["rev-parse", "--verify", "HEAD"]))
+                .await
+                .is_ok()
+            {
+                cmd.extend(strings(&["restore", "--staged", "--"]));
+            } else {
+                // Unborn branch: remove entries only from the index, preserving files.
+                let head = git(root, strings(&["symbolic-ref", "HEAD"])).await?;
+                match git(
+                    root,
+                    strings(&["show-ref", "--verify", "--quiet", head.trim()]),
+                )
+                .await
+                {
+                    Err(error) if error == "GIT_REF_MISSING" => {}
+                    _ => return Err("cannot verify unborn Git branch".into()),
+                }
+                cmd.extend(strings(&[
+                    "rm",
+                    "--cached",
+                    "--force",
+                    "-r",
+                    "--ignore-unmatch",
+                    "--",
+                ]));
+            }
+            cmd.extend(paths);
+        }
+        "commit" => {
+            let message = string(args, "message");
+            if message.trim().is_empty() || message.contains('\0') {
+                return Err("commit message is required".into());
+            }
+            cmd.extend(strings(&[
+                "commit",
+                "--no-gpg-sign",
+                "--cleanup=verbatim",
+                "-m",
+                message,
+            ]));
+        }
+        "branch" | "switch" => {
+            let branch = string(args, "branch");
+            if branch.is_empty()
+                || branch.starts_with('-')
+                || branch.starts_with('@')
+                || branch == "HEAD"
+            {
+                return Err("a literal local branch name is required".into());
+            }
+            git(
+                root,
+                strings(&["check-ref-format", &format!("refs/heads/{branch}")]),
+            )
+            .await?;
+            if operation == "branch" {
+                cmd.extend(strings(&["branch", "--no-track", "--", branch]));
+            } else if args["create"] == true {
+                cmd.extend(strings(&["switch", "--no-track", "-c", branch, "--"]));
+            } else {
+                cmd.extend(strings(&["switch", "--no-guess", branch, "--"]));
+            }
+        }
+        "stash_push" => {
+            cmd.extend(strings(&["stash", "push"]));
+            if let Some(message) = args["message"].as_str() {
+                cmd.extend(strings(&["-m", message]));
+            }
+        }
+        "stash_pop" => cmd.extend(strings(&["stash", "pop"])),
+        _ => unreachable!(),
+    }
+    let text = git(root, cmd).await?;
+    Ok(json!({"project":project,"operation":operation,"text":text}))
 }
 fn strings(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()

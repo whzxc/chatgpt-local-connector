@@ -427,6 +427,87 @@
       }
     },
     {
+      "name": "git_write",
+      "description": "本地 Git 写操作：add 暂存 paths 或 all=true；unstage 仅取消暂存；commit 提交必填多行 message；branch 创建 branch；switch 切换本地 branch（create=true 创建）；stash_push 保存已跟踪文件修改（可选 message）；stash_pop 应用最新 stash，冲突时保留 stash。必填 UUID requestId，重试只回读原回执，codex_request 查询结果。无 amend、远程操作、强制切换或历史改写。读取用户 Git 提交身份；禁用 hooks、签名和外部过滤器。只在全部或自定义工具列表中启用。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Codex 原生项目 ID、唯一名称或本机绝对目录；多目录项目需选择具体目录。"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "add",
+              "unstage",
+              "commit",
+              "branch",
+              "switch",
+              "stash_push",
+              "stash_pop"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "项目内相对字面路径；与 all=true 二选一。"
+          },
+          "all": {
+            "type": "boolean",
+            "description": "暂存或取消暂存项目目录下全部路径。"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "create": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "operation",
+          "requestId"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
+        ],
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
       "name": "fs",
       "description": "操作 App Server 主机文件系统的绝对路径：读取/写入 base64 文件、目录、元数据、复制、删除及监听。与项目事实 read/tree/search 的按行读取、Git 文件列表和内容搜索分开。watch 的 fs/changed 通知通过 codex_events 读取。",
       "inputSchema": {
@@ -3281,6 +3362,14 @@
           "agent_read",
           "codex_items",
           "git"
+        ]
+      },
+      "git_write": {
+        "group": "project",
+        "presets": [],
+        "requires": [
+          "control_output",
+          "codex_request"
         ]
       }
     }

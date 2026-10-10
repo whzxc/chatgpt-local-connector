@@ -13,6 +13,7 @@
 | agent_context | 已有任务的只读 Review/Handoff；声明、原生证据和当前工作区变化分开返回 |
 | connector_verify | 回传引导中的验证码，确认连接调用到达本机，不执行任务 |
 | projects / overview / tree / search / read / git | 实时 Codex 本机项目、目录文件事实和只读 Git 查询 |
+| git_write | 本地暂存、提交、分支切换和 stash，使用现有 UUID 幂等回执 |
 | fs | 主机绝对路径的文件读写、目录、元数据、复制、删除和监听 |
 | command | Codex sandbox/permission 下的独立命令及 PTY/stdin/终止控制 |
 | process | App Server 主机上的非 Codex sandbox 进程及 PTY/stdin/终止控制 |
@@ -315,3 +316,24 @@ Review 不改变原生 fs/command/process 权限，不是用户隔离或完整 D
 连接运行日志和管理操作日志独立保存在状态目录的 `logs/YYYY-MM-DD.jsonl`，按 UTC 日期追加，删除连接不会删除日志。已有连接目录中的 `logs.json` 在加载时迁入独立日志目录。日志页面显示最近 200 条，磁盘历史不受这个显示上限影响，目前不自动删除历史日志。
 
 管理写操作记录操作编号、方法、路由及开始和成功/失败状态；OAuth 接入记录端点和 HTTP 结果。请求正文、认证头、令牌与密钥不进入操作日志，连接运行日志对已知凭据脱敏。开始记录写入失败时，不执行管理写操作；完成记录写入失败会输出进程错误。日志用于诊断，不是防篡改审计；进程或磁盘故障可能只留下开始记录。
+
+## Git 写操作
+
+`git` 保持原有只读名称、参数及 status/log/show/diff 语义。独立的 `git_write` 接受 project、operation 和必填 UUID requestId：
+
+- `add` / `unstage`：提供非空 `paths`（项目内相对字面路径），或 `all: true`，二选一。all 作用于项目目录；unstage 只修改索引，初始提交前也可使用。
+- `commit`：必填 `message`，支持多行，提交当前索引。不支持 amend。
+- `branch`：必填 `branch`，从 HEAD 创建本地分支；`switch` 切换已有本地 branch，`create: true` 创建并切换。不会猜测远程分支或强制丢弃修改。
+- `stash_push`：保存仓库已跟踪文件修改，可选 message，不包含未跟踪文件；`stash_pop` 应用最新 stash，冲突时 Git 保留 stash 和冲突现场。
+
+分支、提交和 stash 作用于整个仓库。无 fetch/pull/push、删除分支、历史改写、reset --hard 或 clean。写入沿用主机权限，不经过任务执行沙箱或任务创建审批；工具列表负责入口授权。`git_write` 仅在“全部”或明确选择的“自定义”中启用；常用省略通用主机写入，只读始终排除此工具。选择它会保留 codex_request 和 control_output。
+
+回执复用 codex_request：同一 requestId 和参数重试不重复执行，不同参数拒绝。超时、Git 失败或冲突可能返回 unconfirmed，应先读取回执与 git 状态核对现场，不自动换 ID 重试。该工具没有单独的审批队列；现有 approve/bypass/reject 仅对处于 awaiting-approval 的请求生效。
+
+提交及 stash push 的身份从 Git 仓库与用户全局配置读取 user.name/user.email（包含用户配置的 include/includeIf，仓库值优先），缺失时报错，不硬编码身份、不使用进程中的 GIT_AUTHOR/GIT_COMMITTER 覆盖。仅身份值传入写命令，其他全局配置与系统配置不加载。写命令保留环境清理、--no-optional-locks、字面路径、12 秒超时与每路 16 MiB 输出上限；必需的索引锁仍由 Git 管理。禁用 hooks、fsmonitor、外部 diff、配置的 clean/smudge/process 过滤器、签名、自动维护及递归子模块操作；依赖过滤器（例如 LFS）的文件不会自动转换。stash pop 禁用 rerere，并在仓库配置了外部 merge driver 时拒绝执行，以免触发自定义命令。
+
+```text
+git_write {"project":"/absolute/project","operation":"add","paths":["src/main.rs"],"requestId":"<UUID>"}
+git_write {"project":"/absolute/project","operation":"commit","message":"fix: correct behavior\n\nDetails","requestId":"<新 UUID>"}
+codex_request {"requestId":"<提交 UUID>"}
+```

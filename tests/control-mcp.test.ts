@@ -28,6 +28,9 @@ before(async () => {
   await writeFile(path.join(directory, 'ingresses/index.json'), JSON.stringify(['default']));
   await writeFile(path.join(directory, 'ingresses/default/config.json'), JSON.stringify({ id: 'default', name: 'ChatGPT', controlSource: 'chatgpt', transport: 'openai-tunnel', auth: 'openai', enabled: true, config: {} }));
   await writeFile(path.join(directory, 'ingresses/default/secrets.json'), JSON.stringify({apiKey:'',cloudflareToken:'',ngrokAuthtoken:''}));
+  const home = path.join(directory, 'home');
+  await mkdir(home);
+  await writeFile(path.join(home, '.gitconfig'), '[user]\nname = Global Fixture\nemail = fixture@example.invalid\n[commit]\ngpgSign = true\n');
   const fixture = path.join(directory, 'app-server.mjs');
   await writeFile(fixture, `
 import { createInterface } from 'node:readline';
@@ -88,7 +91,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 }`);
   execFileSync('cargo', ['build', '--quiet', '--manifest-path', path.join(fixtureDirectory, 'Cargo.toml'), '--target-dir', target], { stdio: 'inherit' });
   client = new Client({ name: 'chatgpt-local-connector-test', version: '1' });
-  await client.connect(new StdioClientTransport({ command: path.join(target, 'debug', 'contract-fixture' + (process.platform === 'win32' ? '.exe' : '')), env: { ...process.env, CLC_STATE_DIR: directory, CLC_FIXTURE_SCRIPT: fixture, CLC_FIXTURE_BINARY: process.execPath } as Record<string, string>, stderr: 'pipe' }));
+  await client.connect(new StdioClientTransport({ command: path.join(target, 'debug', 'contract-fixture' + (process.platform === 'win32' ? '.exe' : '')), env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: home, CLC_STATE_DIR: directory, CLC_FIXTURE_SCRIPT: fixture, CLC_FIXTURE_BINARY: process.execPath } as Record<string, string>, stderr: 'pipe' }));
   inventory = await client.listTools();
 });
 after(async () => { await client?.close(); if (directory) await rm(directory, { recursive: true, force: true }); });
@@ -109,7 +112,7 @@ async function completed(name: string, args: Record<string, unknown>) {
 }
 
 test('MCP lists all existing native and generic agent tools and seven discoverable native domains with valid object schemas', async () => {
-  const existing = ['connector_verify', 'projects', 'overview', 'tree', 'search', 'read', 'git', 'codex_tasks', 'codex_read', 'codex_wait', 'codex_create', 'codex_send', 'codex_interrupt', 'codex_capabilities', 'codex_request', 'codex_items', 'codex_schema', 'codex_query', 'codex_call', 'codex_pending', 'codex_respond', 'codex_events', 'control_output'];
+  const existing = ['connector_verify', 'projects', 'overview', 'tree', 'search', 'read', 'git', 'git_write', 'codex_tasks', 'codex_read', 'codex_wait', 'codex_create', 'codex_send', 'codex_interrupt', 'codex_capabilities', 'codex_request', 'codex_items', 'codex_schema', 'codex_query', 'codex_call', 'codex_pending', 'codex_respond', 'codex_events', 'control_output'];
   assert.deepEqual(inventory.tools.map(tool => tool.name).sort(), [...existing, 'agents', 'agent_capabilities', 'agent_tasks', 'agent_create', 'agent_read', 'agent_context', 'agent_wait', 'agent_send', 'agent_interrupt', 'agent_events', 'agent_pending', 'agent_respond', 'agent_request', 'fs', 'command', 'process', 'mcp', 'file_search', 'codex_thread', 'codex_account'].sort());
   for (const tool of inventory.tools) {
     assert.equal(tool.inputSchema.type, 'object');
@@ -121,6 +124,11 @@ test('MCP lists all existing native and generic agent tools and seven discoverab
     assert.equal(agent.descriptor.protocol, 'acp-v1');
     assert.ok(['native', 'adapter'].includes(agent.integration));
   }
+  const gitWrite = inventory.tools.find(tool => tool.name === 'git_write')!;
+  assert.equal(gitWrite.annotations?.readOnlyHint, false);
+  assert.equal(inventory.tools.find(tool => tool.name === 'git')!.annotations?.readOnlyHint, true);
+  assert.deepEqual(catalog.toolExposure.tools.git_write.presets, []);
+  assert.deepEqual(catalog.toolExposure.tools.git_write.requires, ['control_output', 'codex_request']);
   const command = inventory.tools.find(tool => tool.name === 'command')!;
   assert.match(command.description!, /sandbox\/permission/);
   assert.match(inventory.tools.find(tool => tool.name === 'process')!.description!, /非 Codex sandbox/);
@@ -259,9 +267,11 @@ test('tool presets use the full registry, preserve exact allowlists and close on
   }
   const readOnly = presetPolicy('readOnly', config) as { allowlist: string[] };
   const common = presetPolicy('common', config) as { allowlist: string[] };
-  for (const forbidden of ['agent_request', 'codex_request', 'fs', 'command', 'process', 'mcp', 'codex_call', 'codex_thread', 'codex_query', 'codex_account', ...['agent', 'codex'].flatMap(prefix => ['create', 'send', 'interrupt', 'respond'].map(action => `${prefix}_${action}`))]) {
+  for (const forbidden of ['git_write', 'agent_request', 'codex_request', 'fs', 'command', 'process', 'mcp', 'codex_call', 'codex_thread', 'codex_query', 'codex_account', ...['agent', 'codex'].flatMap(prefix => ['create', 'send', 'interrupt', 'respond'].map(action => `${prefix}_${action}`))]) {
     assert.ok(!readOnly.allowlist.includes(forbidden), forbidden);
   }
+  assert.ok(!common.allowlist.includes('git_write'));
+  for (const dependency of ['git_write', 'codex_request', 'control_output']) assert.ok(normalizeSelection(['git_write'], config).includes(dependency));
   // Read-only closure must not silently pull in any entry excluded from this preset.
   assert.deepEqual(new Set(readOnly.allowlist), new Set(config.tools.filter(tool => tool.presets.includes('readOnly')).map(tool => tool.name)));
   for (const prefix of ['agent', 'codex']) {
@@ -381,4 +391,98 @@ http.createServer((req, res) => { res.setHeader('Content-Type', 'application/jso
       await management(`${committed ? 'ingress' : 'ingress-drafts'}/${draft.id}`, 'DELETE');
     }
   }
+});
+
+
+test('Git writes use durable receipts, isolated identity and safe local workflows', async () => {
+  const project = path.join(directory, 'git-write');
+  await mkdir(project);
+  const git = (...args: string[]) => execFileSync('git', ['-C', project, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null' } }).trim();
+  git('init', '-b', 'main');
+  await writeFile(path.join(project, 'file.txt'), 'initial\n');
+  const write = (operation: string, args: Record<string, unknown> = {}) => completed('git_write', { project, operation, requestId: randomUUID(), ...args });
+  const success = async (operation: string, args: Record<string, unknown> = {}) => {
+    const receipt = await write(operation, args);
+    assert.equal(receipt.state, 'completed', JSON.stringify(receipt));
+    return receipt;
+  };
+  assert.equal((await call('git_write', { project, operation: 'add', all: true })).response.isError, true);
+  assert.equal((await call('git_write', { project, operation: 'add', all: true, requestId: 'invalid' })).response.isError, true);
+  for (const args of [{}, { paths: [] }, { all: true, paths: ['file.txt'] }, { paths: ['../outside'] }, { paths: [project] }]) assert.notEqual((await write('add', args)).state, 'completed');
+  await success('add', { paths: ['file.txt'] });
+  await success('unstage', { all: true });
+  assert.equal(git('ls-files'), '');
+  assert.equal(await readFile(path.join(project, 'file.txt'), 'utf8'), 'initial\n');
+  await success('add', { all: true });
+  const requestId = randomUUID();
+  const message = 'feat: first commit\n\nA multiline message';
+  await success('commit', { requestId, message });
+  assert.equal(git('log', '-1', '--format=%an <%ae>'), 'Global Fixture <fixture@example.invalid>');
+  assert.equal(git('log', '-1', '--format=%B'), message);
+  const replay = await success('commit', { message, requestId });
+  assert.equal((await call('codex_request', { requestId })).result.digest, replay.digest);
+  assert.equal(git('rev-list', '--count', 'HEAD'), '1');
+  assert.equal((await call('git_write', { project, operation: 'commit', requestId, message: 'different' })).response.isError, true);
+  for (const operation of ['reset', 'clean', 'push', 'rebase']) assert.equal((await call('git_write', { project, operation, requestId: randomUUID() })).response.isError, true);
+  assert.notEqual((await write('commit', { message: '   ' })).state, 'completed');
+  assert.equal((await call('git_write', { project, operation: 'commit', message: 'no amend', amend: true, requestId: randomUUID() })).response.isError, true);
+  assert.notEqual((await write('branch', { branch: '-D' })).state, 'completed');
+  await success('branch', { branch: 'topic' });
+  await success('switch', { branch: 'topic' });
+  await success('switch', { branch: 'other', create: true });
+  assert.equal(git('branch', '--show-current'), 'other');
+  await writeFile(path.join(project, 'file.txt'), 'changed\n');
+  await success('add', { all: true });
+  await success('unstage', { paths: ['file.txt'] });
+  assert.equal(git('diff', '--cached'), '');
+  await success('stash_push', { message: 'work in progress' });
+  assert.equal(await readFile(path.join(project, 'file.txt'), 'utf8'), 'initial\n');
+  await success('stash_pop');
+  assert.equal(await readFile(path.join(project, 'file.txt'), 'utf8'), 'changed\n');
+  assert.equal(git('stash', 'list'), '');
+  // Local identity wins; executable hooks and attribute filters must not run.
+  git('config', 'user.name', 'Local Fixture');
+  git('config', 'user.email', 'local@example.invalid');
+  git('config', 'filter.block.clean', 'exit 91');
+  git('config', 'filter.block.smudge', 'exit 92');
+  git('config', 'filter.block.required', 'true');
+  await writeFile(path.join(project, '.gitattributes'), '*.txt filter=block\n');
+  await writeFile(path.join(project, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 93\n');
+  await chmod(path.join(project, '.git/hooks/pre-commit'), 0o755);
+  await success('add', { all: true });
+  await success('commit', { message: 'local identity' });
+  assert.equal(git('log', '-1', '--format=%an <%ae>'), 'Local Fixture <local@example.invalid>');
+  git('config', '--remove-section', 'filter.block');
+  assert.ok(!(await call('git', { project, operation: 'status' })).response.isError);
+  git('config', 'user.email', '');
+  const missingIdentity = await write('commit', { message: 'missing identity' });
+  assert.equal(missingIdentity.state, 'unconfirmed');
+  assert.match(JSON.stringify(missingIdentity.result), /configure user.email/);
+  git('config', 'user.email', 'local@example.invalid');
+  // Literal pathspecs must not treat wildcard-looking names as patterns.
+  if (process.platform !== 'win32') {
+    await writeFile(path.join(project, '*.txt'), 'literal\n');
+    await writeFile(path.join(project, 'not-staged.txt'), 'other\n');
+    await success('add', { paths: ['*.txt'] });
+    assert.equal(git('diff', '--cached', '--name-only'), '*.txt');
+    await success('commit', { message: 'literal path' });
+  }
+  // Stash conflicts preserve the stash; replay must not attempt pop again.
+  await writeFile(path.join(project, 'file.txt'), 'stashed version\n');
+  await success('stash_push');
+  await writeFile(path.join(project, 'file.txt'), 'committed version\n');
+  await success('add', { paths: ['file.txt'] });
+  await success('commit', { message: 'conflicting version' });
+  git('config', 'merge.block.driver', 'exit 94');
+  const blockedMerge = await write('stash_pop');
+  assert.equal(blockedMerge.state, 'unconfirmed');
+  assert.match(JSON.stringify(blockedMerge.result), /external merge drivers/);
+  assert.equal(git('ls-files', '--unmerged'), '');
+  git('config', '--remove-section', 'merge.block');
+  const popId = randomUUID();
+  const conflict = await write('stash_pop', { requestId: popId });
+  assert.equal(conflict.state, 'unconfirmed');
+  assert.ok(git('stash', 'list'));
+  assert.ok(git('ls-files', '--unmerged'));
+  assert.equal((await write('stash_pop', { requestId: popId })).replayed, true);
 });

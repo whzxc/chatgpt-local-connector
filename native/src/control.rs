@@ -568,6 +568,11 @@ impl Control {
         Ok(snapshot)
     }
     async fn perform(&self, operation: &str, args: &Value, r: &mut Value) -> Result<Value> {
+        if operation == "git_write" {
+            r["state"] = json!("submitting");
+            self.checkpoint(r)?;
+            return crate::projects::write(self, args).await;
+        }
         if operation == "respond" {
             if args["backendSession"] != self.session {
                 return Err("STALE_INTERACTION".into());
@@ -785,6 +790,7 @@ impl Control {
             "overview" | "tree" | "search" | "read" | "git" => {
                 crate::projects::query(self, name, &args).await
             }
+            "git_write" => self.mutate("git_write", args).await,
             "codex_create" => self.mutate("create", args).await,
             "codex_send" => self.mutate("send", args).await,
             "codex_interrupt" => self.mutate("interrupt", args).await,
