@@ -548,16 +548,14 @@ export default function ConnectionOverview({
         <div className="connection-graph" style={{ height }}>
           <div className="graph-nodes sources">
             {!sources.length && (
-              <Tooltip text="ChatGPT" side="right">
-                <button
-                  data-panel-anchor
-                  className="graph-node"
-                  aria-label="ChatGPT"
-                  onClick={() => edit()}
-                >
-                  <SourceIcon platform="chatgpt" panelVisual />
-                </button>
-              </Tooltip>
+              <button
+                data-panel-anchor
+                className="graph-node"
+                aria-label="ChatGPT"
+                onClick={() => edit()}
+              >
+                <SourceIcon platform="chatgpt" panelVisual />
+              </button>
             )}
             {sources.map((source) => (
               <Tooltip key={source.id} text={source.name} side="right">
@@ -574,18 +572,16 @@ export default function ConnectionOverview({
                 </button>
               </Tooltip>
             ))}
-            <Tooltip text={t("addControlSource")} side="right">
-              <button
-                data-panel-anchor
-                className="graph-node add-source"
-                aria-label={t("addControlSource")}
-                onClick={() => edit()}
-              >
-                <span className="source-icon" data-panel-visual>
-                  <Icon icon={Plus} />
-                </span>
-              </button>
-            </Tooltip>
+            <button
+              data-panel-anchor
+              className="graph-node add-source"
+              aria-label={t("addControlSource")}
+              onClick={() => edit()}
+            >
+              <span className="source-icon" data-panel-visual>
+                <Icon icon={Plus} />
+              </span>
+            </button>
           </div>
           {wires()}
           <div
@@ -650,16 +646,14 @@ export default function ConnectionOverview({
                   </button>
                 </Tooltip>
               ))}
-              <Tooltip text={t("manageAgents")} side="left">
-                <button
-                  data-panel-anchor
-                  className="graph-node agents-more"
-                  aria-label={t("manageAgents")}
-                  onClick={() => setAgentsOpen(true)}
-                >
-                  <Icon icon={Ellipsis} size={20} />
-                </button>
-              </Tooltip>
+              <button
+                data-panel-anchor
+                className="graph-node agents-more"
+                aria-label={t("manageAgents")}
+                onClick={() => setAgentsOpen(true)}
+              >
+                <Icon icon={Ellipsis} size={20} />
+              </button>
             </div>
           </div>
         </div>

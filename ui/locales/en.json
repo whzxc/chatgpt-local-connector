@@ -502,7 +502,6 @@
   "oauthWaitExpired": "The client did not complete authorization. Please reconnect.",
   "oauthDeny": "Deny",
   "oauthAllow": "Allow connection",
-  "oauthConnectHint": "Add the MCP URL to your client, choose OAuth, then allow the connection here. Custom proxies must forward /mcp, /.well-known/* and /oauth/*.",
   "oauthAuthorizations": "Authorized clients",
   "oauthExpires": "Expires {date}",
   "oauthRevoke": "Revoke",

@@ -36,13 +36,29 @@ function visualCopy(node: HTMLElement): HTMLElement {
   const copy = node.cloneNode(true) as HTMLElement;
   const originals = [node, ...node.querySelectorAll("*")];
   const copies = [copy, ...copy.querySelectorAll("*")];
+  // The capsule owns its descendant selectors, so its clone can reuse them.
+  // Only inherited values need freezing; copying every computed declaration
+  // on every icon delays the very first opening frame.
+  const capsule = node.classList.contains("navigation-capsule");
+  if (capsule) {
+    const computed = getComputedStyle(node);
+    copy.style.font = computed.font;
+    copy.style.color = computed.color;
+    for (const key of computed)
+      if (key.startsWith("--")) copy.style.setProperty(key, computed.getPropertyValue(key));
+  }
   const ids = new Map<string, string>();
   const prefix = `morph-${crypto.randomUUID()}-`;
   originals.forEach((original, i) => {
     const clone = copies[i] as HTMLElement | SVGElement;
-    const computed = getComputedStyle(original);
-    for (const key of computed)
-      clone.style.setProperty(key, computed.getPropertyValue(key));
+    if (!capsule) {
+      const computed = getComputedStyle(original);
+      // Freeze the visual in one style write rather than reparsing hundreds of
+      // declarations individually on the click path.
+      clone.style.cssText = Array.from(computed, (key) =>
+        `${key}:${computed.getPropertyValue(key)};`,
+      ).join("");
+    }
     clone.style.animation = "none";
     clone.style.transition = "none";
     clone.style.pointerEvents = "none";
@@ -128,7 +144,7 @@ export function animateOriginContent(
     width: `${origin.rect.width}px`, height: `${origin.rect.height}px`,
     zIndex: String(zIndex),
   });
-  host.append(origin.copy.cloneNode(true));
+  host.append(origin.copy);
   document.body.append(host);
   // The anchor's content stays at its own screen position throughout the morph.
   const animation = animate(host, {

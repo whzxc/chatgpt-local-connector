@@ -502,7 +502,6 @@
   "oauthWaitExpired": "客户端未完成授权，请重新连接",
   "oauthDeny": "拒绝",
   "oauthAllow": "允许连接",
-  "oauthConnectHint": "在客户端添加 MCP URL 并选择 OAuth，随后在此点击允许连接。自定义代理需转发 /mcp、/.well-known/* 和 /oauth/*。",
   "oauthAuthorizations": "已授权客户端",
   "oauthExpires": "有效期至 {date}",
   "oauthRevoke": "撤销授权",

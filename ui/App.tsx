@@ -404,7 +404,6 @@ export default function App() {
               data-page={item.id}
               data-hover-target={item.id}
               aria-label={item.label}
-              title={item.label}
               onClick={() => navigate(item.id)}
             >
               <Icon icon={item.icon} size={20} />

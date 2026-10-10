@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { t } from "../i18n";
 import { useInterval } from "../state/hooks";
-import { Button, Empty, Loading, Notice, IconButton } from "./ui";
-import { CircleHelp } from "lucide-react";
+import { Button, Empty, Loading, Notice } from "./ui";
 type Pending = {
   id: string;
   clientName: string;
@@ -79,10 +78,7 @@ export default function OAuthGrants({
   }
   return (
     <section className="oauth-grants">
-      <div className="actions">
-        <h3>OAuth</h3>
-        <IconButton icon={CircleHelp} label={t("oauthConnectHint")} />
-      </div>
+      <h3>OAuth</h3>
       {pending.map((request) => (
         <div className="oauth-request" key={request.id}>
           <div>

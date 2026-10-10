@@ -29,13 +29,11 @@ a {
   color: var(--accent);
   text-underline-offset: 3px;
 }
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+/* All renderer windows share the same outline-free interaction styling. */
+*,
+*::before,
+*::after {
+  outline: none !important;
 }
 button:disabled,
 input:disabled {
@@ -369,10 +367,6 @@ pre {
 }
 .choice-swatches .choice-option svg {
   opacity: 0;
-}
-.choice-swatches .choice-option[data-state="checked"] {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
 }
 .choice-swatches .choice-option[data-state="checked"] svg {
   opacity: 1;
@@ -895,7 +889,7 @@ pre {
   opacity: 0.5;
 }
 .agent-card.drop-target {
-  outline: 2px solid var(--accent);
+  border-color: var(--accent);
 }
 .agent-copy {
   min-width: 0;
@@ -1142,7 +1136,6 @@ pre {
   cursor: pointer;
   padding: 0;
   display: flex;
-  outline-offset: 4px;
   border-radius: 10px;
 }
 .rail-page {

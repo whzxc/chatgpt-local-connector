@@ -148,10 +148,6 @@
 .graph-node:hover > :first-child {
   transform: scale(1.1);
 }
-.graph-node:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-}
 .sources {
   align-items: flex-end;
 }

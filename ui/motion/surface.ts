@@ -10,6 +10,7 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
   const content = node.firstElementChild as HTMLElement | null;
   const contentTranslate = content?.style.translate ?? "";
   let controls: AnimationPlaybackControlsWithThen | undefined;
+  let startFrame: number | undefined;
   let generation = 0;
   let goal: Surface = {};
   let rendered: Surface = {};
@@ -25,7 +26,11 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
     if (content) content.style.translate = contentTranslate;
   };
   const settle = () => {
-    if (reduced.matches) controls?.complete();
+    if (reduced.matches) {
+      cancelAnimationFrame(startFrame ?? 0);
+      startFrame = undefined;
+      controls?.complete();
+    }
   };
   reduced.addEventListener("change", settle);
   return {
@@ -36,6 +41,7 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
       const id = ++generation;
       save(target);
       goal = { ...goal, ...target };
+      cancelAnimationFrame(startFrame ?? 0);
       controls?.stop();
       // Opening content belongs at its destination; dismissal keeps it where
       // it is. Only the shell moves, revealing/clipping this stationary layer.
@@ -71,6 +77,7 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
       // transforms (WAAPI) with layout sizes (JS) can put edges a frame apart.
       controls = animate(0, 1, {
         type: "tween",
+        autoplay: reduced.matches,
         duration: reduced.matches ? 0 : 0.48,
         ease: [0.2, 0.8, 0.3, 1],
         onUpdate: (progress) => {
@@ -79,6 +86,15 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
           pinContent();
         },
       });
+      if (!reduced.matches) {
+        // Keep the origin intact through preparation. Start the clock at the
+        // next paint, after React layout and the visual copy are ready.
+        const animation = controls;
+        startFrame = requestAnimationFrame(() => {
+          startFrame = undefined;
+          animation.play();
+        });
+      }
       void controls.then(() => {
         if (id !== generation) return;
         active = false;
@@ -89,6 +105,7 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
     dispose() {
       ++generation;
       active = false;
+      cancelAnimationFrame(startFrame ?? 0);
       controls?.stop();
       restore();
       reduced.removeEventListener("change", settle);

@@ -100,18 +100,16 @@ export function IconButton({
   size?: 16 | 20;
 }) {
   return (
-    <Tooltip text={label}>
-      <Button
-        variant="ghost"
-        {...props}
-        disabled={props.disabled || busy}
-        aria-busy={busy || undefined}
-        aria-label={label}
-        className={`icon-button ${className}`}
-      >
-        <Icon icon={busy ? LoaderCircle : icon} size={size} className={busy ? "spin" : ""} />
-      </Button>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      {...props}
+      disabled={props.disabled || busy}
+      aria-busy={busy || undefined}
+      aria-label={label}
+      className={`icon-button ${className}`}
+    >
+      <Icon icon={busy ? LoaderCircle : icon} size={size} className={busy ? "spin" : ""} />
+    </Button>
   );
 }
 export function Input({
@@ -369,7 +367,6 @@ export function SingleChoice({
               value={option.value}
               className="choice-option"
               aria-label={option.label}
-              title={option.label}
               style={
                 option.color
                   ? ({ "--swatch": option.color } as CSSProperties)
