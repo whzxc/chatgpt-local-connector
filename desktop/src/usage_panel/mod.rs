@@ -100,7 +100,7 @@ pub fn snapshot() -> Value {
     json!({"preferences":preferences(),"runtime":runtime})
 }
 fn apply(app: &tauri::AppHandle, snapshot: Value, state: &Arc<Runtime>) {
-    for label in ["main", "usage-rail", "tray-panel"] {
+    for label in ["main", "usage-rail"] {
         if let Some(w) = app.get_webview_window(label) {
             let _ = w.emit_to(label, "subscriptions:changed", &snapshot);
         }

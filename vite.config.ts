@@ -75,7 +75,6 @@ export default defineConfig({
     emptyOutDir: true,
     rolldownOptions: {
       input: {
-        trayPanel: fileURLToPath(new URL('./ui/tray-panel.html', import.meta.url)),
         main: fileURLToPath(new URL('./ui/index.html', import.meta.url)),
         usageRail: fileURLToPath(new URL('./ui/usage-rail.html', import.meta.url)),
       },

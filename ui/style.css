@@ -1007,75 +1007,39 @@ pre {
     grid-template-columns: 1fr;
   }
 }
-.tray-surface:not(.embedded) {
-  position: fixed;
-  inset: 0;
-  color: var(--text);
-}
-.tray-card {
+.usage-overview {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  overflow: hidden;
+  color: var(--text);
 }
-.tray-surface:not(.embedded) .tray-card {
-  position: absolute;
-  top: 0;
-  width: 330px;
-  max-width: 100%;
-  height: auto;
-}
-.tray-card.left {
-  right: 0;
-}
-.tray-card.right {
-  left: 0;
-}
-.tray-scroll {
+.usage-overview-scroll {
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
 }
-.tray-content {
-  padding: 14px;
+.usage-overview-content {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
-.provider-card {
+.usage-provider-card {
   background: var(--surface-subtle);
   border-radius: var(--radius-row);
-  padding: 16px;
+  padding: 12px;
   color: var(--text);
 }
-.tray-card > footer {
-  padding: 8px 14px;
+.usage-overview-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 8px;
+  margin-top: 10px;
   border-top: 1px solid var(--border);
+}
+.usage-overview-actions .button {
+  min-height: 32px;
+  padding: 5px 8px;
   font-size: 12px;
-  color: var(--text-secondary);
-  flex: none;
-}
-.tray-options.button {
-  font-size: 12px;
-  min-height: 28px;
-  padding: 2px 4px;
-}
-.tray-surface.embedded .tray-card {
-  border: 0;
-  border-radius: 0;
-}
-.tray-surface.embedded .tray-content {
-  padding: 0 0 16px;
-}
-.tray-surface.embedded .tray-card > footer {
-  padding: 12px 0 0;
 }
 .usage-surface {
   position: fixed;

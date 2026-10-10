@@ -1421,3 +1421,7 @@
 .navigation-capsule .hover-highlight {
   background: var(--surface-subtle);
 }
+
+.elastic-panel .dialog-body:has(> .usage-overview) {
+  padding: 12px;
+}

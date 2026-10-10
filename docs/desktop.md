@@ -11,27 +11,11 @@ Connector Desktop is a Tauri/Rust GUI and tray client of the standalone Rust Cor
 
 The home view places control sources on the left, the shared Connector in the center, and installed, supported Agents on the right. Each line shows its own status; an installed Agent can remain on standby. The top Connect/Disconnect button starts enabled ingresses or stops running ingresses. Click a built-in platform icon to open its website, or its line status icon to edit the connection, or use the plus button to add ChatGPT, Notion, Slack, or a custom MCP client. Each source has its own connection dialog with save, connect, disconnect, and remove actions. Applicable authentication and listener fields are displayed directly. Platform and display name are separate: the chosen platform stays fixed, and every source has an editable name; only ChatGPT offers OpenAI Tunnel. The editor reads back that ingress’s API key as a password, while other blank secret fields preserve saved credentials. General Settings contains application preferences; Agents management and its separate settings panel open from the home graph.
 
-On Windows, left-clicking the tray icon opens and focuses the main window. Right-clicking opens a native menu containing connection status, Open, Tasks, Records, Settings and Quit. Connection status is read-only and refreshes every five seconds; an unavailable backend is shown as unknown. Open shows the overview, and the other navigation items open their corresponding pages. Windows does not create a tray usage panel.
+On macOS and Windows, left-clicking the menu-bar or tray icon opens and focuses the main window. Right-clicking opens a native menu containing connection status, Open, Tasks, Records, Settings and Quit. Connection status reflects all running ingresses and refreshes every five seconds; an unavailable backend is shown as unknown. Open shows the overview, and the other navigation items open their corresponding pages. No separate tray usage window is created.
 
-On macOS, clicking the menu-bar icon toggles a subscription usage panel. It shows
-scrollable subscription cards.
-Quota blocks, usage rows and warning icons open secondary detail bubbles; the
-header itself has no hover details. Scrolling dismisses open detail bubbles.
+The in-app subscription usage overview follows the application theme and locale. It uses scrollable subscription cards, 12px outer and card padding, and directly visible Settings and per-provider Share Screenshot actions. It does not show an application version footer. Quota blocks, usage rows and warning icons open secondary detail bubbles; scrolling dismisses open details. Escape or an outside click closes the overview.
 
-The panel follows the application theme and locale. It anchors to the tray icon,
-keeps within the monitor work area and chooses the side with space for details.
-Secondary details reuse the same web popover as the browser preview, including
-rounded corners, curved pointer, theme and animated transitions. The native window
-reserves a transparent side area for these bubbles; hovering never resizes or
-moves the primary panel. A short reveal delay and leave grace allow moving between
-a row and its details. Closing the panel also hides its details. Window captures
-include the transparent area reserved for details.
-The panel uses 14px content padding and spacing.
-Escape, an outside click or loss of focus closes it. The native Options menu contains connection status, Settings, Share Screenshot,
-Check for Updates, About and Quit. Share Screenshot copies a 4x image of one
-provider’s displayed quota and usage rows to the clipboard, with the current
-appearance and Local Connector branding. It does not capture other windows.
-Update checks use the main window’s existing update flow; errors remain visible.
+Share Screenshot copies a 4x image of one provider’s displayed quota and usage rows to the clipboard, with the current appearance and Local Connector branding. It does not capture other windows.
 
 Automatically open Codex tasks is enabled by default. Creation persists a temporary empty seed before opening the task page for Desktop execution; sending, continuation, and interruption use the Desktop owner's IPC. When disabled, new tasks are created and run directly in Connector's app-server, without Desktop IPC or guaranteed Desktop continuation/interruption. Existing tasks retain their owner. Read-only background task queries do not resume execution. After Connector restarts, explicitly sending new input resumes the session; unconfirmed requests are never replayed automatically.
 

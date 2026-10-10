@@ -145,7 +145,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_denylist(&["usage-rail", "tray-panel"])
+                .with_denylist(&["usage-rail"])
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         & !(tauri_plugin_window_state::StateFlags::VISIBLE
@@ -155,8 +155,6 @@ fn main() {
         )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            tray::tray_action,
-            tray::tray_panel_resize,
             windows::main_window_ready,
             windows::release_main_window,
             service_request,

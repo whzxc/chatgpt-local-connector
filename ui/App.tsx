@@ -45,7 +45,7 @@ import TasksPage from "./components/TasksPage";
 import RecordsPage from "./components/RecordsPage";
 import { AppUpdateDialogs } from "./components/AppUpdate";
 import AgentDisplaySettings from "./components/AgentDisplaySettings";
-import TrayPanel from "./tray-panel/TrayPanel";
+import UsageOverview from "./subscriptions/UsageOverview";
 import { Dialog, Icon, IconButton, Loading, Notice, HoverScope } from "./components/ui";
 const SettingsPage = lazy(() => import("./components/SettingsPage"));
 const BrowserRailPreview = import.meta.env.DEV
@@ -445,8 +445,7 @@ export default function App() {
           headerless
           width={386}
         >
-          <TrayPanel
-            embedded
+          <UsageOverview
             onNavigate={(next) => {
               setUsage(false);
               navigate(next);
