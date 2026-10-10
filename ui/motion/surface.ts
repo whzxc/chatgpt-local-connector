@@ -1,5 +1,7 @@
 import { animate, mix, type AnimationPlaybackControlsWithThen } from "motion";
 
+export const surfaceDuration = 0.2;
+
 export type Surface = Record<string, string | number>;
 export const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -78,7 +80,7 @@ export function surfaceMotion(node: HTMLElement, naturalStyle: () => Surface = (
       controls = animate(0, 1, {
         type: "tween",
         autoplay: reduced.matches,
-        duration: reduced.matches ? 0 : 0.48,
+        duration: reduced.matches ? 0 : surfaceDuration,
         ease: [0.2, 0.8, 0.3, 1],
         onUpdate: (progress) => {
           rendered = { ...interpolate(progress) };

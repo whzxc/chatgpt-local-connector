@@ -22,7 +22,6 @@ import {
   takePanelOrigin, readOrigin, hideOrigin, animateOriginContent, surfaceOf,
   type PanelOrigin,
 } from "./panelMorph";
-const duration = 480;
 const frameAt = (rect: DOMRect, opacity: number, borderRadius: string): Surface => ({
   transform: `translate(calc(-50% + ${rect.x + rect.width / 2 - innerWidth / 2}px),calc(-50% + ${rect.y + rect.height / 2 - innerHeight / 2}px))`,
   width: `${rect.width}px`,
@@ -145,10 +144,10 @@ export default function ElasticPanel({
       });
       if (visual) {
         restoreOrigin.current = hideOrigin(visual);
-        clearGhost.current = animateOriginContent(visual, duration, Number(node.style.zIndex) + 1);
+        clearGhost.current = animateOriginContent(visual, Number(node.style.zIndex) + 1);
       }
       for (const child of Array.from(node.children))
-        fades.push(animate(child, { opacity: [0, 1] }, { duration: 0.28, delay: parent ? 0.04 : 0.13 }));
+        fades.push(animate(child, { opacity: [0, 1] }, { duration: 0.15 }));
     }
     let height = rect.height, layoutWidth = rect.width;
     const resize = () => {
@@ -230,14 +229,13 @@ export default function ElasticPanel({
     } else if (to && !reduced()) {
       const style = getComputedStyle(node);
       const current = { ...frameAt(from, Number(style.opacity), style.borderRadius), ...surfaceOf(node) };
-      const closeDuration = parent ? 320 : duration;
       const animation = motion.current?.to(
         { ...frameAt(to, visual || parent ? 1 : 0, parent ? "28px" : "50%"), ...(parent ? surfaceOf(parent) : visual?.surface ?? {}) },
         { retain: true, ...(motion.current.running ? {} : { from: current }) },
       );
       if (visual) {
         restoreOrigin.current = hideOrigin(visual);
-        clearGhost.current = animateOriginContent(visual, closeDuration, Number(node.style.zIndex) + 1, true);
+        clearGhost.current = animateOriginContent(visual, Number(node.style.zIndex) + 1, true);
       }
       Array.from(node.children).forEach((child) => {
         animate(child, { opacity: 0 }, { duration: 0.15 });

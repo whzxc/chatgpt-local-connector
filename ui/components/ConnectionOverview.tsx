@@ -272,7 +272,7 @@ export default function ConnectionOverview({
             "--spark-x": `${Math.cos(angle) * distance}px`,
             "--spark-y": `${Math.sin(angle) * distance}px`,
             "--spark-turn": `${60 + Math.random() * 180}deg`,
-            "--spark-duration": `${650 + Math.random() * 250}ms`,
+            "--spark-duration": `${150 + Math.random() * 50}ms`,
           } as CSSProperties;
         }),
       );
@@ -558,7 +558,7 @@ export default function ConnectionOverview({
               </button>
             )}
             {sources.map((source) => (
-              <Tooltip key={source.id} text={source.name} side="right">
+              <Tooltip key={source.id} text={source.name} side="right" hoverOnly>
                 <button
                   data-panel-anchor
                   className="graph-node"
@@ -625,6 +625,7 @@ export default function ConnectionOverview({
               {agents.map((agent) => (
                 <Tooltip
                   key={agent.agent}
+                  hoverOnly
                   side="left"
                   text={
                     <>

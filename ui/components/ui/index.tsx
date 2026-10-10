@@ -444,14 +444,40 @@ export function Tooltip({
   text,
   children,
   side = "top",
+  hoverOnly = false,
 }: {
   text: ReactNode;
   children: ReactNode;
   side?: "top" | "bottom" | "left" | "right";
+  hoverOnly?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const pointerHover = useRef(false);
+  const dismiss = () => {
+    pointerHover.current = false;
+    setOpen(false);
+  };
   return (
-    <T.Root>
-      <T.Trigger asChild>{children}</T.Trigger>
+    <T.Root
+      open={hoverOnly ? open : undefined}
+      onOpenChange={hoverOnly ? (next) => setOpen(next && pointerHover.current) : undefined}
+      disableHoverableContent={hoverOnly}
+    >
+      <T.Trigger
+        asChild
+        onFocus={hoverOnly ? (event) => event.preventDefault() : undefined}
+        onPointerMoveCapture={hoverOnly ? (event) => {
+          // A restored focus or a surface disappearing under a stationary
+          // pointer is not a new hover. Require actual mouse movement.
+          if (event.pointerType === "mouse" && event.buttons === 0 &&
+              (event.movementX !== 0 || event.movementY !== 0))
+            pointerHover.current = true;
+        } : undefined}
+        onPointerLeave={hoverOnly ? dismiss : undefined}
+        onPointerDownCapture={hoverOnly ? dismiss : undefined}
+        onClickCapture={hoverOnly ? dismiss : undefined}
+        onBlur={hoverOnly ? dismiss : undefined}
+      >{children}</T.Trigger>
       <T.Portal>
         <T.Content className="tooltip" side={side} sideOffset={6} collisionPadding={10}>
           {text}

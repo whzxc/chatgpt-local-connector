@@ -106,7 +106,7 @@ export default function App() {
         } },
       );
       const contentAnimations = Array.from(node.children).map((child) =>
-        animate(child, { opacity: [0, 1] }, { duration: 0.28, delay: 0.13 }));
+        animate(child, { opacity: [0, 1] }, { duration: 0.15 }));
       const cleanup = sheetVisuals(false, !handedOff);
       sheetVisualCleanup.current = () => { cleanup(); contentAnimations.forEach((a) => a.stop()); };
       void animation.then(cleanup);
@@ -140,7 +140,7 @@ export default function App() {
     const opacities = nodes.map((el) => el.style.opacity);
     const transitions = nodes.map((el) => el.style.transition);
     nodes.forEach((el) => { el.style.opacity = "0"; el.style.transition = "none"; });
-    const clear = visual ? animateOriginContent(visual, 480, 51, closing) : () => {};
+    const clear = visual ? animateOriginContent(visual, 51, closing) : () => {};
     let done = false;
     return () => {
       if (done) return;

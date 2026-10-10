@@ -25,8 +25,8 @@
   transform: translate(-50%, -50%) scale(0);
   transform-origin: center;
   transition:
-    opacity 280ms ease,
-    transform 480ms cubic-bezier(0.2, 0.8, 0.2, 1.15);
+    opacity 150ms ease,
+    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1.15);
 }
 .graph-brain::after {
   content: "";
@@ -604,7 +604,7 @@
   color: var(--accent);
   box-shadow: 0 2px 5px
     color-mix(in srgb, var(--color-black) 18.82%, transparent);
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .connection-switch-track .connection-knob {
   position: absolute;
@@ -709,8 +709,6 @@
 
 /* Window-sized canvas and the lower-left navigation surface. */
 .app-scene {
-  --sheet-open-motion: 540ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  --sheet-close-motion: 220ms cubic-bezier(0.4, 0, 0.6, 1);
   --sheet-width: min(960px, calc(100vw - 2 * var(--sheet-inset)));
   --sheet-inset: 20px;
   --sheet-top: 20px;
@@ -915,7 +913,7 @@
   border-radius: 32px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: height 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .navigation-surface {
@@ -927,7 +925,7 @@
   width: 58px;
   height: 154px;
   display: block;
-  transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: height 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .capsule-icons {
   position: absolute;

@@ -1,5 +1,5 @@
 import { animate } from "motion";
-import type { Surface } from "../motion/surface";
+import { surfaceDuration, type Surface } from "../motion/surface";
 // A short-lived visual copy keeps trigger content crisp while its surface grows.
 // The real trigger and Radix content retain ownership of all interaction.
 export type PanelOrigin = {
@@ -133,7 +133,7 @@ export function hideOrigin(origin: PanelOrigin) {
 }
 
 export function animateOriginContent(
-  origin: PanelOrigin, duration: number, zIndex: number, closing = false,
+  origin: PanelOrigin, zIndex: number, closing = false,
 ) {
   const host = document.createElement("div");
   host.className = "panel-morph-content";
@@ -149,11 +149,10 @@ export function animateOriginContent(
   // The anchor's content stays at its own screen position throughout the morph.
   const animation = animate(host, {
     opacity: closing ? [0, 0, 1] : [1, 0, 0],
-  }, { duration: duration / 1000, ease: [0.2, 0.8, 0.3, 1],
+  }, { duration: surfaceDuration, ease: [0.2, 0.8, 0.3, 1],
     opacity: { times: closing ? [0, 0.45, 1] : [0, 0.55, 1] } });
   const cleanup = () => { animation.stop(); host.remove(); };
-  // On dismissal the shell is spring-driven and can outlive this fade. Keep
-  // the visible copy until its owner restores the real anchor in the same turn.
+  // Keep the dismissal copy until its owner restores the real anchor.
   if (!closing) void animation.then(cleanup);
   return cleanup;
 }

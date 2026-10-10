@@ -39,7 +39,7 @@ export const AnimatedSize = forwardRef<HTMLDivElement, Omit<HTMLMotionProps<"div
   }} className={`animated-size ${className}`} inert={!present} aria-hidden={!present || undefined}
     initial={expand ? { height: 0 } : false}
     animate={{ height: size?.height ?? "auto" }} exit={{ height: 0 }}
-    transition={{ duration: reduced || (present && size?.nested) ? 0 : 0.24, ease: [0.2, 0.8, 0.2, 1] }}
+    transition={{ duration: reduced || (present && size?.nested) ? 0 : 0.2, ease: [0.2, 0.8, 0.2, 1] }}
     onAnimationStart={() => { if (shell.current) shell.current.dataset.resizing = "true"; }}
     onAnimationComplete={() => { if (shell.current) delete shell.current.dataset.resizing; onSettled?.(); }}>
     <div ref={content} className={contentClassName}>{children}</div>
