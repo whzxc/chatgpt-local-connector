@@ -27,6 +27,16 @@ const values = {
 for (const [key, value] of Object.entries(values)) {
   execFileSync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} string ${value}`, plist]);
 }
+// Keep the development bundle's URL handlers aligned with the shipped bundle.
+const schemes = base.plugins?.['deep-link']?.desktop?.schemes || [];
+if (schemes.length) {
+  const add = value => execFileSync('/usr/libexec/PlistBuddy', ['-c', value, plist]);
+  add('Add :CFBundleURLTypes array');
+  add('Add :CFBundleURLTypes:0 dict');
+  add(`Add :CFBundleURLTypes:0:CFBundleURLName string ${config.identifier}`);
+  add('Add :CFBundleURLTypes:0:CFBundleURLSchemes array');
+  schemes.forEach((scheme, index) => add(`Add :CFBundleURLTypes:0:CFBundleURLSchemes:${index} string ${scheme}`));
+}
 execFileSync('codesign', ['--force', '--sign', '-', path.dirname(contents)], { stdio: 'inherit' });
 execFileSync(process.execPath, [path.join(root, 'tooling/check-package.mjs'), path.dirname(contents)], { stdio: 'inherit' });
 // Tauri can kill its runner during rebuilds. A private stdin pipe lets the app

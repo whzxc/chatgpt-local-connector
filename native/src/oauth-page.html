@@ -4,36 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Local Connector · OAuth</title>
-  {{reload}}
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171719" media="(prefers-color-scheme: dark)">
+  <meta name="referrer" content="no-referrer">
+  <title>连接授权 · Local Connector</title>
+  <link rel="icon" href="/oauth/favicon.ico" sizes="any">
+  <link rel="icon" href="/oauth/logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="/oauth/logo.png">
+  <link rel="stylesheet" href="/oauth/tokens.css">
+  <script src="/oauth/page.js" defer></script>
   <style>
-    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#243c35;background:#e8eeeb;color-scheme:light dark;--surface:#fff;--muted:#74827c;--line:#dbe5df;--accent:#306354}
-    *{box-sizing:border-box}
-    body{margin:0;min-height:100svh;display:grid;place-items:center;padding:32px 20px;background:radial-gradient(ellipse at 50% 20%,#f8fbf8 0,transparent 65%)}
-    main{width:100%;max-width:540px;padding:44px 36px 32px;background:var(--surface);border:1px solid var(--line);border-radius:28px;box-shadow:0 20px 65px #203c3512;text-align:center}
-    .brand{display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:600;letter-spacing:.1px}
-    .mark{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--accent);color:white;font-size:22px;line-height:1}
-    .badge{margin-left:2px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;color:var(--muted);font-size:10px;letter-spacing:.6px}
-    h1{margin:34px 0 14px;font-size:28px;letter-spacing:-.8px;font-weight:600}
-    p{margin:0;line-height:1.7;font-size:14px}
-    .detail{margin:6px auto 0;max-width:360px;color:var(--muted);font-size:12px}
-    .status{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:var(--accent)}
-    .dot{width:7px;height:7px;background:var(--accent);border-radius:50%}
-    .footnote{margin-top:18px;color:var(--muted);font-size:12px}
-    footer{margin-top:30px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
-    @media(max-width:420px){main{padding:32px 20px 24px}h1{font-size:24px}}
-    @media(prefers-color-scheme:dark){:root{color:#e1ece6;background:#15211d;--surface:#1e2d26;--muted:#9aada3;--line:#35463d;--accent:#9dceb4}body{background:radial-gradient(ellipse at 50% 20%,#2b4034 0,transparent 65%)}.mark{color:#1e2d26}}
+    *{box-sizing:border-box}body{margin:0;min-height:100svh;display:grid;place-items:center;padding:24px;font-family:var(--font-ui);color:var(--text);background:var(--surface-subtle)}
+    main{width:100%;max-width:440px;padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-panel)}
+    .brand{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600}.brand img{width:36px;height:36px}h1{font-size:24px;margin:28px 0 12px;letter-spacing:-.5px}p{font-size:14px;line-height:1.6;margin:0;color:var(--text-secondary)}
+    dl{margin:24px 0;padding:16px;border:1px solid var(--border);border-radius:var(--radius-row);font-size:13px}dt{color:var(--text-secondary);margin-top:12px}dt:first-child{margin-top:0}dd{margin:4px 0 0;overflow-wrap:anywhere}
+    .return{display:inline-block;font:inherit;font-size:14px;font-weight:500;border:1px solid var(--border);border-radius:var(--radius-control);padding:10px 16px;background:var(--text);color:var(--surface);margin-top:16px;text-decoration:none}.return:focus-visible{outline:2px solid var(--text-secondary);outline-offset:3px}
+    #hint,footer{font-size:12px;color:var(--text-secondary);margin-top:16px}footer{margin-top:28px} [hidden]{display:none!important}
+    @media(prefers-color-scheme:dark){:root{--surface:#171719;--surface-subtle:#101012;--text:#f2f2f3;--text-secondary:#aaaab3;--border:#35353b;--danger:#ff9b93}}
+    @media(max-width:420px){body{padding:16px}main{padding:24px}}
   </style>
 </head>
 <body>
   <main>
-    <div class="brand"><span class="mark" aria-hidden="true">↔</span>Local Connector<span class="badge">OAuth</span></div>
-    <h1>{{title}}</h1>
-    <p>{{description}}</p>
-    <p class="detail" lang="en">{{detail}}</p>
-    {{content}}
-    <footer>Local Connector · 由本机确认连接</footer>
+    <div class="brand"><img src="/oauth/logo.png" alt="CLC" width="36" height="36">Local Connector</div>
+    <h1 id="title">连接授权</h1>
+    <p id="status" role="status" aria-live="polite">正在读取授权请求…</p>
+    <dl id="details" hidden><dt>客户端</dt><dd id="client"></dd><dt>连接</dt><dd id="connection"></dd><dt>返回地址</dt><dd id="callback"></dd></dl>
+    <div id="consent" hidden>
+      <a id="open-app" class="return">打开 Local Connector</a>
+      <p id="hint">请在 Local Connector 的弹窗中同意或拒绝。若目标连接在另一台设备，请到那台设备打开 Local Connector 确认，或由已授权的 Agent 使用目标设备的 CLI 确认。</p>
+    </div>
+    <a id="return" class="return" hidden>返回客户端</a>
+    <noscript><p>请启用 JavaScript 以读取授权状态。</p></noscript>
+    <footer>确认后此页面将自动返回客户端，请保持页面打开。</footer>
   </main>
-
 </body>
 </html>

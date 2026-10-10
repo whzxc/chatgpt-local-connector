@@ -40,6 +40,7 @@ import {
   type PanelOrigin,
 } from "./components/panelMorph";
 import { displayMessage } from "./messages";
+import OAuthApproval from "./components/OAuthApproval";
 import ConnectionOverview from "./components/ConnectionOverview";
 import TasksPage from "./components/TasksPage";
 import RecordsPage from "./components/RecordsPage";
@@ -53,6 +54,7 @@ const BrowserRailPreview = import.meta.env.DEV
   : null;
 export default function App() {
   locale.use();
+  const [oauthRequest, setOauthRequest] = useState<{ id: string }>();
   const { feedback } = connector.use(),
     taskState = tasks.use(),
     nav = navigation.use();
@@ -230,6 +232,7 @@ export default function App() {
     const stops: (() => void)[] = [];
     void import("@tauri-apps/api/event").then(async ({ listen }) => {
       const listeners = await Promise.all([
+        listen<string>("oauth:open", (e) => setOauthRequest({ id: e.payload })),
         listen("updates:check", () => {
           showUpdate();
           void checkUpdate();
@@ -431,6 +434,7 @@ export default function App() {
         </div>
       )}
       <AppUpdateDialogs />
+      <OAuthApproval requested={oauthRequest} onClose={() => setOauthRequest(undefined)} />
       {nav.agentSettings && (
         <AgentDisplaySettings
           onClose={() =>

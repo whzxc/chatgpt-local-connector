@@ -1,4 +1,4 @@
-//! Per-ingress OAuth authorization server. Consent is only writable through local management.
+//! Per-ingress OAuth server with local owner consent and authenticated local management.
 use crate::*;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
@@ -261,23 +261,46 @@ impl OAuth {
     }
     pub fn management(&mut self, resource: &str) -> Result<Value> {
         self.prepare(resource)?;
-        let pending:Vec<_>=self.pending.iter().filter(|(_,p)|p.decision != Some(false)).map(|(id,p)|json!({"id":id,"clientName":self.stored.clients.get(&p.client).map(|c|c.name.as_str()),"clientId":p.client,"redirectUri":p.redirect,"resource":p.resource,"status":if p.expires <= clock() { "expired" } else if p.decision == Some(true) { "waiting" } else { "pending" },"expiresAt":p.expires})).collect();
+        let pending: Vec<_> = self
+            .pending
+            .keys()
+            .map(|key| self.status(key, resource))
+            .collect::<Result<_>>()?;
         let grants:Vec<_>=self.stored.grants.iter().map(|g|json!({"id":g.id,"clientName":self.stored.clients.get(&g.client).map(|c|c.name.as_str()),"clientId":g.client})).collect();
         Ok(json!({"pending":pending,"grants":grants}))
+    }
+    pub fn status(&self, key: &str, resource: &str) -> Result<Value> {
+        if let Some(p) = self.pending.get(key).filter(|p| p.resource == resource) {
+            return Ok(
+                json!({"id":key,"clientName":self.stored.clients.get(&p.client).map(|c|c.name.as_str()),"clientId":p.client,"redirectUri":p.redirect,"resource":p.resource,"expiresAt":p.expires,"status":if p.expires <= clock() { "expired" } else { match p.decision { Some(true) => "approved", Some(false) => "denied", None => "pending" } }}),
+            );
+        }
+        if let Some(g) = self
+            .stored
+            .grants
+            .iter()
+            .find(|g| g.id == key && g.resource == resource)
+        {
+            return Ok(
+                json!({"id":key,"status":"completed","clientName":self.stored.clients.get(&g.client).map(|c|c.name.as_str()),"resource":resource}),
+            );
+        }
+        Ok(json!({"id":key,"status":"expired"}))
     }
     pub fn decide(&mut self, key: &str, allow: bool) -> Result<()> {
         let p = self
             .pending
             .get_mut(key)
             .ok_or("Authorization request expired")?;
-        if !allow {
-            p.decision = Some(false);
-            p.code = None;
-            p.code_hash.clear();
-            return Ok(());
+        if p.expires <= clock() {
+            return Err("Authorization request expired".into());
         }
-        if p.expires <= clock() || p.decision.is_some() {
-            return Err("Authorization request expired or already decided".into());
+        if let Some(decision) = p.decision {
+            return if decision == allow {
+                Ok(())
+            } else {
+                Err("Authorization request already decided".into())
+            };
         }
         p.decision = Some(allow);
         if allow {
@@ -306,7 +329,7 @@ impl OAuth {
             if allowed {
                 query.append_pair(
                     "code",
-                    &p.code.take().ok_or(
+                    &p.code.clone().ok_or(
                         "Authorization response already delivered; reconnect from your client",
                     )?,
                 );
@@ -317,9 +340,6 @@ impl OAuth {
                 query.append_pair("state", &p.state);
             }
             query.append_pair("iss", resource.trim_end_matches("/mcp"));
-        }
-        if !allowed {
-            self.pending.remove(key);
         }
         Ok(Some(url.to_string()))
     }
@@ -493,37 +513,23 @@ fn response(status: u16, body: Value) -> Response<Full<Bytes>> {
         .body(Full::new(Bytes::from(body.to_string())))
         .unwrap()
 }
-fn html(status: u16, waiting: bool) -> Response<Full<Bytes>> {
-    let (reload, title, description, detail, content) = match waiting {
-        true => (
-            "<meta http-equiv=\"refresh\" content=\"3\">",
-            "连接你的客户端",
-            "回到 Local Connector，点击“允许连接”即可。",
-            "Return to Local Connector and click Allow connection.",
-            String::from("<div class=\"status\"><span class=\"dot\"></span>等待确认 · Waiting for approval</div><p class=\"footnote\">确认后将自动返回客户端，请保持此页面打开。</p>"),
-        ),
-        false => (
-            "",
-            "请求已结束",
-            "授权请求已过期或已处理，请从客户端重新连接。",
-            "This request has expired or was already processed. Reconnect from your client.",
-            String::new(),
-        ),
-    };
-    let page = include_str!("oauth-page.html")
-        .replace("{{reload}}", reload)
-        .replace("{{title}}", title)
-        .replace("{{description}}", description)
-        .replace("{{detail}}", detail)
-        .replace("{{content}}", &content);
+fn asset(content_type: &str, bytes: &'static [u8]) -> Response<Full<Bytes>> {
     Response::builder()
-        .status(status)
+        .header("Content-Type", content_type)
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Cache-Control", "no-cache")
+        .body(Full::new(Bytes::from_static(bytes)))
+        .unwrap()
+}
+fn html() -> Response<Full<Bytes>> {
+    Response::builder()
         .header("Content-Type", "text/html; charset=utf-8")
         .header("Cache-Control", "no-store")
         .header("Referrer-Policy", "no-referrer")
         .header("X-Frame-Options", "DENY")
-        .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
-        .body(Full::new(Bytes::from(page)))
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Security-Policy", "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        .body(Full::new(Bytes::from_static(include_bytes!("oauth-page.html"))))
         .unwrap()
 }
 fn parameters(text: &str) -> Result<BTreeMap<String, String>> {
@@ -552,8 +558,10 @@ pub async fn handle(
         _ => None,
     };
     let supplied_auth = request.headers().contains_key("authorization");
-    let cors =
-        request.uri().path() != "/oauth/authorize" && request.uri().path() != "/oauth/resume";
+    let cors = matches!(
+        request.uri().path(),
+        "/oauth/register" | "/oauth/token" | "/oauth/revoke"
+    ) || request.uri().path().starts_with("/.well-known/");
     let result = if cors && request.method() == hyper::Method::OPTIONS {
         Ok(response(204, Value::Null))
     } else {
@@ -662,23 +670,60 @@ async fn route(
                     .body(Full::new(Bytes::new()))
                     .unwrap());
             }
-            "/oauth/resume" => {
-                let result = ingress
-                    .oauth
-                    .lock()
-                    .await
-                    .resume(q.get("request").ok_or("invalid_request")?, resource);
-                return Ok(match result {
-                    Ok(Some(url)) => Response::builder()
-                        .status(303)
-                        .header("Location", url)
-                        .header("Cache-Control", "no-store")
-                        .header("Referrer-Policy", "no-referrer")
-                        .body(Full::new(Bytes::new()))
-                        .unwrap(),
-                    Ok(None) => html(200, true),
-                    Err(_) => html(400, false),
-                });
+            "/oauth/resume" => return Ok(html()),
+            "/oauth/page.js" => {
+                return Ok(asset(
+                    "text/javascript; charset=utf-8",
+                    include_bytes!("oauth-page.js"),
+                ))
+            }
+            "/oauth/tokens.css" => {
+                return Ok(asset(
+                    "text/css; charset=utf-8",
+                    include_bytes!("../../ui/tokens.css"),
+                ))
+            }
+            "/oauth/logo.png" => {
+                return Ok(asset(
+                    "image/png",
+                    include_bytes!("../../ui/assets/brand-reserve/app/local-connector/icon.png"),
+                ))
+            }
+            "/oauth/favicon.ico" => {
+                return Ok(asset(
+                    "image/x-icon",
+                    include_bytes!("../../ui/assets/brand-reserve/app/local-connector/icon.ico"),
+                ))
+            }
+            "/oauth/status" => {
+                let connection_name = ingress.meta.lock().await["name"].clone();
+                let mut oauth = ingress.oauth.lock().await;
+                oauth.prepare(resource)?;
+                let mut state =
+                    oauth.status(q.get("request").ok_or("invalid_request")?, resource)?;
+                state["openAppUrl"] =
+                    json!(format!("clc://oauth?request={}", q.get("request").unwrap()));
+                state["connectionName"] = connection_name;
+                return Ok(response(200, state));
+            }
+            "/oauth/continue" => {
+                return Ok(
+                    match ingress
+                        .oauth
+                        .lock()
+                        .await
+                        .resume(q.get("request").ok_or("invalid_request")?, resource)
+                    {
+                        Ok(Some(url)) => Response::builder()
+                            .status(303)
+                            .header("Location", url)
+                            .header("Cache-Control", "no-store")
+                            .header("Referrer-Policy", "no-referrer")
+                            .body(Full::new(Bytes::new()))
+                            .unwrap(),
+                        _ => html(),
+                    },
+                );
             }
             _ => return Ok(response(404, json!({"error":"not_found"}))),
         }

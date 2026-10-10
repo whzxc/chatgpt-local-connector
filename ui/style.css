@@ -706,16 +706,11 @@ pre {
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
-.oauth-request {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--border);
-  display: grid;
-  gap: 12px;
-}
-.oauth-grants {
-  display: grid;
-  gap: 8px;
-}
+.oauth-grants { display: grid; gap: 12px; border-top: 1px solid var(--border); padding-top: 20px; }
+.oauth-grant-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--border); border-radius: var(--radius-row); padding: 16px; background: var(--surface-subtle); }
+.oauth-grant-identity { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.oauth-grant-card > button { flex-shrink: 0; }
+@media (max-width: 480px) { .oauth-grant-card { align-items: stretch; flex-direction: column; } }
 .settings-page {
   max-width: 760px;
   margin: auto;

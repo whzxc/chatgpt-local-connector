@@ -4,11 +4,11 @@
 
 | 控制源 | Remote MCP | 推荐 transport | 推荐认证 | CLC 当前程度 | 主要边界 / 官方资料 |
 | --- | --- | --- | --- | --- | --- |
-| ChatGPT | 支持 | openai-tunnel | openai | 现有路径可用 | 优先 Secure Tunnel；HTTPS 也支持本机确认的 OAuth。Tunnel 与客户端开发者模式权限分别管理。 [官方 1](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) / [官方 2](https://developers.openai.com/api/docs/guides/developer-mode) |
-| Claude | 支持 | https | oauth | 有条件支持 | OAuth 使用本机确认，支持动态注册或预注册客户端凭据。组织静态请求头 Beta 仍可使用 Bearer；需确认客户端注册流程。 [官方 1](https://claude.com/docs/connectors/building) / [官方 2](https://claude.com/docs/connectors/building/authentication) |
+| ChatGPT | 支持 | openai-tunnel | openai | 现有路径可用 | 优先 Secure Tunnel；HTTPS 也支持本机应用确认的 OAuth。Tunnel 与客户端开发者模式权限分别管理。 [官方 1](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) / [官方 2](https://developers.openai.com/api/docs/guides/developer-mode) |
+| Claude | 支持 | https | oauth | 有条件支持 | OAuth 使用本机应用确认或已认证 CLI 确认，支持动态注册或预注册客户端凭据。组织静态请求头 Beta 仍可使用 Bearer；需确认客户端注册流程。 [官方 1](https://claude.com/docs/connectors/building) / [官方 2](https://claude.com/docs/connectors/building/authentication) |
 | Microsoft Copilot | 支持 | https | bearer | 有条件支持 | Copilot Studio 可通过 API key 请求头使用 Authorization: Bearer，或使用已注册客户端凭据接入 OAuth；需确认租户兼容性。尚无其他 API key 请求头。可发布到 Teams / Microsoft 365 Copilot。 [官方 1](https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent) / [官方 2](https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-create-new-server) / [官方 3](https://learn.microsoft.com/en-us/microsoft-copilot-studio/publication-fundamentals-publish-channels) |
 | Notion | 支持 | https | bearer | 现有路径可用 | Custom Agents 支持请求头认证；使用 Authorization: Bearer，需有工作区权限及相应套餐。 [官方 1](https://www.notion.com/help/mcp-connections-for-custom-agents) |
-| Slack | 支持 | https | oauth | 有条件支持 | OAuth 支持动态注册或本机预注册，需本机用户确认并核对 Slack 客户端流程。尚未实现 Slack 身份签名；不支持 Bearer。 [官方 1](https://docs.slack.dev/ai/slackbot-mcp-client/) |
+| Slack | 支持 | https | oauth | 有条件支持 | OAuth 支持动态注册或本机预注册，通过本机应用或已认证 CLI 确认，需核对 Slack 客户端流程。尚未实现 Slack 身份签名；不支持 Bearer。 [官方 1](https://docs.slack.dev/ai/slackbot-mcp-client/) |
 | Cursor | 支持 | https | bearer | 现有路径可用 | 配置远程 MCP URL 与 Authorization: Bearer；客户端版本须支持转发配置的请求头，并验证实际请求。 [官方 1](https://cursor.com/docs/context/mcp) / [官方 2](https://prod.cursor.com/help/customization/mcp) |
 | GitHub Copilot | 支持 | https | bearer | 现有路径可用 | 可承载在支持的 VS Code、JetBrains、CLI；按宿主配置 HTTP MCP 与 Authorization: Bearer。宿主能力及组织策略不同。 [官方 1](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp) / [官方 2](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers) |
 | Raycast | 支持 | https | bearer | 现有路径可用 | AI Chat、Quick AI、AI Commands 使用 HTTP MCP；HTTP Headers 填 Authorization: Bearer，需相应 Raycast AI 套餐。 [官方 1](https://manual.raycast.com/ai/model-context-protocol) |
@@ -17,11 +17,11 @@
 
 ## 认证交集
 
-Notion、Cursor、GitHub Copilot、Raycast 可通过 `Authorization: Bearer <token>` 复用 generic HTTPS。Claude 组织管理员静态请求头 Beta 也可走该路径；也可使用本机确认的 OAuth。Copilot Studio 的 API-key Header 可配置为 Authorization，完整值为 `Bearer <token>`；这是基于官方 Header 机制的兼容推断，必须在实际租户验证转发，没有平台端验收不能宣称已接通。
+Notion、Cursor、GitHub Copilot、Raycast 可通过 `Authorization: Bearer <token>` 复用 generic HTTPS。Claude 组织管理员静态请求头 Beta 也可走该路径；也可使用本机应用确认的 OAuth。Copilot Studio 的 API-key Header 可配置为 Authorization，完整值为 `Bearer <token>`；这是基于官方 Header 机制的兼容推断，必须在实际租户验证转发，没有平台端验收不能宣称已接通。
 
 Slackbot 官方支持 none、Slack identity、DCR 和 manual OAuth；文档的 custom headers 用于身份查询，不是 MCP 请求。CLC 支持 none，以及使用 DCR 或本机预注册的 OAuth。不要把 bearer 当作 Slackbot 已支持，也不要自动降级为无认证；UI 要求主动选择。需要认证的 HTTPS 连接请使用 OAuth。ChatGPT Secure Tunnel 仍是独立的受支持路径；按工具区分的混合认证尚未实现。
 
-CLC 仅接受 `openai` / `none` / `bearer` / `oauth`。OAuth 提供 PKCE、DCR、本机确认、令牌刷新与撤销，详见 [OAuth 认证](../oauth.md)。不实现任意静态密钥头、query token 和 Slack 签名验证。现有 Authorization Header 已覆盖多个控制源，因此没有新增 static-header abstraction 的必要。none 会让网络可达方访问允许的工具；只对明确允许公开的工具选择它。认证与 toolPolicy 以入口隔离，任务命名空间仍共享。
+CLC 仅接受 `openai` / `none` / `bearer` / `oauth`。OAuth 提供 PKCE、DCR、本机应用确认、令牌刷新与撤销，详见 [OAuth 认证](../oauth.md)。不实现任意静态密钥头、query token 和 Slack 签名验证。现有 Authorization Header 已覆盖多个控制源，因此没有新增 static-header abstraction 的必要。none 会让网络可达方访问允许的工具；只对明确允许公开的工具选择它。认证与 toolPolicy 以入口隔离，任务命名空间仍共享。
 
 ## CLI / Codex
 
@@ -32,7 +32,7 @@ CLC 仅接受 `openai` / `none` / `bearer` / `oauth`。OAuth 提供 PKCE、DCR�
 - “加一个 Cursor” → cursor + https + bearer。
 - “再加公司 Notion，使用 bearer” → 新入口，notion + https + bearer，name 自定义为公司 Notion；不更新已有入口。
 - “给 Raycast 配 HTTPS” → raycast + https + bearer。
-- “Copilot Studio 缺什么？” → microsoft-copilot，先说明 API-key Header 的兼容条件；需要 OAuth 时说明客户端注册与本机确认流程。
+- “Copilot Studio 缺什么？” → microsoft-copilot，先说明 API-key Header 的兼容条件；需要 OAuth 时说明客户端注册与网页授权流程。
 
 省略 name 时自动使用 Notion、Notion 2、Notion 3 等未占用名称；自定义 name 原样保留。保存或 ready 不等于接入完成：按 [Codex 配置](codex-setup.md) 从实际客户端完成 connector_verify，再按需要做无害任务验收。
 

@@ -61,7 +61,7 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
         }
         [] | ["help"] | ["--help"] => Ok(json!({"version":env!("CARGO_PKG_VERSION"),
             "usage":"<应用可执行文件> cli <command> [--json]",
-            "commands":["storage compact","subscriptions get","subscriptions set --stdin","subscriptions refresh [providerId]","subscriptions open [providerId]","panel get","panel set --stdin","help","guide","context --stdin","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
+            "commands":["storage compact","subscriptions get","subscriptions set --stdin","subscriptions refresh [providerId]","subscriptions open [providerId]","panel get","panel set --stdin","help","guide","context --stdin","status","onboarding","doctor","logs","configure --stdin","network --stdin","connect","disconnect","verify","verify --fresh","ingress list","ingress presets","ingress add --stdin","ingress update <id> --stdin","ingress remove <id>","ingress start <id>","ingress stop <id>","ingress start-all","ingress stop-all","ingress token rotate <id>","ingress oauth list <id>","ingress oauth decision <id> --stdin","ingress oauth request <id> <request-id>","ingress oauth register <id> --stdin","ingress oauth revoke <id> --stdin","ingress doctor <id>","ingress verify <id> [--fresh]"],
             "subscriptionsInput":{"enabled":"boolean; required","providers":"complete array of IDs from subscriptions get; required","pinnedWindows":"complete provider-to-window map; required"},
             "subscriptionsNote":"get reads memory only. set replaces the complete settings: read get.settings first and preserve all intended selections/pins. refresh requests an online read for a selected eligible provider, or all such providers when omitted; accepted is not fresh-data success. Read observedAt/state/error afterwards. open activates the target instance's Agent detail panel, or the Agents panel when omitted.",
             "panelInput":{"autoCollapse":"boolean","size":"small | standard | large","spacing":"compact | standard | roomy","ends":"softened | round","horizontalPercentages":"boolean","alertColor":"boolean","notchFusion":"boolean","dock":"left | right | top | bottom | floating","resetPosition":"true; resets placement, takes precedence over dock"},
@@ -70,7 +70,9 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
             "ingressInput":{"id":"optional on add; immutable","name":"optional display name; defaults to preset name with an available numeric suffix","controlSource":"see ingress presets; any other client label remains valid","transport":"openai-tunnel | https","auth":"openai for OpenAI Tunnel; none | bearer | oauth for HTTPS","bearerToken":"32+ printable ASCII characters, stdin only; never returned by list/status","enabled":true,"toolPolicy":"all or {allowlist:[connector_verify,agents,agent_create,agent_read,agent_wait,...]}","config":{"httpsProvider":"cloudflare | ngrok | pinggy | localxpose | custom","cloudflareMode":"quick | named","httpsUrl":"https://hostname/mcp; required for named/custom, optional fixed ngrok address","httpsHost":"127.0.0.1 default; custom only","httpsPort":"8787 default; choose distinct ports for named/custom and match the external route","cloudflareToken":"named Tunnel token; stdin only","ngrokAuthtoken":"ngrok credential; stdin only","pinggyMode":"quick | named","pinggyToken":"Pinggy named domain token; stdin only","localxposeMode":"named; quick is unavailable because the first request is redirected","localxposeAccessToken":"LocalXpose credential; stdin only","localxposeRegion":"us | eu | ap","tunnelId":"official Tunnel ID","apiKey":"official Tunnel runtime key; stdin only","tunnelBinary":"optional executable path"}},
             "waitContract":"create/send → wait(30s default; 20–30s recommended) → timeout → same taskId/threadId and turnId, previous snapshotHash as expectedHash → wait again until terminal/interaction. Event-driven slices, not read/sleep polling. Timeout/cancelling wait never stops or recreates the task; unconfirmed is not failure. Ordinary Chat/general MCP clients should not block for minutes by default. Explicit maximum 300000ms requires upstream support; stdio forwarding budget remains 330s.",
             "update":"Partial merge; stop the target before updating or rotating. Other ingresses remain online. Changes reset only this ingress verification.",
-            "authNote":"none exposes allowed tools to anyone with network access. Prefer a fixed URL with OAuth (local owner consent, PKCE, DCR or preregistration) or bearer for clients that support it.",
+            "oauthDecisionInput":{"id":"pending request id from oauth list","allow":"boolean; true approves, false denies"},
+            "oauthReadback":"oauth request returns pending/approved/denied/completed/expired; approved is not token exchange or task acceptance. Keep the client authorization page open for callback.",
+            "authNote":"none exposes allowed tools to anyone with network access. Prefer a fixed URL with OAuth (local app consent via clc:// or authenticated CLI consent, PKCE, DCR or preregistration) or bearer for clients that support it.",
             "tokenDelivery":"token rotate returns the new secret once in stdout. Redirect to a protected local file (umask 077); do not capture it into chat/logs. Supply an initial bearerToken via stdin when adding.",
             "configureInput":{"tunnelId":"可选；省略保留原值","apiKey":"可选；空字符串保留原值"},
             "networkInput":{"proxyMode":"system | direct | custom","proxyUrl":"自定义 HTTP/HTTPS 地址，其余为空"},
@@ -94,6 +96,22 @@ async fn execute(args: &[String]) -> crate::Result<Value> {
         ["panel", "set", "--stdin"] => forward_request("usage-panel", "PUT", stdin_json()?).await,
         ["ingress", "oauth", "list", id] => {
             forward_request(&format!("ingress/{id}/oauth"), "GET", json!({})).await
+        }
+        ["ingress", "oauth", "request", id, request_id] => {
+            forward_request(
+                &format!("ingress/{id}/oauth/request/{request_id}"),
+                "GET",
+                json!({}),
+            )
+            .await
+        }
+        ["ingress", "oauth", "decision", id, "--stdin"] => {
+            forward_request(
+                &format!("ingress/{id}/oauth/decision"),
+                "POST",
+                stdin_json()?,
+            )
+            .await
         }
         ["ingress", "oauth", "register", id, "--stdin"] => {
             forward_request(

@@ -9,6 +9,7 @@ mod appearance;
 mod autostart;
 mod desktop_access;
 mod i18n;
+mod oauth_links;
 mod session;
 mod tray;
 mod updates;
@@ -139,6 +140,7 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_main_window(app);
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
@@ -248,6 +250,7 @@ fn main() {
                 window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
             }
             windows::install(app.handle());
+            oauth_links::install(app.handle()).map_err(std::io::Error::other)?;
             usage_panel::install(app.handle());
             tray::install(app)?;
             #[cfg(target_os = "windows")]

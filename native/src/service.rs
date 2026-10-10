@@ -725,13 +725,17 @@ impl Service {
                 if method == "GET" && action == "oauth" {
                     return oauth.management(&resource);
                 }
+                if method == "GET" && action.starts_with("oauth/request/") {
+                    oauth.management(&resource)?;
+                    return oauth.status(action.trim_start_matches("oauth/request/"), &resource);
+                }
                 if method == "POST" && action == "oauth/decision" {
                     oauth.management(&resource)?;
                     oauth.decide(
                         string(&body, "id"),
                         body["allow"].as_bool().ok_or("allow must be boolean")?,
                     )?;
-                    return Ok(json!({"ok":true}));
+                    return oauth.status(string(&body, "id"), &resource);
                 }
                 if method == "POST" && action == "oauth/revoke" {
                     oauth.revoke(string(&body, "id"))?;

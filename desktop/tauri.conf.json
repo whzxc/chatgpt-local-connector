@@ -63,6 +63,13 @@
       "endpoints": [
         "https://github.com/whzxc/chatgpt-local-connector/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "clc"
+        ]
+      }
     }
   }
 }

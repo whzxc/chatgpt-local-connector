@@ -2,14 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { t } from "../i18n";
 import { useInterval } from "../state/hooks";
-import { Button, Empty, Loading, Notice } from "./ui";
-type Pending = {
-  id: string;
-  clientName: string;
-  redirectUri: string;
-  status: "pending" | "waiting" | "expired";
-};
-type Grant = { id: string; clientName: string };
+import { Button, Empty, Notice } from "./ui";
+type Grant = { id: string; clientName: string; clientId: string };
 export default function OAuthGrants({
   ingressId,
   running,
@@ -22,7 +16,6 @@ export default function OAuthGrants({
   onBusy: (value: boolean) => void;
 }) {
   const [grants, setGrants] = useState<Grant[]>([]),
-    [pending, setPending] = useState<Pending[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const revision = useRef(0);
@@ -38,18 +31,16 @@ export default function OAuthGrants({
     if (busy && !afterAction) return;
     if (!running) {
       setGrants([]);
-      setPending([]);
       setError("");
       return;
     }
     const version = revision.current;
     try {
-      const result = await api<{ grants: Grant[]; pending: Pending[] }>(
+      const result = await api<{ grants: Grant[] }>(
         `ingress/${ingressId}/oauth`,
       );
       if (alive.current && version === revision.current) {
         setGrants(result.grants);
-        setPending(result.pending);
         setError("");
       }
     } catch (e) {
@@ -79,51 +70,12 @@ export default function OAuthGrants({
   return (
     <section className="oauth-grants">
       <h3>OAuth</h3>
-      {pending.map((request) => (
-        <div className="oauth-request" key={request.id}>
-          <div>
-            <strong>{request.clientName}</strong>
-            <p className="muted small">
-              {(() => {
-                try {
-                  return new URL(request.redirectUri).hostname;
-                } catch {
-                  return "";
-                }
-              })()}
-            </p>
-          </div>
-          <div className="actions">
-            {request.status === "waiting" ? (
-              <Loading label={t("oauthWaiting")} />
-            ) : request.status === "expired" ? (
-              <Notice>{t("oauthWaitExpired")}</Notice>
-            ) : (
-              <Button
-                variant="primary"
-                disabled={busy || disabled || !running}
-                onClick={() =>
-                  void action("decision", { id: request.id, allow: true })
-                }
-              >
-                {t("oauthAllow")}
-              </Button>
-            )}
-            <Button
-              variant="danger"
-              disabled={busy || disabled || !running}
-              onClick={() =>
-                void action("decision", { id: request.id, allow: false })
-              }
-            >
-              {t("oauthDeny")}
-            </Button>
-          </div>
-        </div>
-      ))}
+      <h4>{t("oauthAuthorizedClients")}</h4>
       {grants.map((grant) => (
-        <div className="settings-row" key={grant.id}>
-          <span>{grant.clientName}</span>
+        <div className="oauth-grant-card" key={grant.id}>
+          <div className="oauth-grant-identity"><strong>{grant.clientName}</strong>
+            <span className="muted small">{t("oauthClientId")}: {grant.clientId}</span>
+          </div>
           <Button
             disabled={busy || disabled || !running}
             onClick={() => void action("revoke", { id: grant.id })}
@@ -132,7 +84,7 @@ export default function OAuthGrants({
           </Button>
         </div>
       ))}
-      {!grants.length && !pending.length && !error && (
+      {!grants.length && !error && (
         <Empty>{t("oauthNoGrants")}</Empty>
       )}
       {error && <Notice>{error}</Notice>}

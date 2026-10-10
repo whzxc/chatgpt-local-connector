@@ -18,6 +18,9 @@ macOS 通常使用 `/Applications/Local Connector.app/Contents/MacOS/local-conne
 - `ingress start <id>` / `ingress stop <id>`：独立启停。
 - `ingress start-all` / `ingress stop-all`：批量操作；start 跳过 enabled=false，每个结果独立报告。
 - `ingress token rotate <id>`：停止后轮换 bearer；新密钥仅此次 stdout 返回，重置该入口验证。
+- `ingress oauth list <id>`：查看待处理请求、授权客户端与密码设置状态。
+- `ingress oauth decision <id> --stdin`：Agent 经本机已认证通道确认或拒绝，输入 `{"id":"请求 ID","allow":true}`（拒绝为 false）。先核对客户端、回调和入口；网页自动回读并跳转。
+- `ingress oauth request <id> <request-id>`：回读 pending/approved/denied/completed/expired；completed 仅证明客户端完成换码，不代表任务验收。
 - `ingress doctor <id>`：查看该入口配置、状态和接入指引。
 - `ingress verify <id> --fresh`：只重置该入口验证码；不带 --fresh 回读现有验证。
 - `status` / `doctor` / `onboarding`：全局摘要及多入口 JSON。
@@ -61,7 +64,7 @@ Cursor：创建独立的 `transport=https`、`auth=bearer`、`httpsProvider=clou
 
 Cloudflare token 模式路由保存在服务端，CLC 不用 token 改写路由。Quick 模式自动分配临时地址，仅用于试用；长期入口优先固定地址加认证。Custom Domain 使用 httpsHost/httpsPort 接收自管 TLS 反向代理请求。不要公开桌面管理端口。
 
-先查看[控制源矩阵](control-sources.md)。Slackbot 不支持静态 Bearer，可使用带本机所有者同意的 OAuth；不要自动降级。Claude 组织静态请求头 Beta 与 Copilot Studio API-key Header 是有条件的 Bearer 路径；OAuth 是独立选项。CLI help、ingress presets（离线）、list 和 onboarding 均提供 preset metadata。不能把本机探针成功报告为官方客户端已接入。
+先查看[控制源矩阵](control-sources.md)。Slackbot 不支持静态 Bearer，可使用通过本机应用或已认证 CLI 确认的 OAuth；不要自动降级。Claude 组织静态请求头 Beta 与 Copilot Studio API-key Header 是有条件的 Bearer 路径；OAuth 是独立选项。CLI help、ingress presets（离线）、list 和 onboarding 均提供 preset metadata。不能把本机探针成功报告为官方客户端已接入。
 
 ## 完整执行流程
 
@@ -75,7 +78,7 @@ Cloudflare token 模式路由保存在服务端，CLC 不用 token 改写路由�
 
 ## 边界
 
-none 允许所有可达调用方调用已授权工具。bearer 只证明持有凭据；task namespace 全局共享，没有用户/组织 RBAC。OAuth 支持 PKCE、DCR 或预注册、本机所有者同意、刷新与撤销；不实现 Slack Identity、Notion API 或消息编排。listener 不提前截断 300 秒等待；外部代理和服务商限制需另行核对。重复短等待可沿用 taskId，超时不停止任务。
+none 允许所有可达调用方调用已授权工具。bearer 只证明持有凭据；task namespace 全局共享，没有用户/组织 RBAC。OAuth 支持 PKCE、DCR 或预注册、本机应用确认或已认证 CLI 确认、刷新与撤销；不实现 Slack Identity、Notion API 或消息编排。listener 不提前截断 300 秒等待；外部代理和服务商限制需另行核对。重复短等待可沿用 taskId，超时不停止任务。
 
 入口失败只影响自身。先读该入口错误与脱敏日志。停止入口只释放其进程、listener 和临时资源；退出 Core 才关闭 AgentHost/Control，Desktop-owned 任务沿用 Desktop 生命周期。UI 仅展示入口数量和每入口一行状态及基本动作，主要配置通过 CLI 完成。
 

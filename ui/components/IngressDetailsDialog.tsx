@@ -181,7 +181,6 @@ export default function IngressDetailsDialog({
       }
     >
       <div className="form">
-
         <Field
           label={https ? "MCP URL" : "Tunnel ID"}
           help={
@@ -236,14 +235,6 @@ export default function IngressDetailsDialog({
             />
           </Field>
         )}
-        {entry.auth === "oauth" && (
-          <OAuthGrants
-            ingressId={entry.id}
-            running={entry.running}
-            disabled={working}
-            onBusy={setOauthBusy}
-          />
-        )}
         {credentialError && (
           <Notice
             action={
@@ -268,6 +259,14 @@ export default function IngressDetailsDialog({
           )}
         {(error || entry.error) && (
           <Notice>{displayMessage(error || entry.error)}</Notice>
+        )}
+        {entry.auth === "oauth" && (
+          <OAuthGrants
+            ingressId={entry.id}
+            running={entry.running}
+            disabled={working}
+            onBusy={setOauthBusy}
+          />
         )}
       </div>
     </Dialog>
