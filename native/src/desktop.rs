@@ -1,4 +1,7 @@
 use crate::*;
+// Keep the receive bound aligned with Codex Desktop IPC (256 MiB).
+// Screenshot-heavy conversation snapshots can exceed 32 MiB.
+const MAX_DESKTOP_IPC_FRAME_BYTES: u32 = 256 * 1024 * 1024;
 use std::{collections::HashMap, time::Duration};
 #[cfg(unix)]
 use tokio::net::UnixStream;
@@ -109,7 +112,7 @@ impl Ipc {
                 let Ok(len) = rd.read_u32_le().await else {
                     break;
                 };
-                if len > 32 * 1024 * 1024 {
+                if len == 0 || len > MAX_DESKTOP_IPC_FRAME_BYTES {
                     break;
                 }
                 let mut bytes = vec![0; len as usize];
